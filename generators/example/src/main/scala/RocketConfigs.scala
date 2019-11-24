@@ -11,6 +11,7 @@ import freechips.rocketchip.config.{Config}
 class RocketConfig extends Config(
   new WithTop ++                                           // use default top
   new WithBootROM ++                                       // use default bootrom
+  new WithUART ++                                          // add a UART
   new freechips.rocketchip.subsystem.WithInclusiveCache ++ // use Sifive L2 cache
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++   // single rocket-core
   new freechips.rocketchip.system.BaseConfig)              // "base" rocketchip system
