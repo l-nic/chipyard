@@ -43,7 +43,7 @@ class WithBootROM extends Config((site, here, up) => {
  * Class to add in GPIO
  */
 class WithGPIO extends Config((site, here, up) => {
-  case PeripheryGPIOKey => List(
+  case PeripheryGPIOKey => Seq(
     GPIOParams(address = 0x10012000, width = 4, includeIOF = false))
 })
 // DOC include end: WithGPIO
@@ -52,8 +52,10 @@ class WithGPIO extends Config((site, here, up) => {
  * Class to add in UART
  */
 class WithUART extends Config((site, here, up) => {
-  case PeripheryUARTKey => List(
+  case PeripheryUARTKey => Seq(
     UARTParams(address = 0x54000000L, nTxEntries = 256, nRxEntries = 256))
+  case UARTAdapterKey => Seq(
+    UARTAdapterParams(baudRateInit = BigInt(3686400)))
 })
 
 // -----------------------------------------------

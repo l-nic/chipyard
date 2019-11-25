@@ -22,14 +22,14 @@ import sifive.blocks.devices.uart._
 class Top(implicit p: Parameters) extends System
   with HasNoDebug
   with HasPeripherySerial
-  with HasPeripheryUARTWithAdapter {
+  with CanHavePeripheryUARTWithAdapter {
   override lazy val module = new TopModule(this)
 }
 
 class TopModule[+L <: Top](l: L) extends SystemModule(l)
   with HasNoDebugModuleImp
   with HasPeripherySerialModuleImp
-  with HasPeripheryUARTWithAdapterImp
+  with CanHavePeripheryUARTWithAdapterImp
   with DontTouch
 
 //---------------------------------------------------------------------------------------------------------
