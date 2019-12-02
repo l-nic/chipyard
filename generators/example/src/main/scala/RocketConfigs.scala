@@ -141,3 +141,26 @@ class InitZeroRocketConfig extends Config(
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
   new freechips.rocketchip.system.BaseConfig)
 // DOC include end: InitZeroRocketConfig
+
+/**
+ * Config for loopback NIC.
+ */
+class LoopbackNICConfig extends Config(
+  new WithTop ++
+  new WithLoopbackNIC ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+/**
+ * Config for SimNetwork.
+ */
+class SimNetworkConfig extends Config(
+  new WithTop ++
+  new WithSimNetwork ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+

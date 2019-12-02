@@ -12,6 +12,7 @@ import freechips.rocketchip.tile.{XLen, BuildRoCC, TileKey, LazyRoCC}
 import boom.common.{BoomTilesKey}
 
 import testchipip._
+import icenet._
 
 import hwacha.{Hwacha}
 
@@ -182,3 +183,28 @@ class WithInitZeroTop extends Config((site, here, up) => {
     Module(LazyModule(new TopWithInitZero()(p)).module)
 })
 // DOC include end: WithInitZero
+
+/**
+ * Class to specify top level module with NIC configured in a loop back.
+ */
+class WithLoopbackNIC extends Config((site, here, up) => {
+  case NICKey => NICConfig(inBufFlits = 10 * IceNetConsts.ETH_MAX_BYTES / IceNetConsts.NET_IF_BYTES)
+  case BuildTop => (clock: Clock, reset: Bool, p: Parameters) => {
+    val top = Module(LazyModule(new TopWithIceNIC()(p)).module)
+    top.connectNicLoopback()
+    top
+  }
+})
+
+/**
+ * Class to specify top level module with NIC connected to simulated network.
+ */
+class WithSimNetwork extends Config((site, here, up) => {
+  case NICKey => NICConfig(inBufFlits = 10 * IceNetConsts.ETH_MAX_BYTES / IceNetConsts.NET_IF_BYTES)
+  case BuildTop => (clock: Clock, reset: Bool, p: Parameters) => {
+    val top = Module(LazyModule(new TopWithIceNIC()(p)).module)
+    top.connectSimNetwork(clock, reset)
+    top
+  }
+})
+

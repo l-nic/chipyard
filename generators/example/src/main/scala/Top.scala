@@ -9,6 +9,7 @@ import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.util.DontTouch
 
 import testchipip._
+import icenet._
 
 import utilities.{System, SystemModule}
 
@@ -101,3 +102,16 @@ class TopWithInitZero(implicit p: Parameters) extends Top
 class TopWithInitZeroModuleImp(l: TopWithInitZero) extends TopModule(l)
   with HasPeripheryInitZeroModuleImp
 // DOC include end: TopWithInitZero
+
+//---------------------------------------------------------------------------------------------------------
+
+/**
+ * Top level module with IceNIC
+ */
+class TopWithIceNIC(implicit p: Parameters) extends Top
+    with HasPeripheryIceNIC {
+  override lazy val module = new TopWithIceNICModule(this)
+}
+
+class TopWithIceNICModule(l: TopWithIceNIC) extends TopModule(l)
+  with HasPeripheryIceNICModuleImp
