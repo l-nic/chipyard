@@ -146,7 +146,6 @@ class InitZeroRocketConfig extends Config(
  * Config for loopback NIC.
  */
 class LoopbackNICConfig extends Config(
-  new WithTop ++
   new WithLoopbackNIC ++
   new WithBootROM ++
   new freechips.rocketchip.subsystem.WithInclusiveCache ++
@@ -157,7 +156,6 @@ class LoopbackNICConfig extends Config(
  * Config for SimNetwork.
  */
 class SimNetworkConfig extends Config(
-  new WithTop ++
   new WithSimNetwork ++
   new WithBootROM ++
   new freechips.rocketchip.subsystem.WithInclusiveCache ++

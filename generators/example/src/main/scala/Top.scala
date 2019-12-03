@@ -115,3 +115,4 @@ class TopWithIceNIC(implicit p: Parameters) extends Top
 
 class TopWithIceNICModule(l: TopWithIceNIC) extends TopModule(l)
   with HasPeripheryIceNICModuleImp
+
