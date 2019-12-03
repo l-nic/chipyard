@@ -191,7 +191,7 @@ class WithLoopbackNIC extends Config((site, here, up) => {
   case NICKey => NICConfig(inBufFlits = 10 * IceNetConsts.ETH_MAX_BYTES / IceNetConsts.NET_IF_BYTES)
   case BuildTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithIceNIC()(p)).module)
-    top.connectNicLoopback()
+    top.connectNicLoopback(latency = 0)
     top
   }
 })
