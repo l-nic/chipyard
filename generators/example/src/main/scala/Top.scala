@@ -7,6 +7,7 @@ import freechips.rocketchip.system._
 import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.devices.tilelink._
 import freechips.rocketchip.util.DontTouch
+import freechips.rocketchip.tile._
 
 import testchipip._
 import icenet._
@@ -106,13 +107,54 @@ class TopWithInitZeroModuleImp(l: TopWithInitZero) extends TopModule(l)
 //---------------------------------------------------------------------------------------------------------
 
 /**
+ * Rocket only top level system
+ */
+class TopRocketOnly(implicit p: Parameters) extends RocketSubsystem
+    with HasNoDebug
+    with HasPeripherySerial
+    with HasHierarchicalBusTopology
+    with HasAsyncExtInterrupts
+    with CanHaveMasterAXI4MemPort
+    with CanHaveMasterAXI4MMIOPort
+    with CanHaveSlaveAXI4Port
+    with HasPeripheryBootROM {
+  override lazy val module = new TopRocketOnlyModuleImp(this)
+}
+
+class TopRocketOnlyModuleImp[+L <: TopRocketOnly](l: L) extends RocketSubsystemModuleImp(l)
+  with HasNoDebugModuleImp
+  with HasPeripherySerialModuleImp
+  with HasRTCModuleImp
+  with HasExtInterruptsModuleImp
+  with CanHaveMasterAXI4MemPortModuleImp
+  with CanHaveMasterAXI4MMIOPortModuleImp
+  with CanHaveSlaveAXI4PortModuleImp
+  with HasPeripheryBootROMModuleImp
+  with DontTouch
+
+//---------------------------------------------------------------------------------------------------------
+
+/**
  * Top level module with IceNIC
  */
-class TopWithIceNIC(implicit p: Parameters) extends Top
+class TopWithIceNIC(implicit p: Parameters) extends TopRocketOnly
     with HasPeripheryIceNIC {
   override lazy val module = new TopWithIceNICModule(this)
 }
 
-class TopWithIceNICModule(l: TopWithIceNIC) extends TopModule(l)
+class TopWithIceNICModule(l: TopWithIceNIC) extends TopRocketOnlyModuleImp(l)
   with HasPeripheryIceNICModuleImp
+
+//---------------------------------------------------------------------------------------------------------
+
+/**
+ * Top level module with LNIC
+ */
+class TopWithLNIC(implicit p: Parameters) extends TopRocketOnly
+    with HasLNIC {
+  override lazy val module = new TopWithLNICModule(this)
+}
+
+class TopWithLNICModule(l: TopWithLNIC) extends TopRocketOnlyModuleImp(l)
+  with HasLNICModuleImp
 

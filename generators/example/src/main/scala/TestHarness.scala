@@ -14,11 +14,12 @@ import freechips.rocketchip.devices.debug.{Debug}
 // BOOM and/or Rocket Test Harness
 // -------------------------------
 
+case object BuildRocketTop extends Field[(Clock, Bool, Parameters) => TopRocketOnlyModuleImp[TopRocketOnly]]
 case object BuildTop extends Field[(Clock, Bool, Parameters) => TopModule[Top]]
 case object BuildTopWithDTM extends Field[(Clock, Bool, Parameters) => TopWithDTMModule[TopWithDTM]]
 
 /**
- * Test harness using TSI to bringup the system
+ * Test harness using TSI to bringup the Rocket system
  */
 class TestHarness(implicit val p: Parameters) extends Module {
   val io = IO(new Bundle {
@@ -27,6 +28,40 @@ class TestHarness(implicit val p: Parameters) extends Module {
 
   // force Chisel to rename module
   override def desiredName = "TestHarness"
+
+  val dut = p(BuildRocketTop)(clock, reset.toBool, p)
+
+  dut.debug := DontCare
+  dut.connectSimAXIMem()
+  dut.connectSimAXIMMIO()
+  dut.dontTouchPorts()
+  dut.tieOffInterrupts()
+  dut.l2_frontend_bus_axi4.foreach(axi => {
+    axi.tieoff()
+    experimental.DataMirror.directionOf(axi.ar.ready) match {
+      case core.ActualDirection.Input =>
+        axi.r.bits := DontCare
+        axi.b.bits := DontCare
+      case core.ActualDirection.Output =>
+        axi.aw.bits := DontCare
+        axi.ar.bits := DontCare
+        axi.w.bits := DontCare
+    }
+  })
+
+  io.success := dut.connectSimSerial()
+}
+
+/**
+ * Test harness using TSI to bringup the system
+ */
+class TestHarnessRocketBoom(implicit val p: Parameters) extends Module {
+  val io = IO(new Bundle {
+    val success = Output(Bool())
+  })
+
+  // force Chisel to rename module
+  override def desiredName = "TestHarnessRocketBoom"
 
   val dut = p(BuildTop)(clock, reset.toBool, p)
 

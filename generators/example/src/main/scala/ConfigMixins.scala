@@ -7,7 +7,7 @@ import freechips.rocketchip.config.{Field, Parameters, Config}
 import freechips.rocketchip.subsystem.{RocketTilesKey, WithRoccExample, WithNMemoryChannels, WithNBigCores, WithRV32}
 import freechips.rocketchip.diplomacy.{LazyModule, ValName}
 import freechips.rocketchip.devices.tilelink.BootROMParams
-import freechips.rocketchip.tile.{XLen, BuildRoCC, TileKey, LazyRoCC}
+import freechips.rocketchip.tile.{XLen, BuildRoCC, TileKey, LazyRoCC, LNICKey, LNICParams, LNICConsts}
 
 import boom.common.{BoomTilesKey}
 
@@ -185,11 +185,11 @@ class WithInitZeroTop extends Config((site, here, up) => {
 // DOC include end: WithInitZero
 
 /**
- * Class to specify top level module with NIC configured in a loop back.
+ * Class to specify top level module with IceNIC configured in a loop back.
  */
-class WithLoopbackNIC extends Config((site, here, up) => {
+class WithLoopbackIceNIC extends Config((site, here, up) => {
   case NICKey => NICConfig(inBufFlits = 10 * IceNetConsts.ETH_MAX_BYTES / IceNetConsts.NET_IF_BYTES)
-  case BuildTop => (clock: Clock, reset: Bool, p: Parameters) => {
+  case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithIceNIC()(p)).module)
     top.connectNicLoopback(latency = 0)
     top
@@ -201,9 +201,26 @@ class WithLoopbackNIC extends Config((site, here, up) => {
  */
 class WithSimNetwork extends Config((site, here, up) => {
   case NICKey => NICConfig(inBufFlits = 10 * IceNetConsts.ETH_MAX_BYTES / IceNetConsts.NET_IF_BYTES)
-  case BuildTop => (clock: Clock, reset: Bool, p: Parameters) => {
+  case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithIceNIC()(p)).module)
     top.connectSimNetwork(clock, reset)
+    top
+  }
+})
+
+
+/**
+ * Class to specify top level module with L-NIC configured in a loop back.
+ */
+class WithLoopbackLNIC extends Config((site, here, up) => {
+  case LNICKey => LNICParams(
+    usingLNIC = true,
+    inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
+    outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
+  )
+  case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
+    val top = Module(LazyModule(new TopWithLNIC()(p)).module)
+    top.connectNicLoopback(latency = 0)
     top
   }
 })
