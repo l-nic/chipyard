@@ -44,8 +44,8 @@ _start:
   li  x27,0
   li  x28,0
   li  x29,0
-  li  x30,0
-  li  x31,0
+#  li  x30,0
+#  li  x31,0
 
   # enable FPU and accelerator if present
   li t0, MSTATUS_FS | MSTATUS_XS
@@ -168,8 +168,8 @@ trap_entry:
   SREG x27, 27*REGBYTES(sp)
   SREG x28, 28*REGBYTES(sp)
   SREG x29, 29*REGBYTES(sp)
-  SREG x30, 30*REGBYTES(sp)
-  SREG x31, 31*REGBYTES(sp)
+#  SREG x30, 30*REGBYTES(sp)
+#  SREG x31, 31*REGBYTES(sp)
 
   csrr a0, mcause
   csrr a1, mepc
@@ -210,8 +210,8 @@ trap_entry:
   LREG x27, 27*REGBYTES(sp)
   LREG x28, 28*REGBYTES(sp)
   LREG x29, 29*REGBYTES(sp)
-  LREG x30, 30*REGBYTES(sp)
-  LREG x31, 31*REGBYTES(sp)
+#  LREG x30, 30*REGBYTES(sp)
+#  LREG x31, 31*REGBYTES(sp)
 
   addi sp, sp, 272
   mret

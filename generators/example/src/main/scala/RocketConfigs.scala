@@ -163,10 +163,30 @@ class SimNetworkConfig extends Config(
   new freechips.rocketchip.system.BaseConfig)
 
 /**
+ * Config for PktGen IceNIC.
+ */
+class PktGenIceNICConfig extends Config(
+  new WithPktGenIceNIC ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+/**
  * Config for loopback LNIC.
  */
 class LoopbackLNICConfig extends Config(
   new WithLoopbackLNIC ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+/**
+ * Config for PktGen LNIC.
+ */
+class PktGenLNICConfig extends Config(
+  new WithPktGenLNIC ++
   new WithBootROM ++
   new freechips.rocketchip.subsystem.WithInclusiveCache ++
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
