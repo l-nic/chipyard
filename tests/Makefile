@@ -3,7 +3,14 @@ OBJDUMP=riscv64-unknown-elf-objdump
 CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
 
-PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd simple-nic-loopback simple-cpu-loopback simple-lnic-loopback-gpr simple-lnic-cpu-loopback-gpr
+PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
+PROGRAMS += simple-nic-loopback
+PROGRAMS += simple-cpu-loopback
+PROGRAMS += simple-lnic-loopback-gpr
+PROGRAMS += simple-lnic-loopback-csr
+PROGRAMS += simple-lnic-cpu-loopback-gpr
+PROGRAMS += simple-lnic-cpu-loopback-csr
+
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

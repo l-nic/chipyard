@@ -223,9 +223,10 @@ class WithPktGenIceNIC extends Config((site, here, up) => {
 /**
  * Class to specify top level module with L-NIC configured in a loop back.
  */
-class WithLoopbackLNIC extends Config((site, here, up) => {
+class WithLoopbackLNICCSR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
+    usingGPRs = false,
     inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
     outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
   )
@@ -240,15 +241,16 @@ class WithLoopbackLNIC extends Config((site, here, up) => {
 /**
  * Class to specify top level module with L-NIC connected to pkt generator.
  */
-class WithPktGenLNIC extends Config((site, here, up) => {
+class WithPktGenLNICCSR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
+    usingGPRs = false,
     inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
     outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
   )
   case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithLNIC()(p)).module)
-    top.connectPktGen()
+    top.connectPktGen(pktLen = 64)
     top
   }
 })
