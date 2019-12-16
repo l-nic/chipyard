@@ -21,9 +21,9 @@ int main(void)
 	asm ("li x31, 3");
 	asm ("li x31, 4");
 	asm ("li x31, 5");
-	asm ("li x31, 127");
-	asm ("li x31, 128");
-	asm ("li x31, 129");
+	asm ("li x31, 6");
+	asm ("li x31, 7");
+	asm ("li x31, 8");
 	// receive pkt
 	while (read_csr(0x052) == 0); // poll CSR_LMSGSRDY
 	asm ("mv t0, x30"); // read msg len

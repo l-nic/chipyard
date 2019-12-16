@@ -221,12 +221,14 @@ class WithPktGenIceNIC extends Config((site, here, up) => {
 })
 
 /**
- * Class to specify top level module with L-NIC configured in a loop back.
+ * Class to specify top level module with L-NIC (CSR version) configured in a loop back.
  */
 class WithLoopbackLNICCSR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
     usingGPRs = false,
+    rxQueueFlits = 16,
+    txQueueFlits = 16,
     inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
     outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
   )
@@ -237,14 +239,53 @@ class WithLoopbackLNICCSR extends Config((site, here, up) => {
   }
 })
 
+/**
+ * Class to specify top level module with L-NIC (GPR version) configured in a loop back.
+ */
+class WithLoopbackLNICGPR extends Config((site, here, up) => {
+  case LNICKey => LNICParams(
+    usingLNIC = true,
+    usingGPRs = true,
+    rxQueueFlits = 16,
+    txQueueFlits = 16,
+    inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
+    outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
+  )
+  case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
+    val top = Module(LazyModule(new TopWithLNIC()(p)).module)
+    top.connectNicLoopback(latency = 0)
+    top
+  }
+})
 
 /**
- * Class to specify top level module with L-NIC connected to pkt generator.
+ * Class to specify top level module with L-NIC (CSR version) connected to pkt generator.
  */
 class WithPktGenLNICCSR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
     usingGPRs = false,
+    rxQueueFlits = 16,
+    txQueueFlits = 16,
+    inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
+    outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
+  )
+  case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
+    val top = Module(LazyModule(new TopWithLNIC()(p)).module)
+    top.connectPktGen(pktLen = 64)
+    top
+  }
+})
+
+/**
+ * Class to specify top level module with L-NIC (GPR version) connected to pkt generator.
+ */
+class WithPktGenLNICGPR extends Config((site, here, up) => {
+  case LNICKey => LNICParams(
+    usingLNIC = true,
+    usingGPRs = true,
+    rxQueueFlits = 16,
+    txQueueFlits = 16,
     inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
     outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
   )

@@ -173,7 +173,7 @@ class PktGenIceNICConfig extends Config(
   new freechips.rocketchip.system.BaseConfig)
 
 /**
- * Config for loopback LNIC.
+ * Config for loopback LNIC (CSR version).
  */
 class LoopbackLNICCSRConfig extends Config(
   new WithLoopbackLNICCSR ++
@@ -183,10 +183,30 @@ class LoopbackLNICCSRConfig extends Config(
   new freechips.rocketchip.system.BaseConfig)
 
 /**
- * Config for PktGen LNIC.
+ * Config for loopback LNIC (GPR version).
+ */
+class LoopbackLNICGPRConfig extends Config(
+  new WithLoopbackLNICGPR ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+/**
+ * Config for PktGen LNIC (CSR version).
  */
 class PktGenLNICCSRConfig extends Config(
   new WithPktGenLNICCSR ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+/**
+ * Config for PktGen LNIC (GPR version).
+ */
+class PktGenLNICGPRConfig extends Config(
+  new WithPktGenLNICGPR ++
   new WithBootROM ++
   new freechips.rocketchip.subsystem.WithInclusiveCache ++
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++

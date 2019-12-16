@@ -20,10 +20,14 @@ int main(void)
 		// poll lmsgsrdy CSR until non-zero
 		while (read_csr(0x052) == 0);
 		// add one to head word and stuff into tail (x4)
+		asm ("mv x31, x30"); // copy over msg length
 		asm ("addi x31, x30, 1");
 		asm ("addi x31, x30, 1");
 		asm ("addi x31, x30, 1");
-		write_csr(0x058, 1); // write lwrend
+		asm ("addi x31, x30, 1");
+		asm ("addi x31, x30, 1");
+		asm ("addi x31, x30, 1");
+		asm ("addi x31, x30, 1");
 		asm ("addi x31, x30, 1");
 		count += 1;
 	}
