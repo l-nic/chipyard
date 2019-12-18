@@ -10,6 +10,7 @@ PROGRAMS += simple-lnic-loopback-gpr
 PROGRAMS += simple-lnic-loopback-csr
 PROGRAMS += simple-lnic-cpu-loopback-gpr
 PROGRAMS += simple-lnic-cpu-loopback-csr
+PROGRAMS += lnic-othello-gpr
 
 
 default: $(addsuffix .riscv,$(PROGRAMS))
