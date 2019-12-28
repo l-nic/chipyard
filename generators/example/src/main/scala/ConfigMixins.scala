@@ -226,11 +226,7 @@ class WithPktGenIceNIC extends Config((site, here, up) => {
 class WithLoopbackLNICCSR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
-    usingGPRs = false,
-    rxQueueFlits = 16,
-    txQueueFlits = 16,
-    inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
-    outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
+    usingGPRs = false
   )
   case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithLNIC()(p)).module)
@@ -245,11 +241,7 @@ class WithLoopbackLNICCSR extends Config((site, here, up) => {
 class WithLoopbackLNICGPR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
-    usingGPRs = true,
-    rxQueueFlits = 16,
-    txQueueFlits = 16,
-    inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
-    outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
+    usingGPRs = true
   )
   case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithLNIC()(p)).module)
@@ -264,11 +256,7 @@ class WithLoopbackLNICGPR extends Config((site, here, up) => {
 class WithPktGenLNICCSR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
-    usingGPRs = false,
-    rxQueueFlits = 16,
-    txQueueFlits = 16,
-    inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
-    outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
+    usingGPRs = false
   )
   case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithLNIC()(p)).module)
@@ -283,11 +271,7 @@ class WithPktGenLNICCSR extends Config((site, here, up) => {
 class WithPktGenLNICGPR extends Config((site, here, up) => {
   case LNICKey => LNICParams(
     usingLNIC = true,
-    usingGPRs = true,
-    rxQueueFlits = 16,
-    txQueueFlits = 16,
-    inBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES,
-    outBufFlits = 10 * LNICConsts.ETH_MAX_BYTES / LNICConsts.NET_IF_BYTES
+    usingGPRs = true
   )
   case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithLNIC()(p)).module)
