@@ -199,7 +199,7 @@ class WithLoopbackIceNIC extends Config((site, here, up) => {
 /**
  * Class to specify top level module with NIC connected to simulated network.
  */
-class WithSimNetwork extends Config((site, here, up) => {
+class WithSimNetworkIceNIC extends Config((site, here, up) => {
   case NICKey => NICConfig(inBufFlits = 10 * IceNetConsts.ETH_MAX_BYTES / IceNetConsts.NET_IF_BYTES)
   case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithIceNIC()(p)).module)
@@ -246,6 +246,36 @@ class WithLoopbackLNICGPR extends Config((site, here, up) => {
   case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
     val top = Module(LazyModule(new TopWithLNIC()(p)).module)
     top.connectNicLoopback(latency = 0)
+    top
+  }
+})
+
+/**
+ * Class to specify top level module with L-NIC (CSR version) connected to simulated network.
+ */
+class WithSimNetworkLNICCSR extends Config((site, here, up) => {
+  case LNICKey => LNICParams(
+    usingLNIC = true,
+    usingGPRs = false
+  )
+  case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
+    val top = Module(LazyModule(new TopWithLNIC()(p)).module)
+    top.connectSimNetwork(clock, reset)
+    top
+  }
+})
+
+/**
+ * Class to specify top level module with L-NIC (GPR version) connected to simulated network.
+ */
+class WithSimNetworkLNICGPR extends Config((site, here, up) => {
+  case LNICKey => LNICParams(
+    usingLNIC = true,
+    usingGPRs = true
+  )
+  case BuildRocketTop => (clock: Clock, reset: Bool, p: Parameters) => {
+    val top = Module(LazyModule(new TopWithLNIC()(p)).module)
+    top.connectSimNetwork(clock, reset)
     top
   }
 })

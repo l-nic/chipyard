@@ -153,10 +153,10 @@ class LoopbackIceNICConfig extends Config(
   new freechips.rocketchip.system.BaseConfig)
 
 /**
- * Config for SimNetwork.
+ * Config for SimNetwork IceNIC.
  */
-class SimNetworkConfig extends Config(
-  new WithSimNetwork ++
+class SimNetworkIceNICConfig extends Config(
+  new WithSimNetworkIceNIC ++
   new WithBootROM ++
   new freechips.rocketchip.subsystem.WithInclusiveCache ++
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
@@ -187,6 +187,26 @@ class LoopbackLNICCSRConfig extends Config(
  */
 class LoopbackLNICGPRConfig extends Config(
   new WithLoopbackLNICGPR ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+/**
+ * Config for SimNetwork LNIC (CSR version).
+ */
+class SimNetworkLNICCSRConfig extends Config(
+  new WithSimNetworkLNICCSR ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+/**
+ * Config for SimNetwork LNIC (GPR version).
+ */
+class SimNetworkLNICGPRConfig extends Config(
+  new WithSimNetworkLNICGPR ++
   new WithBootROM ++
   new freechips.rocketchip.subsystem.WithInclusiveCache ++
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
