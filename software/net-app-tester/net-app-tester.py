@@ -16,21 +16,64 @@ MY_IP = "10.1.2.3"
 DST_CONTEXT = 0
 MY_CONTEXT = 1
 
+def lnic_req(msg_len):
+    return Ether(dst=NIC_MAC, src=MY_MAC) / \
+            IP(src=MY_IP, dst=NIC_IP) / \
+            LNIC(src=MY_CONTEXT, dst=DST_CONTEXT, msg_len=msg_len)
+
 # Test to check basic loopback functionality
 class SimpleLoopback(unittest.TestCase):
-
     def test_loopback(self):
         msg_len = 64 # bytes
-        req = Ether(dst=NIC_MAC, src=MY_MAC) / \
-                IP(src=MY_IP, dst=NIC_IP) / \
-                LNIC(src=MY_CONTEXT, dst=DST_CONTEXT, msg_len=msg_len) / ('\x00'*msg_len)
+        payload = Raw('\x00'*msg_len)
+        req = lnic_req(msg_len) / payload
         print "---------- Request -------------"
         req.show2()
         # send request / receive response
         resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
-        self.assertTrue(resp is not None)
+        self.assertIsNotNone(resp)
         print "---------- Response -------------"
         resp.show2()
+        self.assertEqual(resp[LNIC].payload, payload)
 
-if __name__ == '__main__':
-    unittest.main()
+class NNInference(unittest.TestCase):
+    MSG_LEN = 16 # bytes
+
+    class Weight(Packet):
+        name = "Weight"
+        fields_desc = [
+            LongField("index", 0),
+            LongField("weight", 0)
+        ]
+
+    class Data(Packet):
+        name = "Data"
+        fields_desc = [
+            LongField("index", 0),
+            LongField("data", 0)
+        ]
+
+    @staticmethod
+    def weight_msg(index, weight):
+        return lnic_req(NNInference.MSG_LEN) / NNInference.Weight(index=index, weight=weight)
+
+    @staticmethod
+    def data_msg(index, data):
+        return lnic_req(NNInference.MSG_LEN) / NNInference.Data(index=index, data=data)
+
+    def test_basic(self):
+        # send in weights
+        sendp(NNInference.weight_msg(0, 1), iface=TEST_IFACE)
+        sendp(NNInference.weight_msg(1, 1), iface=TEST_IFACE)
+        sendp(NNInference.weight_msg(2, 1), iface=TEST_IFACE)
+        # send in data / receive response
+        sendp(NNInference.data_msg(0, 1), iface=TEST_IFACE)
+        sendp(NNInference.data_msg(1, 1), iface=TEST_IFACE)
+        resp = srp1(NNInference.data_msg(2, 1), iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        # check response
+        self.assertIsNotNone(resp)
+        print '------------- Response -------------'
+        resp.show2()
+        self.assertEqual(resp[LNIC].payload, Raw(str(NNInference.Data(index=0, data=3))))
+
+
