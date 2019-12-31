@@ -11,6 +11,9 @@ int main(void)
 	int num_words;
 	int i;
 
+	// send initial boot msg
+	lnic_boot();
+
 	while (1) {
 		// wait for a pkt to arrive
 		lnic_wait();
