@@ -2,37 +2,32 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "encoding.h"
-
-// LNIC CSRs
-#define CSR_LMSGSRDY 0x052
-#define CSR_LWREND 0x058
-
-#define NUM_TESTS 4
-#define PKT_LEN 8
+#include "lnic.h"
 
 int main(void)
 {
+	uint64_t app_hdr;
+	uint16_t msg_len;
+	int num_words;
+	int i;
 
-	int count = 0;
-
-  	while (count < NUM_TESTS) {
-		// poll lmsgsrdy CSR until non-zero
-		while (read_csr(0x052) == 0);
-		// add one to head word and stuff into tail (x4)
-		asm ("mv x31, x30"); // copy over msg length
-		asm ("addi x31, x30, 1");
-		asm ("addi x31, x30, 1");
-		asm ("addi x31, x30, 1");
-		asm ("addi x31, x30, 1");
-		asm ("addi x31, x30, 1");
-		asm ("addi x31, x30, 1");
-		asm ("addi x31, x30, 1");
-		asm ("addi x31, x30, 1");
-		count += 1;
+	while (1) {
+		// wait for a pkt to arrive
+		lnic_wait();
+		// read request application hdr
+		app_hdr = lnic_read();
+		// write response application hdr
+		lnic_write_r(app_hdr);
+		// extract msg_len
+		msg_len = (uint16_t)app_hdr;
+//		printf("Received msg of length: %hu bytes", msg_len);
+		num_words = msg_len/LNIC_WORD_SIZE;
+		if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
+		// copy msg words back into network
+		for (i = 0; i < num_words; i++) {
+			lnic_copy();
+		}
 	}
-
-	printf("Test Complete\n");
 	return 0;
 }
 
