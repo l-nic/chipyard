@@ -1,9 +1,9 @@
-#!/usr/bin/env python
 
 import unittest
 from scapy.all import *
 from LNIC_headers import LNIC
 import NN_headers as NN
+import Othello_headers as Othello
 
 TEST_IFACE = "tap0"
 TIMEOUT_SEC = 2 # seconds
@@ -38,17 +38,20 @@ class SimpleLoopback(unittest.TestCase):
         self.assertEqual(resp[LNIC].payload, payload)
 
 class NNInference(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, NN.NN)
+
     @staticmethod
     def config_msg(num_edges):
-        return lnic_req(NN.CONFIG_LEN) / NN.NN(type=NN.CONFIG_TYPE) / NN.Config(num_edges=num_edges)
+        return lnic_req(NN.CONFIG_LEN) / NN.NN() / NN.Config(num_edges=num_edges)
 
     @staticmethod
     def weight_msg(index, weight):
-        return lnic_req(NN.WEIGHT_LEN) / NN.NN(type=NN.WEIGHT_TYPE) / NN.Weight(index=index, weight=weight)
+        return lnic_req(NN.WEIGHT_LEN) / NN.NN() / NN.Weight(index=index, weight=weight)
 
     @staticmethod
     def data_msg(index, data):
-        return lnic_req(NN.DATA_LEN) / NN.NN(type=NN.DATA_TYPE) / NN.Data(index=index, data=data)
+        return lnic_req(NN.DATA_LEN) / NN.NN() / NN.Data(index=index, data=data)
 
     def test_basic(self):
         # configure nanoserver
@@ -59,12 +62,30 @@ class NNInference(unittest.TestCase):
         sendp(NNInference.weight_msg(2, 1), iface=TEST_IFACE)
         # send in data / receive response
         sendp(NNInference.data_msg(0, 1), iface=TEST_IFACE)
-        sendp(NNInference.data_msg(1, 1), iface=TEST_IFACE)
-        resp = srp1(NNInference.data_msg(2, 1), iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        sendp(NNInference.data_msg(1, 2), iface=TEST_IFACE)
+        resp = srp1(NNInference.data_msg(2, 3), iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         # check response
         self.assertIsNotNone(resp)
         print '------------- Response -------------'
         resp.show2()
-        self.assertEqual(resp[LNIC].payload, NN.NN(type=NN.DATA_TYPE) / NN.Data(index=0, data=3))
+        self.assertEqual(resp[LNIC].payload, NN.NN() / NN.Data(index=0, data=6))
 
+class OthelloTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, Othello.Othello)
+
+    @staticmethod
+    def map_msg():
+        return lnic_req(Othello.MAP_LEN) / Othello.Othello() / Othello.Map()
+
+    @staticmethod
+    def reduce_msg():
+        return lnic_req(Othello.REDUCE_LEN) / Othello.Othello() / Othello.Reduce()
+
+    def test_basic(self):
+        # send in initial map msg
+        # receive outgoing map messages
+        # send in reduce messages
+        # receive final reduce msg
+        self.assertTrue(True)
 

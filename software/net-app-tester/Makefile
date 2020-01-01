@@ -7,3 +7,6 @@ simple_loopback:
 nn_inference:
 	python -m unittest net-app-tester.NNInference
 
+othello:
+	python -m unittest net-app-tester.OthelloTest
+

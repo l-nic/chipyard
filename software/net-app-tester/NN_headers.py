@@ -1,6 +1,5 @@
 
 from scapy.all import *
-from LNIC_headers import LNIC
 
 CONFIG_TYPE = 0
 WEIGHT_TYPE = 1
@@ -36,7 +35,6 @@ class Data(Packet):
         LongField("data", 0)
     ]
 
-bind_layers(LNIC, NN)
 bind_layers(NN, Config, type=CONFIG_TYPE)
 bind_layers(NN, Weight, type=WEIGHT_TYPE)
 bind_layers(NN, Data,   type=DATA_TYPE)

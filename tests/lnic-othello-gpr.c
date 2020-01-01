@@ -55,8 +55,8 @@
 #define LREAD "x30"
 #define LWRITE "x31"
 
-#define MAP_TYPE 1
-#define REDUCE_TYPE 2
+#define MAP_TYPE 0
+#define REDUCE_TYPE 1
 #define REDUCE_TYPE_STR "2"
 
 // msg lengths in bytes
