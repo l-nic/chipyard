@@ -3,6 +3,7 @@
 import unittest
 from scapy.all import *
 from LNIC_headers import LNIC
+import NN_headers as NN
 
 TEST_IFACE = "tap0"
 TIMEOUT_SEC = 2 # seconds
@@ -37,31 +38,21 @@ class SimpleLoopback(unittest.TestCase):
         self.assertEqual(resp[LNIC].payload, payload)
 
 class NNInference(unittest.TestCase):
-    MSG_LEN = 16 # bytes
-
-    class Weight(Packet):
-        name = "Weight"
-        fields_desc = [
-            LongField("index", 0),
-            LongField("weight", 0)
-        ]
-
-    class Data(Packet):
-        name = "Data"
-        fields_desc = [
-            LongField("index", 0),
-            LongField("data", 0)
-        ]
+    @staticmethod
+    def config_msg(num_edges):
+        return lnic_req(NN.CONFIG_LEN) / NN.NN(type=NN.CONFIG_TYPE) / NN.Config(num_edges=num_edges)
 
     @staticmethod
     def weight_msg(index, weight):
-        return lnic_req(NNInference.MSG_LEN) / NNInference.Weight(index=index, weight=weight)
+        return lnic_req(NN.WEIGHT_LEN) / NN.NN(type=NN.WEIGHT_TYPE) / NN.Weight(index=index, weight=weight)
 
     @staticmethod
     def data_msg(index, data):
-        return lnic_req(NNInference.MSG_LEN) / NNInference.Data(index=index, data=data)
+        return lnic_req(NN.DATA_LEN) / NN.NN(type=NN.DATA_TYPE) / NN.Data(index=index, data=data)
 
     def test_basic(self):
+        # configure nanoserver
+        sendp(NNInference.config_msg(3), iface=TEST_IFACE)
         # send in weights
         sendp(NNInference.weight_msg(0, 1), iface=TEST_IFACE)
         sendp(NNInference.weight_msg(1, 1), iface=TEST_IFACE)
@@ -74,6 +65,6 @@ class NNInference(unittest.TestCase):
         self.assertIsNotNone(resp)
         print '------------- Response -------------'
         resp.show2()
-        self.assertEqual(resp[LNIC].payload, Raw(str(NNInference.Data(index=0, data=3))))
+        self.assertEqual(resp[LNIC].payload, NN.NN(type=NN.DATA_TYPE) / NN.Data(index=0, data=3))
 
 
