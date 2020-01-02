@@ -1,90 +1,10 @@
-#include "mmio.h"
-#include "nic.h"
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-#define ETH_MAX_WORDS 190
-#define NET_IP_ALIGN 2
-#define ETH_HEADER_SIZE 14
-#define MAC_ADDR_SIZE 6
-#define IP_ADDR_SIZE 4
-
-#define IPV4_ETHTYPE 0x0800
-#define ARP_ETHTYPE 0x0806
-#define ICMP_PROT 1
-#define ECHO_REPLY 0
-#define ECHO_REQUEST 8
-#define ARP_REQUEST 1
-#define ARP_REPLY 2
-#define HTYPE_ETH 1
-
-static inline uint16_t ntohs(uint16_t nint)
-{
-	return ((nint & 0xff) << 8) | ((nint >> 8) & 0xff);
-}
-
-static inline uint16_t htons(uint16_t nint)
-{
-	return ntohs(nint);
-}
-
-struct eth_header {
-	uint8_t padding[NET_IP_ALIGN];
-	uint8_t dst_mac[MAC_ADDR_SIZE];
-	uint8_t src_mac[MAC_ADDR_SIZE];
-	uint16_t ethtype;
-};
-
-struct arp_header {
-	uint16_t htype;
-	uint16_t ptype;
-	uint8_t hlen;
-	uint8_t plen;
-	uint16_t oper;
-	uint8_t sha[MAC_ADDR_SIZE];
-	uint8_t spa[IP_ADDR_SIZE];
-	uint8_t tha[MAC_ADDR_SIZE];
-	uint8_t tpa[IP_ADDR_SIZE];
-};
-
-struct ipv4_header {
-	uint8_t ver_ihl;
-	uint8_t dscp_ecn;
-	uint16_t length;
-	uint16_t ident;
-	uint16_t flags_frag_off;
-	uint8_t ttl;
-	uint8_t prot;
-	uint16_t cksum;
-	uint32_t src_addr;
-	uint32_t dst_addr;
-};
-
-struct icmp_header {
-	uint8_t type;
-	uint8_t code;
-	uint16_t cksum;
-	uint32_t rest;
-};
-
-static int checksum(uint16_t *data, int len)
-{
-	int i;
-	uint32_t sum = 0;
-
-	for (i = 0; i < len; i++)
-		sum += ntohs(data[i]);
-
-	while ((sum >> 16) != 0)
-		sum = (sum & 0xffff) + (sum >> 16);
-
-	sum = ~sum & 0xffff;
-
-	return sum;
-}
+#include "mmio.h"
+#include "nic.h"
 
 #define ceil_div(n, d) (((n) - 1) / (d) + 1)
 
@@ -138,7 +58,7 @@ static int process_arp(void *buf, uint8_t *mac)
 	memcpy(arp->tpa, arp->spa, IP_ADDR_SIZE);
 	memcpy(arp->spa, tmp_addr, IP_ADDR_SIZE);
 
-	size = ceil_div(size + NET_IP_ALIGN, 8) * 8;
+	size = ceil_div(size, 8) * 8;
 	nic_send(buf, size);
 
 	return 0;
@@ -161,8 +81,8 @@ static int process_icmp(void *buf, uint8_t *mac)
 		return -1;
 	}
 
-	if (ipv4->prot != ICMP_PROT) {
-		printf("Wrong IP protocol %d\n", ipv4->prot);
+	if (ipv4->proto != ICMP_PROTO) {
+		printf("Wrong IP protocol %d\n", ipv4->proto);
 		return -1;
 	}
 
@@ -204,7 +124,7 @@ static int process_icmp(void *buf, uint8_t *mac)
 	icmp->cksum = htons(checksum((uint16_t *) icmp, icmp_size >> 1));
 	size = ntohs(ipv4->length) + ETH_HEADER_SIZE;
 
-	size = ceil_div(size + NET_IP_ALIGN, 8) * 8;
+	size = ceil_div(size, 8) * 8;
 	nic_send(buf, size);
 
 	return 0;

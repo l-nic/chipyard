@@ -58,3 +58,95 @@ static inline uint64_t nic_macaddr(void)
 {
 	return reg_read64(SIMPLENIC_MACADDR);
 }
+
+#define ETH_MAX_WORDS 190
+#define ETH_MAX_BYTES 1520
+#define ETH_HEADER_SIZE 14
+#define MAC_ADDR_SIZE 6
+#define IP_ADDR_SIZE 4
+
+#define IPV4_ETHTYPE 0x0800
+#define ARP_ETHTYPE 0x0806
+#define ICMP_PROTO 1
+#define LNIC_PROTO 0x99
+#define ECHO_REPLY 0
+#define ECHO_REQUEST 8
+#define ARP_REQUEST 1
+#define ARP_REPLY 2
+#define HTYPE_ETH 1
+
+#define ceil_div(n, d) (((n) - 1) / (d) + 1)
+
+static inline uint16_t ntohs(uint16_t nint)
+{
+        return ((nint & 0xff) << 8) | ((nint >> 8) & 0xff);
+}
+
+static inline uint16_t htons(uint16_t nint)
+{
+        return ntohs(nint);
+}
+
+struct eth_header {
+        uint8_t dst_mac[MAC_ADDR_SIZE];
+        uint8_t src_mac[MAC_ADDR_SIZE];
+        uint16_t ethtype;
+};
+
+struct arp_header {
+        uint16_t htype;
+        uint16_t ptype;
+        uint8_t hlen;
+        uint8_t plen;
+        uint16_t oper;
+        uint8_t sha[MAC_ADDR_SIZE];
+        uint8_t spa[IP_ADDR_SIZE];
+        uint8_t tha[MAC_ADDR_SIZE];
+        uint8_t tpa[IP_ADDR_SIZE];
+};
+
+struct ipv4_header {
+        uint8_t ver_ihl;
+        uint8_t dscp_ecn;
+        uint16_t length;
+        uint16_t ident;
+        uint16_t flags_frag_off;
+        uint8_t ttl;
+        uint8_t proto;
+        uint16_t cksum;
+        uint32_t src_addr;
+        uint32_t dst_addr;
+};
+
+struct icmp_header {
+        uint8_t type;
+        uint8_t code;
+        uint16_t cksum;
+        uint32_t rest;
+};
+
+struct lnic_header {
+	uint16_t src;
+	uint16_t dst;
+	uint16_t msg_id;
+	uint16_t msg_len;
+	uint32_t padding;
+};
+
+static int checksum(uint16_t *data, int len)
+{
+        int i;
+        uint32_t sum = 0;
+
+        for (i = 0; i < len; i++)
+                sum += ntohs(data[i]);
+
+        while ((sum >> 16) != 0)
+                sum = (sum & 0xffff) + (sum >> 16);
+
+        sum = ~sum & 0xffff;
+
+        return sum;
+}
+
+

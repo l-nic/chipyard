@@ -10,6 +10,7 @@ PROGRAMS += simple-lnic-loopback-gpr
 PROGRAMS += simple-lnic-loopback-csr
 PROGRAMS += simple-lnic-cpu-loopback-gpr
 PROGRAMS += simple-lnic-cpu-loopback-csr
+PROGRAMS += simple-icenic-cpu-loopback
 PROGRAMS += lnic-othello-gpr
 PROGRAMS += lnic-nn-inference-gpr
 
