@@ -28,12 +28,12 @@ class SimpleLoopback(unittest.TestCase):
         msg_len = 64 # bytes
         payload = Raw('\x00'*msg_len)
         req = lnic_req(msg_len) / payload
-        print "---------- Request -------------"
+        print "---------- Request ({} B) -------------".format(len(req))
         req.show2()
         # send request / receive response
         resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         self.assertIsNotNone(resp)
-        print "---------- Response -------------"
+        print "---------- Response ({} B) -------------".format(len(resp))
         resp.show2()
         self.assertEqual(resp[LNIC].payload, payload)
 

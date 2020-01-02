@@ -6,28 +6,24 @@
 #include "nic.h"
 #include "encoding.h"
 
-#define NUM_TESTS 10
-#define PKT_LEN 8
+#define MAX_PKT_LEN 1500
 
 int main(void)
 {
-        uint32_t pkt_buf[PKT_LEN];
-        int i;
-	int count = 0;
+  uint32_t pkt_buf[MAX_PKT_LEN/4];
+  int pkt_len;
+  int i;
 
-	while (count < NUM_TESTS) {
-	        // receive pkt
-	        nic_recv(pkt_buf);
-	        // process pkt
-	        for (i = 0; i < PKT_LEN; i++) {
-	                pkt_buf[i] += 1;
-	        }
-	        // send pkt
-	        nic_send(pkt_buf, PKT_LEN*sizeof(uint32_t));
-		count += 1;
-	}
+  // receive pkt
+  pkt_len = nic_recv(pkt_buf);
+  printf("Received pkt of length: %d bytes\n", pkt_len);
+  for (i = 0; i < pkt_len/sizeof(uint32_t); i++) {
+    printf("%x\n", pkt_buf[i]);
+  }
+  // send pkt
+  nic_send(pkt_buf, pkt_len);
 
-	printf("Test Complete.\n");
-        return 0;
+  printf("Test Complete.\n");
+  return 0;
 }
 
