@@ -13,7 +13,7 @@
 
 int main(void)
 {
-	unsigned long data;
+//	unsigned long data;
 	unsigned long start, end;
 
 	start = rdcycle();

@@ -59,12 +59,6 @@ static inline uint64_t nic_macaddr(void)
 	return reg_read64(SIMPLENIC_MACADDR);
 }
 
-#define ETH_MAX_WORDS 190
-#define ETH_MAX_BYTES 1520
-#define ETH_HEADER_SIZE 14
-#define MAC_ADDR_SIZE 6
-#define IP_ADDR_SIZE 4
-
 #define IPV4_ETHTYPE 0x0800
 #define ARP_ETHTYPE 0x0806
 #define ICMP_PROTO 1
@@ -82,10 +76,38 @@ static inline uint16_t ntohs(uint16_t nint)
         return ((nint & 0xff) << 8) | ((nint >> 8) & 0xff);
 }
 
+static inline uint32_t ntohi(uint32_t nint)
+{
+        return (((uint32_t)ntohs(nint & 0xffff) << 16) | (ntohs(nint >> 16) & 0xffff));
+}
+
+static inline uint64_t ntohl(uint64_t nint)
+{
+	return (((uint64_t)ntohi(nint & 0xffffffff) << 32) | (ntohi(nint >> 32) & 0xffffffff));
+}
+
 static inline uint16_t htons(uint16_t nint)
 {
         return ntohs(nint);
 }
+
+static inline uint32_t htoni(uint32_t nint)
+{
+	return ntohi(nint);
+}
+
+static inline uint64_t htonl(uint64_t nint)
+{
+	return ntohl(nint);
+}
+
+#define ETH_MAX_WORDS 190
+#define ETH_MAX_BYTES 1520
+#define ETH_HEADER_SIZE 14
+#define MAC_ADDR_SIZE 6
+#define IP_ADDR_SIZE 4
+
+#define LNIC_HEADER_SIZE 14
 
 struct eth_header {
         uint8_t dst_mac[MAC_ADDR_SIZE];
@@ -130,6 +152,7 @@ struct lnic_header {
 	uint16_t dst;
 	uint16_t msg_id;
 	uint16_t msg_len;
+	uint16_t offset;
 	uint32_t padding;
 };
 

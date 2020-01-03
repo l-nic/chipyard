@@ -82,6 +82,7 @@ int compute_boards(uint64_t board, uint64_t *new_boards, int *num_boards) {
   // TODO(sibanez): implement this ...
   new_boards[0] = board;
   *num_boards = 1;
+  return 0;
 }
 
 /**
@@ -90,6 +91,7 @@ int compute_boards(uint64_t board, uint64_t *new_boards, int *num_boards) {
 int evaluate_boards(uint64_t *new_boards, int num_boards, uint64_t *minimax_val) {
   // TODO(sibanez): implement this ...
   *minimax_val = 1;
+  return 0;
 }
 
 struct MsgState {

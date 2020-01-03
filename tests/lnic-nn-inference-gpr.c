@@ -34,7 +34,6 @@ int main(void) {
 
   // allocate stack memory for weights
   uint64_t weights[MAX_NUM_EDGES];
-  int i;
   uint64_t index;
   uint64_t app_hdr;
   uint64_t msg_type;

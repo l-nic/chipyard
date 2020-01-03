@@ -9,8 +9,6 @@
 
 int main(void)
 {
-	unsigned long data;
-	int i;
 	unsigned long start, end;
 
 	start = rdcycle();

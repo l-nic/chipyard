@@ -13,6 +13,7 @@ PROGRAMS += simple-lnic-cpu-loopback-csr
 PROGRAMS += simple-icenic-cpu-loopback
 PROGRAMS += lnic-othello-gpr
 PROGRAMS += lnic-nn-inference-gpr
+PROGRAMS += icenic-nn-inference
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

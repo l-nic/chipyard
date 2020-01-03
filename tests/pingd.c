@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "mmio.h"
-#include "nic.h"
+#include "icenic.h"
 
 #define ceil_div(n, d) (((n) - 1) / (d) + 1)
 
@@ -16,7 +16,7 @@ static int process_arp(void *buf, uint8_t *mac)
 	uint8_t tmp_addr[IP_ADDR_SIZE];
 
 	// Verify arp packet
-	arp = buf + sizeof(*eth);
+	arp = buf + ETH_HEADER_SIZE;
 	if (ntohs(arp->oper) != ARP_REQUEST) {
 		printf("Wrong arp operation: %d\n", ntohs(arp->oper));
 		return -1;
@@ -73,7 +73,7 @@ static int process_icmp(void *buf, uint8_t *mac)
 	uint32_t tmp_addr;
 
 	// verify IPv4
-	ipv4 = buf + sizeof(*eth);
+	ipv4 = buf + ETH_HEADER_SIZE;
 	ihl = ipv4->ver_ihl & 0xf;
 
 	if (checksum((uint16_t *) ipv4, ihl << 1) != 0) {
@@ -87,7 +87,7 @@ static int process_icmp(void *buf, uint8_t *mac)
 	}
 
 	// verify ICMP
-	icmp = (buf + sizeof(*eth) + (ihl << 2));
+	icmp = (buf + ETH_HEADER_SIZE + (ihl << 2));
 
 	if (icmp->type != ECHO_REQUEST) {
 		printf("Wrong ICMP type %d\n", icmp->type);

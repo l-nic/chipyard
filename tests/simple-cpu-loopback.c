@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "nic.h"
+#include "icenic.h"
 #include "encoding.h"
 
 #define MAX_PKT_LEN 1500
