@@ -54,16 +54,14 @@ class NNInference(unittest.TestCase):
         return lnic_req(NN.DATA_LEN) / NN.NN() / NN.Data(index=index, data=data)
 
     def test_basic(self):
-        # configure nanoserver
-        sendp(NNInference.config_msg(3), iface=TEST_IFACE)
-        # send in weights
-        sendp(NNInference.weight_msg(0, 1), iface=TEST_IFACE)
-        sendp(NNInference.weight_msg(1, 1), iface=TEST_IFACE)
-        sendp(NNInference.weight_msg(2, 1), iface=TEST_IFACE)
-        # send in data / receive response
-        sendp(NNInference.data_msg(0, 1), iface=TEST_IFACE)
-        sendp(NNInference.data_msg(1, 2), iface=TEST_IFACE)
-        resp = srp1(NNInference.data_msg(2, 3), iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        resp = srp1([NNInference.config_msg(3),
+            NNInference.weight_msg(0, 1),
+            NNInference.weight_msg(1, 1),
+            NNInference.weight_msg(2, 1),
+            NNInference.data_msg(0, 1),
+            NNInference.data_msg(1, 2),
+            NNInference.data_msg(2, 3)], iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+
         # check response
         self.assertIsNotNone(resp)
         print '------------- Response -------------'
