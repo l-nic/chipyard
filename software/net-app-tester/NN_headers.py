@@ -5,10 +5,6 @@ CONFIG_TYPE = 0
 WEIGHT_TYPE = 1
 DATA_TYPE = 2
 
-CONFIG_LEN = 16 # bytes
-WEIGHT_LEN = 24 # bytes
-DATA_LEN = 24 # bytes
-
 class NN(Packet):
     name = "NN"
     fields_desc = [

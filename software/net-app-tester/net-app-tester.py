@@ -17,17 +17,17 @@ MY_IP = "10.1.2.3"
 DST_CONTEXT = 0
 MY_CONTEXT = 1
 
-def lnic_req(msg_len):
+def lnic_req():
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
-            LNIC(src=MY_CONTEXT, dst=DST_CONTEXT, msg_len=msg_len)
+            LNIC(src=MY_CONTEXT, dst=DST_CONTEXT)
 
 # Test to check basic loopback functionality
 class SimpleLoopback(unittest.TestCase):
     def test_loopback(self):
         msg_len = 64 # bytes
         payload = Raw('\x00'*msg_len)
-        req = lnic_req(msg_len) / payload
+        req = lnic_req() / payload
         print "---------- Request ({} B) -------------".format(len(req))
         req.show2()
         # send request / receive response
@@ -43,15 +43,15 @@ class NNInference(unittest.TestCase):
 
     @staticmethod
     def config_msg(num_edges):
-        return lnic_req(NN.CONFIG_LEN) / NN.NN() / NN.Config(num_edges=num_edges)
+        return lnic_req() / NN.NN() / NN.Config(num_edges=num_edges)
 
     @staticmethod
     def weight_msg(index, weight):
-        return lnic_req(NN.WEIGHT_LEN) / NN.NN() / NN.Weight(index=index, weight=weight)
+        return lnic_req() / NN.NN() / NN.Weight(index=index, weight=weight)
 
     @staticmethod
     def data_msg(index, data):
-        return lnic_req(NN.DATA_LEN) / NN.NN() / NN.Data(index=index, data=data)
+        return lnic_req() / NN.NN() / NN.Data(index=index, data=data)
 
     def test_basic(self):
         resp = srp1([NNInference.config_msg(3),
@@ -73,17 +73,41 @@ class OthelloTest(unittest.TestCase):
         bind_layers(LNIC, Othello.Othello)
 
     @staticmethod
-    def map_msg():
-        return lnic_req(Othello.MAP_LEN) / Othello.Othello() / Othello.Map()
+    def map_msg(board, max_depth, cur_depth, src_host_id, src_msg_ptr):
+        return lnic_req() / Othello.Othello() / \
+                Othello.Map(board=board, max_depth=max_depth, cur_depth=cur_depth, src_host_id=src_host_id, src_msg_ptr=src_msg_ptr)
 
     @staticmethod
-    def reduce_msg():
-        return lnic_req(Othello.REDUCE_LEN) / Othello.Othello() / Othello.Reduce()
+    def reduce_msg(target_host_id, target_msg_ptr, minimax_val):
+        return lnic_req() / Othello.Othello() / \
+                Othello.Reduce(target_host_id=target_host_id, target_msg_ptr=target_msg_ptr, minimax_val=minimax_val)
 
     def test_basic(self):
-        # send in initial map msg
-        # receive outgoing map messages
-        # send in reduce messages
-        # receive final reduce msg
-        self.assertTrue(True)
+        # send in initial map msg and receive outgoing map messages
+        parent_id = 10
+        parent_msg_ptr = 0x1234
+        responses = srp(OthelloTest.map_msg(board=0, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr),
+                iface=TEST_IFACE, timeout=TIMEOUT_SEC, multi=True)
+        # check responses / build reduce msgs
+        self.assertEqual(len(responses[0]), 2)
+        reduce_msgs = []
+        print '------------ Map Responses -----------'
+        for _, p in responses[0]:
+            p.show()
+            self.assertTrue(p.haslayer(Othello.Map))
+            self.assertEqual(p[Othello.Map].cur_depth, 2)
+            reduce_msgs.append(OthelloTest.reduce_msg(
+                target_host_id=p[Othello.Map].src_host_id,
+                target_msg_ptr=p[Othello.Map].src_msg_ptr,
+                minimax_val=1))
+        # send in reduce messages and receive final reduce msg
+        resp = srp1(reduce_msgs, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        # check reduce msg responses
+        self.assertIsNotNone(resp)
+        print '----------- Reduce Response ------------'
+        resp.show()
+        self.assertTrue(resp.haslayer(Othello.Reduce))
+        self.assertEqual(resp[Othello.Reduce].target_host_id, parent_id)
+        self.assertEqual(resp[Othello.Reduce].target_msg_ptr, parent_msg_ptr)
+        self.assertEqual(resp[Othello.Reduce].minimax_val, 1)
 

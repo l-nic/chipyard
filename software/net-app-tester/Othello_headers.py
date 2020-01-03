@@ -4,9 +4,6 @@ from scapy.all import *
 MAP_TYPE = 0
 REDUCE_TYPE = 1
 
-MAP_LEN = 8*6 # bytes
-REDUCE_LEN = 8*4 # bytes
-
 class Othello(Packet):
     name = "Othello"
     fields_desc = [
