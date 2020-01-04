@@ -82,7 +82,7 @@ class OthelloTest(unittest.TestCase):
         return lnic_req() / Othello.Othello() / \
                 Othello.Reduce(target_host_id=target_host_id, target_msg_ptr=target_msg_ptr, minimax_val=minimax_val)
 
-    def test_basic(self):
+    def test_internal_node(self):
         # send in initial map msg and receive outgoing map messages
         parent_id = 10
         parent_msg_ptr = 0x1234
