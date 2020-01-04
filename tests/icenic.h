@@ -172,4 +172,68 @@ static int checksum(uint16_t *data, int len)
         return sum;
 }
 
+/**
+ * Receive and parse Eth/IP/LNIC headers.
+ * Only return once lnic pkt is received.
+ */
+static int nic_recv_lnic(void *buf, struct lnic_header **lnic)
+{
+  struct eth_header *eth;
+  struct ipv4_header *ipv4;
 
+  while (1) {
+    // receive pkt
+    nic_recv(buf);
+
+    // check eth hdr
+    eth = buf;
+    if (ntohs(eth->ethtype) != IPV4_ETHTYPE) {
+      printf("Wrong ethtype %x\n", ntohs(eth->ethtype));
+      break;
+    }
+
+    // check IPv4 hdr
+    ipv4 = buf + ETH_HEADER_SIZE;
+    if (ipv4->proto != LNIC_PROTO) {
+      printf("Wrong IP protocol %x\n", ipv4->proto);
+      break;
+    }
+
+    // parse lnic hdr
+    int ihl = ipv4->ver_ihl & 0xf;
+    *lnic = (void *)ipv4 + (ihl << 2);
+    return 0;
+  }
+  return 0;
+}
+
+/**
+ * Swap addresses in lnic pkt
+ */
+static int swap_addresses(void *buf, uint8_t *mac)
+{
+  struct eth_header *eth;
+  struct ipv4_header *ipv4;
+  struct lnic_header *lnic;
+  uint32_t tmp_ip_addr;
+  uint16_t tmp_lnic_addr;
+
+  eth = buf;
+  ipv4 = buf + ETH_HEADER_SIZE;
+  int ihl = ipv4->ver_ihl & 0xf;
+  lnic = (void *)ipv4 + (ihl << 2);
+
+  // swap eth/ip/lnic src and dst
+  memcpy(eth->dst_mac, eth->src_mac, MAC_ADDR_SIZE);
+  memcpy(eth->src_mac, mac, MAC_ADDR_SIZE);
+
+  tmp_ip_addr = ipv4->dst_addr;
+  ipv4->dst_addr = ipv4->src_addr;
+  ipv4->src_addr = tmp_ip_addr;
+
+  tmp_lnic_addr = lnic->dst;
+  lnic->dst = lnic->src;
+  lnic->src = tmp_lnic_addr;
+
+  return 0;
+}

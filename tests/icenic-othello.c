@@ -2,29 +2,36 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "lnic.h"
+#include "mmio.h"
+#include "icenic.h"
 #include "othello.h"
 
 /**
- * Othello nanoservice implementation on RISC-V using LNIC GPR implementation.
+ * Othello nanoservice implementation on RISC-V using IceNIC.
  */
 
+#define OTHELLO_HEADER_SIZE 8
+struct othello_header {
+  uint64_t type;
+};
+
+#define MAP_HEADER_SIZE 40
+struct map_header {
+  uint64_t board;
+  uint64_t max_depth;
+  uint64_t cur_depth;
+  uint64_t src_host_id;
+  uint64_t src_msg_ptr;
+};
+
+#define REDUCE_MSG_SIZE 24
+struct reduce_header {
+  uint64_t target_host_id;
+  uint64_t target_msg_ptr;
+  uint64_t minimax_val;
+};
+
 /**
- * OthelloHdr format:
- *   msg_type - type of msg (either MapMsg or ReduceMsg)
- * 
- * MapMsg Format:
- *   board - othello game board
- *   max_depth - max depth into the game tree this map message should propagate
- *   cur_depth - how deep into the game tree this msg currently is
- *   src_host_id - ID of the host that generated this msg
- *   src_msg_ptr - ptr to the MsgState on the src_host
- * 
- * ReduceMsg Format:
- *   target_host_id - ID of the host that this msg should be sent to
- *   target_msg_ptr - ptr to the MsgState on the target_host
- *   minimax_val - the min (or max) value sent up the tree
- * 
  * Othello MsgState:
  *   src_host_id - who to send the result to once all responses arrive
  *   src_msg_ptr - ptr to the MsgState on the src_host
@@ -50,76 +57,89 @@
  *     Send ReduceMsg with min (or max) value up to parent
  */
 
+uint64_t buffer[ETH_MAX_WORDS];
+
 int main(void) {
+  uint64_t macaddr_long;
+  uint8_t *macaddr;
+
+  macaddr_long = nic_macaddr();
+  macaddr = (uint8_t *) &macaddr_long;
+
+  // headers
+  struct lnic_header *lnic;
+  struct othello_header *othello;
+  struct map_header *map;
+  struct reduce_header *reduce;
+
   // local variables
-  uint64_t app_hdr;
   uint64_t board;
+  ssize_t size;
   // TODO(sibanez): make this an array eventually, one msg_state per incomming map msg
   struct state msg_state;
+
   // process pkts 
   while (1) {
-    lnic_wait();
-    // read app hdr
-    app_hdr = lnic_read();
+    nic_recv_lnic(buffer, &lnic);
     // read Othello hdr and branch based on msg_type
-    if (lnic_read() == MAP_TYPE) {
+    othello = (void *)lnic + LNIC_HEADER_SIZE;
+    if (ntohl(othello->type) == MAP_TYPE) {
       // process map msg
-      board = lnic_read();
+      map = (void *)othello + OTHELLO_HEADER_SIZE;
+      board = ntohl(map->board);
       uint64_t new_boards[MAX_BOARDS];
       int num_boards;
       compute_boards(board, new_boards, &num_boards);
       uint64_t max_depth, cur_depth;
-      // TODO(sibanez): these reads are not gauranteed to occur in the correct order ...
-      max_depth = lnic_read();
-      cur_depth = lnic_read();
+      max_depth = ntohl(map->max_depth);
+      cur_depth = ntohl(map->cur_depth);
       if (cur_depth < max_depth) {
         // send out new boards in map msgs
         // record msg state (on stack because don't want to implement malloc)
-        msg_state.src_host_id = lnic_read();
-        msg_state.src_msg_ptr = lnic_read();
+        msg_state.src_host_id = ntohl(map->src_host_id);
+        msg_state.src_msg_ptr = ntohl(map->src_msg_ptr);
         msg_state.map_cnt = num_boards;
         msg_state.response_cnt = 0;
         msg_state.minimax_val = MAX_INT;
-        // send map msgs
+        // send out map msgs
+	swap_addresses(buffer, macaddr);
         for (int i = 0; i < num_boards; i++) {
-          // write msg len
-          lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | MAP_MSG_LEN);
-          // write msg type
-          lnic_write_i(MAP_TYPE);
           // write new_board, max_depth, cur_depth, src_host_id, src_msg_ptr
-          lnic_write_r(new_boards[i]); // TODO(sibanez): need a lnic_write_m() for memory writes?
-          lnic_write_r(max_depth);
-          lnic_write_r(cur_depth + 1);
-          lnic_write_i(HOST_ID);
-          lnic_write_r(&msg_state);
+	  map->board = htonl(new_boards[i]);
+	  map->max_depth = htonl(max_depth);
+	  map->cur_depth = htonl(cur_depth + 1);
+	  map->src_host_id = htonl(HOST_ID);
+	  map->src_msg_ptr = htonl(&msg_state);
+	  size = ceil_div(ETH_HEADER_SIZE + 20 + LNIC_HEADER_SIZE +  MAP_MSG_LEN, 8) * 8;
+	  nic_send(buffer, size);
         }
       } else {
         // evaluate_boards to compute the min (or max)
         uint64_t minimax_val;
         evaluate_boards(new_boards, num_boards, &minimax_val);
         // construct reduce msg and send into network
-        // write msg length
-        lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | REDUCE_MSG_LEN);
+	reduce = (void *)othello + OTHELLO_HEADER_SIZE;
         // write msg type
-        lnic_write_i(REDUCE_TYPE);
+	othello->type = htonl(REDUCE_TYPE);
         // write target_host_id, target_msg_ptr, minimax_val
-        lnic_copy();
-        lnic_copy();
-        lnic_write_r(minimax_val);
+	reduce->target_host_id = map->src_host_id;
+	reduce->target_msg_ptr = map->src_msg_ptr;
+	reduce->minimax_val = htonl(minimax_val);
+	size = ceil_div(ETH_HEADER_SIZE + 20 + LNIC_HEADER_SIZE +  REDUCE_MSG_LEN, 8) * 8;
+	nic_send(buffer, size);
       }
     } else { // REDUCE_MSG
-      // discard target_host_id
-      lnic_read();
+      reduce = (void *)othello + OTHELLO_HEADER_SIZE;
       // get msg state ptr
       struct state *state_ptr;
-      state_ptr = (struct state *)lnic_read();
+      state_ptr = (struct state *)ntohl(reduce->target_msg_ptr);
       // lookup map_cnt, response_cnt, minimax_val
       uint64_t map_cnt, response_cnt, minimax_val, msg_minimax_val;
       map_cnt = (*state_ptr).map_cnt;
       (*state_ptr).response_cnt += 1; // increment response_cnt
       response_cnt = (*state_ptr).response_cnt;
       minimax_val = (*state_ptr).minimax_val;
-      msg_minimax_val = lnic_read();
+      msg_minimax_val = ntohl(reduce->minimax_val);
       // compute running min val
       if (msg_minimax_val < minimax_val) {
         (*state_ptr).minimax_val = msg_minimax_val;
@@ -127,14 +147,13 @@ int main(void) {
       // check if all responses have been received
       if (response_cnt == map_cnt) {
         // send reduce_msg to parent
-        // write msg length
-        lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | REDUCE_MSG_LEN);
-        // write msg type
-        lnic_write_i(REDUCE_TYPE);
+	swap_addresses(buffer, macaddr);
         // write target_host_id, target_msg_ptr, minimax_val
-        lnic_write_r((*state_ptr).src_host_id);
-        lnic_write_r((*state_ptr).src_msg_ptr);
-        lnic_write_r((*state_ptr).minimax_val);
+	reduce->target_host_id = htonl((*state_ptr).src_host_id);
+	reduce->target_msg_ptr = htonl((*state_ptr).src_msg_ptr);
+	reduce->minimax_val = htonl((*state_ptr).minimax_val);
+	size = ceil_div(ETH_HEADER_SIZE + 20 + LNIC_HEADER_SIZE +  REDUCE_MSG_LEN, 8) * 8;
+	nic_send(buffer, size);
       }
     }
   }
