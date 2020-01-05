@@ -4,6 +4,7 @@ from scapy.all import *
 from LNIC_headers import LNIC
 import NN_headers as NN
 import Othello_headers as Othello
+import struct
 
 TEST_IFACE = "tap0"
 TIMEOUT_SEC = 2 # seconds
@@ -15,7 +16,7 @@ NIC_IP = "10.0.0.1"
 MY_IP = "10.1.2.3"
 
 DST_CONTEXT = 0
-MY_CONTEXT = 1
+MY_CONTEXT = 0x1234
 
 def lnic_req():
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
@@ -25,7 +26,7 @@ def lnic_req():
 # Test to check basic loopback functionality
 class SimpleLoopback(unittest.TestCase):
     def test_loopback(self):
-        msg_len = 64 # bytes
+        msg_len = 16 # bytes
         payload = Raw('\x00'*msg_len)
         req = lnic_req() / payload
         print "---------- Request ({} B) -------------".format(len(req))
@@ -35,7 +36,10 @@ class SimpleLoopback(unittest.TestCase):
         self.assertIsNotNone(resp)
         print "---------- Response ({} B) -------------".format(len(resp))
         resp.show2()
-        self.assertEqual(resp[LNIC].payload, payload)
+        msg_data = resp[LNIC].payload
+        self.assertEqual(len(msg_data), len(payload))
+        latency = struct.unpack('!Q', str(msg_data)[-8:])[0]
+        print 'Latency = {} cycles'.format(latency)
 
 class NNInference(unittest.TestCase):
     def setUp(self):
