@@ -6,8 +6,8 @@
 #define REDUCE_TYPE 1
 
 // msg lengths in bytes
-#define MAP_MSG_LEN 48
-#define REDUCE_MSG_LEN 32
+#define MAP_MSG_LEN 56
+#define REDUCE_MSG_LEN 40
 
 #define MAX_BOARDS 4
 #define HOST_ID 0

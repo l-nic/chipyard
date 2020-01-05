@@ -14,21 +14,24 @@ class NN(Packet):
 class Config(Packet):
     name = "Config"
     fields_desc = [
-        LongField("num_edges", 0)
+        LongField("num_edges", 0),
+        LongField("timestamp", 0)
     ]
 
 class Weight(Packet):
     name = "Weight"
     fields_desc = [
         LongField("index", 0),
-        LongField("weight", 0)
+        LongField("weight", 0),
+        LongField("timestamp", 0)
     ]
 
 class Data(Packet):
     name = "Data"
     fields_desc = [
         LongField("index", 0),
-        LongField("data", 0)
+        LongField("data", 0),
+        LongField("timestamp", 0)
     ]
 
 bind_layers(NN, Config, type=CONFIG_TYPE)

@@ -15,20 +15,20 @@ struct othello_header {
   uint64_t type;
 };
 
-#define MAP_HEADER_SIZE 40
 struct map_header {
   uint64_t board;
   uint64_t max_depth;
   uint64_t cur_depth;
   uint64_t src_host_id;
   uint64_t src_msg_ptr;
+  uint64_t timestamp;
 };
 
-#define REDUCE_MSG_SIZE 24
 struct reduce_header {
   uint64_t target_host_id;
   uint64_t target_msg_ptr;
   uint64_t minimax_val;
+  uint64_t timestamp;
 };
 
 /**
@@ -77,6 +77,8 @@ int main(void) {
   ssize_t size;
   // TODO(sibanez): make this an array eventually, one msg_state per incomming map msg
   struct state msg_state;
+  uint64_t map_start_time;
+  uint64_t reduce_start_time;
 
   // process pkts 
   while (1) {
@@ -93,6 +95,7 @@ int main(void) {
       uint64_t max_depth, cur_depth;
       max_depth = ntohl(map->max_depth);
       cur_depth = ntohl(map->cur_depth);
+      map_start_time = ntohl(map->timestamp);
       if (cur_depth < max_depth) {
         // send out new boards in map msgs
         // record msg state (on stack because don't want to implement malloc)
@@ -110,6 +113,7 @@ int main(void) {
 	  map->cur_depth = htonl(cur_depth + 1);
 	  map->src_host_id = htonl(HOST_ID);
 	  map->src_msg_ptr = htonl(&msg_state);
+	  // NOTE: no need to update map_start_time because it is already there
 	  size = ceil_div(ETH_HEADER_SIZE + 20 + LNIC_HEADER_SIZE +  MAP_MSG_LEN, 8) * 8;
 	  nic_send(buffer, size);
         }
@@ -125,6 +129,7 @@ int main(void) {
 	reduce->target_host_id = map->src_host_id;
 	reduce->target_msg_ptr = map->src_msg_ptr;
 	reduce->minimax_val = htonl(minimax_val);
+	reduce->timestamp = htonl(map_start_time);
 	size = ceil_div(ETH_HEADER_SIZE + 20 + LNIC_HEADER_SIZE +  REDUCE_MSG_LEN, 8) * 8;
 	nic_send(buffer, size);
       }
@@ -144,6 +149,10 @@ int main(void) {
       if (msg_minimax_val < minimax_val) {
         (*state_ptr).minimax_val = msg_minimax_val;
       }
+      // record start time of first reduce msg
+      if (response_cnt == 1) {
+        reduce_start_time = ntohl(reduce->timestamp);
+      }
       // check if all responses have been received
       if (response_cnt == map_cnt) {
         // send reduce_msg to parent
@@ -152,6 +161,7 @@ int main(void) {
 	reduce->target_host_id = htonl((*state_ptr).src_host_id);
 	reduce->target_msg_ptr = htonl((*state_ptr).src_msg_ptr);
 	reduce->minimax_val = htonl((*state_ptr).minimax_val);
+        reduce->timestamp = htonl(reduce_start_time);
 	size = ceil_div(ETH_HEADER_SIZE + 20 + LNIC_HEADER_SIZE +  REDUCE_MSG_LEN, 8) * 8;
 	nic_send(buffer, size);
       }

@@ -70,7 +70,10 @@ class NNInference(unittest.TestCase):
         self.assertIsNotNone(resp)
         print '------------- Response -------------'
         resp.show2()
-        self.assertEqual(resp[LNIC].payload, NN.NN() / NN.Data(index=0, data=6))
+        self.assertTrue(resp.haslayer(NN.Data))
+        self.assertEqual(resp[NN.Data].index, 0)
+        self.assertEqual(resp[NN.Data].data, 6)
+        print 'Latency = {} cycles'.format(resp[NN.Data].timestamp)
 
 class OthelloTest(unittest.TestCase):
     def setUp(self):
@@ -95,6 +98,7 @@ class OthelloTest(unittest.TestCase):
         # check responses / build reduce msgs
         self.assertEqual(len(responses[0]), 2)
         reduce_msgs = []
+        map_latency = None
         print '------------ Map Responses -----------'
         for _, p in responses[0]:
             p.show()
@@ -104,6 +108,8 @@ class OthelloTest(unittest.TestCase):
                 target_host_id=p[Othello.Map].src_host_id,
                 target_msg_ptr=p[Othello.Map].src_msg_ptr,
                 minimax_val=1))
+            map_latency = p[Othello.Map].timestamp
+        print 'Map Latency = {} cycles'.format(map_latency)
         # send in reduce messages and receive final reduce msg
         resp = srp1(reduce_msgs, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         # check reduce msg responses
@@ -114,4 +120,5 @@ class OthelloTest(unittest.TestCase):
         self.assertEqual(resp[Othello.Reduce].target_host_id, parent_id)
         self.assertEqual(resp[Othello.Reduce].target_msg_ptr, parent_msg_ptr)
         self.assertEqual(resp[Othello.Reduce].minimax_val, 1)
+        print 'Reduce Latency = {} cycles'.format(resp[Othello.Reduce].timestamp)
 

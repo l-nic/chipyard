@@ -19,11 +19,13 @@
  *   cur_depth - how deep into the game tree this msg currently is
  *   src_host_id - ID of the host that generated this msg
  *   src_msg_ptr - ptr to the MsgState on the src_host
+ *   timestamp
  * 
  * ReduceMsg Format:
  *   target_host_id - ID of the host that this msg should be sent to
  *   target_msg_ptr - ptr to the MsgState on the target_host
  *   minimax_val - the min (or max) value sent up the tree
+ *   timestamp
  * 
  * Othello MsgState:
  *   src_host_id - who to send the result to once all responses arrive
@@ -56,6 +58,8 @@ int main(void) {
   uint64_t board;
   // TODO(sibanez): make this an array eventually, one msg_state per incomming map msg
   struct state msg_state;
+  uint64_t map_start_time;
+  uint64_t reduce_start_time;
   // process pkts 
   while (1) {
     lnic_wait();
@@ -77,6 +81,7 @@ int main(void) {
         // record msg state (on stack because don't want to implement malloc)
         msg_state.src_host_id = lnic_read();
         msg_state.src_msg_ptr = lnic_read();
+	map_start_time = lnic_read();
         msg_state.map_cnt = num_boards;
         msg_state.response_cnt = 0;
         msg_state.minimax_val = MAX_INT;
@@ -86,12 +91,13 @@ int main(void) {
           lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | MAP_MSG_LEN);
           // write msg type
           lnic_write_i(MAP_TYPE);
-          // write new_board, max_depth, cur_depth, src_host_id, src_msg_ptr
+          // write new_board, max_depth, cur_depth, src_host_id, src_msg_ptr, timestamp
           lnic_write_r(new_boards[i]); // TODO(sibanez): need a lnic_write_m() for memory writes?
           lnic_write_r(max_depth);
           lnic_write_r(cur_depth + 1);
           lnic_write_i(HOST_ID);
           lnic_write_r(&msg_state);
+	  lnic_write_r(map_start_time);
         }
       } else {
         // evaluate_boards to compute the min (or max)
@@ -102,10 +108,11 @@ int main(void) {
         lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | REDUCE_MSG_LEN);
         // write msg type
         lnic_write_i(REDUCE_TYPE);
-        // write target_host_id, target_msg_ptr, minimax_val
+        // write target_host_id, target_msg_ptr, minimax_val, timestamp
         lnic_copy();
         lnic_copy();
         lnic_write_r(minimax_val);
+        lnic_copy();
       }
     } else { // REDUCE_MSG
       // discard target_host_id
@@ -124,6 +131,13 @@ int main(void) {
       if (msg_minimax_val < minimax_val) {
         (*state_ptr).minimax_val = msg_minimax_val;
       }
+      // record start time of first reduce msg
+      if (response_cnt == 1) {
+        reduce_start_time = lnic_read();
+      } else {
+        lnic_read();
+      }
+      printf("response_cnt = %lu\nmap_cnt = %lu\n", response_cnt, map_cnt);
       // check if all responses have been received
       if (response_cnt == map_cnt) {
         // send reduce_msg to parent
@@ -135,6 +149,7 @@ int main(void) {
         lnic_write_r((*state_ptr).src_host_id);
         lnic_write_r((*state_ptr).src_msg_ptr);
         lnic_write_r((*state_ptr).minimax_val);
+	lnic_write_r(reduce_start_time);
       }
     }
   }

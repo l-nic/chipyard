@@ -15,29 +15,32 @@
 #define WEIGHT_TYPE 1
 #define DATA_TYPE 2
 
-#define DATA_PKT_LEN 72
-
 #define NN_HEADER_SIZE 8
 struct nn_header {
   uint64_t type;
 };
 
-#define CONFIG_HEADER_SIZE 8
+#define CONFIG_HEADER_SIZE 16
 struct config_header {
   uint64_t num_edges;
+  uint64_t timestamp;
 };
 
-#define WEIGHT_HEADER_SIZE 16
+#define WEIGHT_HEADER_SIZE 24
 struct weight_header {
   uint64_t index;
   uint64_t weight;
+  uint64_t timestamp;
 };
 
-#define DATA_HEADER_SIZE 16
+#define DATA_HEADER_SIZE 24
 struct data_header {
   uint64_t index;
   uint64_t data;
+  uint64_t timestamp;
 };
+
+#define DATA_PKT_LEN (ETH_HEADER_SIZE + 20 + LNIC_HEADER_SIZE + NN_HEADER_SIZE + DATA_HEADER_SIZE)
 
 uint64_t buffer[ETH_MAX_WORDS];
 
@@ -50,6 +53,7 @@ int main(void)
   uint64_t result;
   char configured;
   ssize_t size;
+  uint64_t start_time;
 
   // headers
   struct lnic_header *lnic;
@@ -77,6 +81,7 @@ int main(void)
 	config = (void *)nn + NN_HEADER_SIZE;
         num_edges = ntohl(config->num_edges);
         configured = 1;
+	start_time = ntohl(config->timestamp);
       }
     }
 
@@ -101,6 +106,7 @@ int main(void)
     data = (void *)nn + NN_HEADER_SIZE;
     data->index = 0;
     data->data = htonl(result);
+    data->timestamp = htonl(start_time);
     size = ceil_div(DATA_PKT_LEN, 8) * 8;
     nic_send(buffer, size);
   }

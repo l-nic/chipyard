@@ -41,6 +41,7 @@ int main(void) {
   uint64_t num_edges;
   uint64_t result;
   char configured;
+  uint64_t start_time;
 
   while(1) {
     edge_cnt = 0;
@@ -54,10 +55,12 @@ int main(void) {
       //   copies the result into a GPR first. Should really use a single branch inst
       if (lnic_read() == CONFIG_TYPE) {
         num_edges = lnic_read();
+	start_time = lnic_read();
 	configured = 1;
       } else {
 	// discard msg
         lnic_read();
+	lnic_read();
 	lnic_read();
       }
     }
@@ -74,6 +77,7 @@ int main(void) {
         result += weights[index] * lnic_read();
 	edge_cnt++;
       }
+      lnic_read(); // discard timestamp
     }
 
     // send out result
@@ -81,6 +85,7 @@ int main(void) {
     lnic_write_i(DATA_TYPE); // index
     lnic_write_i(0); // index
     lnic_write_r(result);
+    lnic_write_r(start_time);
   }
   return 0;
 }
