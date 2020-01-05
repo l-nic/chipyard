@@ -58,8 +58,8 @@ int main(void) {
   uint64_t board;
   // TODO(sibanez): make this an array eventually, one msg_state per incomming map msg
   struct state msg_state;
-  uint64_t map_start_time;
-  uint64_t reduce_start_time;
+  uint64_t map_start_time = 0;
+  uint64_t reduce_start_time = 0;
   // process pkts 
   while (1) {
     lnic_wait();
@@ -127,17 +127,16 @@ int main(void) {
       response_cnt = (*state_ptr).response_cnt;
       minimax_val = (*state_ptr).minimax_val;
       msg_minimax_val = lnic_read();
-      // compute running min val
-      if (msg_minimax_val < minimax_val) {
-        (*state_ptr).minimax_val = msg_minimax_val;
-      }
-      // record start time of first reduce msg
+      // record timestamp of first reduce msg
       if (response_cnt == 1) {
         reduce_start_time = lnic_read();
       } else {
         lnic_read();
       }
-      printf("response_cnt = %lu\nmap_cnt = %lu\n", response_cnt, map_cnt);
+      // compute running min val
+      if (msg_minimax_val < minimax_val) {
+        (*state_ptr).minimax_val = msg_minimax_val;
+      }
       // check if all responses have been received
       if (response_cnt == map_cnt) {
         // send reduce_msg to parent
