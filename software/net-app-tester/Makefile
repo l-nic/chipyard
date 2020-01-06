@@ -1,8 +1,8 @@
 
 # Makefile to run specific tests
 
-simple_loopback:
-	python -m unittest net-app-tester.SimpleLoopback
+loopback:
+	python -m unittest net-app-tester.Loopback
 
 nn_inference:
 	python -m unittest net-app-tester.NNInference

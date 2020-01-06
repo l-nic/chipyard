@@ -5,9 +5,11 @@ from LNIC_headers import LNIC
 import NN_headers as NN
 import Othello_headers as Othello
 import struct
+import pandas as pd
+import os
 
 TEST_IFACE = "tap0"
-TIMEOUT_SEC = 2 # seconds
+TIMEOUT_SEC = 3 # seconds
 
 NIC_MAC = "08:11:22:33:44:08"
 MY_MAC = "08:55:66:77:88:08"
@@ -18,28 +20,46 @@ MY_IP = "10.1.2.3"
 DST_CONTEXT = 0
 MY_CONTEXT = 0x1234
 
+LOG_DIR = '/vagrant/logs'
+
 def lnic_req():
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
             LNIC(src=MY_CONTEXT, dst=DST_CONTEXT)
 
+def write_csv(dname, fname, df):
+    log_dir = os.path.join(LOG_DIR, dname)
+    if not os.path.exists(log_dir):
+      os.makedirs(log_dir)
+    with open(os.path.join(log_dir, fname), 'w') as f:
+        f.write(df.to_csv(index=False))
+
 # Test to check basic loopback functionality
-class SimpleLoopback(unittest.TestCase):
-    def test_loopback(self):
-        msg_len = 16 # bytes
+class Loopback(unittest.TestCase):
+    def do_loopback(self, pkt_len):
+        msg_len = pkt_len - len(lnic_req()) # bytes
         payload = Raw('\x00'*msg_len)
         req = lnic_req() / payload
-        print "---------- Request ({} B) -------------".format(len(req))
-        req.show2()
         # send request / receive response
         resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         self.assertIsNotNone(resp)
-        print "---------- Response ({} B) -------------".format(len(resp))
-        resp.show2()
-        msg_data = resp[LNIC].payload
-        self.assertEqual(len(msg_data), len(payload))
-        latency = struct.unpack('!Q', str(msg_data)[-8:])[0]
+        resp_data = resp[LNIC].payload
+        self.assertEqual(len(resp_data), len(payload))
+        latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+        return latency
+    def test_single(self):
+        pkt_len = 64 # bytes
+        latency = self.do_loopback(pkt_len)
         print 'Latency = {} cycles'.format(latency)
+    def test_pkt_length(self):
+        pkt_len = range(64, 64*20, 64)
+        latency = []
+        for l in pkt_len:
+            print 'Testing pkt_len = {} bytes'.format(l)
+            latency.append(self.do_loopback(l))
+        # record latencies
+        df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
+        write_csv('loopback', 'pkt_len_latency.csv', df)
 
 class NNInference(unittest.TestCase):
     def setUp(self):
@@ -57,23 +77,35 @@ class NNInference(unittest.TestCase):
     def data_msg(index, data):
         return lnic_req() / NN.NN() / NN.Data(index=index, data=data)
 
-    def test_basic(self):
-        resp = srp1([NNInference.config_msg(3),
-            NNInference.weight_msg(0, 1),
-            NNInference.weight_msg(1, 1),
-            NNInference.weight_msg(2, 1),
-            NNInference.data_msg(0, 1),
-            NNInference.data_msg(1, 2),
-            NNInference.data_msg(2, 3)], iface=TEST_IFACE, timeout=TIMEOUT_SEC)
-
+    def do_test(self, num_edges):
+        inputs = []
+        inputs.append(NNInference.config_msg(num_edges))
+        # weight = 1 for all edges
+        inputs += [NNInference.weight_msg(i, 1) for i in range(num_edges)]
+        # data = index+1
+        inputs += [NNInference.data_msg(i, i+1) for i in range(num_edges)]
+        # send inputs get response
+        resp = srp1(inputs, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         # check response
         self.assertIsNotNone(resp)
-        print '------------- Response -------------'
-        resp.show2()
         self.assertTrue(resp.haslayer(NN.Data))
         self.assertEqual(resp[NN.Data].index, 0)
-        self.assertEqual(resp[NN.Data].data, 6)
-        print 'Latency = {} cycles'.format(resp[NN.Data].timestamp)
+        self.assertEqual(resp[NN.Data].data, sum([i+1 for i in range(num_edges)]))
+        # return latency
+        return resp[NN.Data].timestamp
+
+    def test_basic(self):
+        latency = self.do_test(10)
+        print 'Latency = {} cycles'.format(latency)
+
+    def test_num_edges(self):
+        num_edges = range(2, 10)
+        latency = []
+        for n in num_edges:
+            latency.append(self.do_test(n))
+        # record latencies
+        df = pd.DataFrame({'num_edges':num_edges, 'latency':latency})
+        write_csv('nn', 'num_edges_latency.csv', df)
 
 class OthelloTest(unittest.TestCase):
     def setUp(self):

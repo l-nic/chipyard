@@ -57,6 +57,7 @@ int main(void) {
         num_edges = lnic_read();
 	start_time = lnic_read();
 	configured = 1;
+	//printf("Configured: num_edges = %lu\n", num_edges);
       } else {
 	// discard msg
         lnic_read();
@@ -73,14 +74,17 @@ int main(void) {
       index = lnic_read();
       if (msg_type == WEIGHT_TYPE) {
         weights[index] = lnic_read();
+	//printf("Weight[%lu] received.\n", index);
       } else if (msg_type == DATA_TYPE) {
         result += weights[index] * lnic_read();
 	edge_cnt++;
+	//printf("Data[%lu] received.\n\tedge_cnt = %lu\n\tresult = %lu\n", index, edge_cnt, result);
       }
       lnic_read(); // discard timestamp
     }
 
     // send out result
+    //printf("Sending out result = %lu");
     lnic_write_r(app_hdr); // write app hdr
     lnic_write_i(DATA_TYPE); // index
     lnic_write_i(0); // index
