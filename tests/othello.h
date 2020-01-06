@@ -20,7 +20,7 @@ int compute_boards(uint64_t board, uint64_t *new_boards, int *num_boards) {
   // TODO(sibanez): implement this ...
   new_boards[0] = board;
   new_boards[1] = board + 1;
-  *num_boards = 2;
+  *num_boards = board;
   return 0;
 }
 

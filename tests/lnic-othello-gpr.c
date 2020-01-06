@@ -76,6 +76,7 @@ int main(void) {
       // TODO(sibanez): these reads are not gauranteed to occur in the correct order ...
       max_depth = lnic_read();
       cur_depth = lnic_read();
+      //printf("Processing Map message.\n\tboard = %lu\n\tmax_depth = %lu\n\tcur_depth = %lu\n", board, max_depth, cur_depth);
       if (cur_depth < max_depth) {
         // send out new boards in map msgs
         // record msg state (on stack because don't want to implement malloc)

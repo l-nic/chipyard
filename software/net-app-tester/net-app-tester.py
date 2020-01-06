@@ -95,7 +95,7 @@ class NNInference(unittest.TestCase):
         return resp[NN.Data].timestamp
 
     def test_basic(self):
-        latency = self.do_test(10)
+        latency = self.do_test(3)
         print 'Latency = {} cycles'.format(latency)
 
     def test_num_edges(self):
@@ -121,19 +121,17 @@ class OthelloTest(unittest.TestCase):
         return lnic_req() / Othello.Othello() / \
                 Othello.Reduce(target_host_id=target_host_id, target_msg_ptr=target_msg_ptr, minimax_val=minimax_val)
 
-    def test_internal_node(self):
+    def do_internal_node_test(self, fanout):
         # send in initial map msg and receive outgoing map messages
         parent_id = 10
         parent_msg_ptr = 0x1234
-        responses = srp(OthelloTest.map_msg(board=0, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr),
+        responses = srp(OthelloTest.map_msg(board=fanout, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr),
                 iface=TEST_IFACE, timeout=TIMEOUT_SEC, multi=True)
         # check responses / build reduce msgs
-        self.assertEqual(len(responses[0]), 2)
+        self.assertEqual(len(responses[0]), fanout)
         reduce_msgs = []
         map_latency = None
-        print '------------ Map Responses -----------'
         for _, p in responses[0]:
-            p.show()
             self.assertTrue(p.haslayer(Othello.Map))
             self.assertEqual(p[Othello.Map].cur_depth, 2)
             reduce_msgs.append(OthelloTest.reduce_msg(
@@ -141,16 +139,31 @@ class OthelloTest(unittest.TestCase):
                 target_msg_ptr=p[Othello.Map].src_msg_ptr,
                 minimax_val=1))
             map_latency = p[Othello.Map].timestamp
-        print 'Map Latency = {} cycles'.format(map_latency)
         # send in reduce messages and receive final reduce msg
         resp = srp1(reduce_msgs, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         # check reduce msg responses
         self.assertIsNotNone(resp)
-        print '----------- Reduce Response ------------'
-        resp.show()
         self.assertTrue(resp.haslayer(Othello.Reduce))
         self.assertEqual(resp[Othello.Reduce].target_host_id, parent_id)
         self.assertEqual(resp[Othello.Reduce].target_msg_ptr, parent_msg_ptr)
         self.assertEqual(resp[Othello.Reduce].minimax_val, 1)
-        print 'Reduce Latency = {} cycles'.format(resp[Othello.Reduce].timestamp)
+        reduce_latency = resp[Othello.Reduce].timestamp
+        return map_latency, reduce_latency
+
+    def test_internal_node_basic(self):
+        map_latency, reduce_latency = self.do_internal_node_test(3)
+        print 'Map Latency = {} cycles'.format(map_latency)
+        print 'Reduce Latency = {} cycles'.format(reduce_latency)
+
+    def test_fanout(self):
+        fanout = range(2, 10)
+        map_latency = []
+        reduce_latency = []
+        for n in fanout:
+            mlat, rlat = self.do_internal_node_test(n)
+            map_latency.append(mlat)
+            reduce_latency.append(rlat)
+        # record latencies
+        df = pd.DataFrame({'fanout':fanout, 'map_latency':map_latency, 'reduce_latency':reduce_latency})
+        write_csv('othello', 'fanout_latency.csv', df)
 
