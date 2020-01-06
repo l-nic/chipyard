@@ -4,12 +4,12 @@ CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffi
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
 
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
-PROGRAMS += simple-nic-loopback
-PROGRAMS += simple-cpu-loopback
-PROGRAMS += simple-lnic-loopback-gpr
-PROGRAMS += simple-lnic-loopback-csr
-PROGRAMS += simple-lnic-cpu-loopback-gpr
-PROGRAMS += simple-lnic-cpu-loopback-csr
+PROGRAMS += lnic-nic-loopback-gpr
+PROGRAMS += lnic-nic-loopback-csr
+PROGRAMS += icenic-nic-loopback
+PROGRAMS += lnic-cpu-loopback-gpr
+PROGRAMS += lnic-cpu-loopback-csr
+PROGRAMS += icenic-cpu-loopback
 PROGRAMS += simple-icenic-cpu-loopback
 PROGRAMS += lnic-nn-inference-gpr
 PROGRAMS += icenic-nn-inference
