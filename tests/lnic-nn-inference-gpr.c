@@ -40,46 +40,47 @@ int main(void) {
   int edge_cnt;
   uint64_t num_edges;
   uint64_t result;
-  char configured;
   uint64_t start_time;
+  uint64_t config_type = CONFIG_TYPE;
+  uint64_t weight_type = WEIGHT_TYPE;
 
   while(1) {
     edge_cnt = 0;
     result = 0;
+configure:
     // wait for Config msg
-    configured = 0;
-    while (!configured) {
-      lnic_wait();
-      lnic_read(); // discard app hdr
-      // TODO(sibanez): this is not the ideal way to branch because lnic_read()
-      //   copies the result into a GPR first. Should really use a single branch inst
-      if (lnic_read() == CONFIG_TYPE) {
-        num_edges = lnic_read();
-	start_time = lnic_read();
-	configured = 1;
-	//printf("Configured: num_edges = %lu\n", num_edges);
-      } else {
-	// discard msg
-        lnic_read();
-	lnic_read();
-	lnic_read();
-      }
-    }
+    lnic_wait();
+    lnic_read(); // discard app hdr
+    // branch based on msg_type
+    lnic_branch("bne", config_type, discard_pkt);
+    num_edges = lnic_read();
+    start_time = lnic_read();
+    //printf("Configured: num_edges = %lu\n", num_edges);
+    goto process;
+discard_pkt:
+    // discard msg
+    lnic_read();
+    lnic_read();
+    lnic_read();
+    goto configure;
 
+process:
     // process weight and data msgs
     while (edge_cnt < num_edges) {
       lnic_wait();
       app_hdr = lnic_read();
-      msg_type = lnic_read();
+      // branch based on msg_type
+      lnic_branch("bne", weight_type, process_data);
       index = lnic_read();
-      if (msg_type == WEIGHT_TYPE) {
-        weights[index] = lnic_read();
-	//printf("Weight[%lu] received.\n", index);
-      } else if (msg_type == DATA_TYPE) {
-        result += weights[index] * lnic_read();
-	edge_cnt++;
-	//printf("Data[%lu] received.\n\tedge_cnt = %lu\n\tresult = %lu\n", index, edge_cnt, result);
-      }
+      weights[index] = lnic_read();
+      goto discard_timestamp;
+      //printf("Weight[%lu] received.\n", index);
+process_data:
+      index = lnic_read();
+      result += weights[index] * lnic_read();
+      edge_cnt++;
+      //printf("Data[%lu] received.\n\tedge_cnt = %lu\n\tresult = %lu\n", index, edge_cnt, result);
+discard_timestamp:
       lnic_read(); // discard timestamp
     }
 
