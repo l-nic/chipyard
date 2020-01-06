@@ -60,99 +60,101 @@ int main(void) {
   struct state msg_state;
   uint64_t map_start_time = 0;
   uint64_t reduce_start_time = 0;
+  uint64_t map_type = MAP_TYPE;
+  uint64_t new_boards[MAX_BOARDS];
+  int num_boards;
+  uint64_t max_depth, cur_depth;
+  int i;
+  uint64_t minimax_val;
+  struct state *state_ptr;
+  uint64_t map_cnt, response_cnt, msg_minimax_val;
   // process pkts 
-  while (1) {
-    lnic_wait();
-    // read app hdr
-    app_hdr = lnic_read();
-    // read Othello hdr and branch based on msg_type
-    if (lnic_read() == MAP_TYPE) {
-      // process map msg
-      board = lnic_read();
-      uint64_t new_boards[MAX_BOARDS];
-      int num_boards;
-      compute_boards(board, new_boards, &num_boards);
-      uint64_t max_depth, cur_depth;
-      // TODO(sibanez): these reads are not gauranteed to occur in the correct order ...
-      max_depth = lnic_read();
-      cur_depth = lnic_read();
-      //printf("Processing Map message.\n\tboard = %lu\n\tmax_depth = %lu\n\tcur_depth = %lu\n", board, max_depth, cur_depth);
-      if (cur_depth < max_depth) {
-        // send out new boards in map msgs
-        // record msg state (on stack because don't want to implement malloc)
-        msg_state.src_host_id = lnic_read();
-        msg_state.src_msg_ptr = lnic_read();
-	map_start_time = lnic_read();
-        msg_state.map_cnt = num_boards;
-        msg_state.response_cnt = 0;
-        msg_state.minimax_val = MAX_INT;
-        // send map msgs
-        for (int i = 0; i < num_boards; i++) {
-          // write msg len
-          lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | MAP_MSG_LEN);
-          // write msg type
-          lnic_write_i(MAP_TYPE);
-          // write new_board, max_depth, cur_depth, src_host_id, src_msg_ptr, timestamp
-          lnic_write_r(new_boards[i]); // TODO(sibanez): need a lnic_write_m() for memory writes?
-          lnic_write_r(max_depth);
-          lnic_write_r(cur_depth + 1);
-          lnic_write_i(HOST_ID);
-          lnic_write_r(&msg_state);
-	  lnic_write_r(map_start_time);
-        }
-      } else {
-        // evaluate_boards to compute the min (or max)
-        uint64_t minimax_val;
-        evaluate_boards(new_boards, num_boards, &minimax_val);
-        // construct reduce msg and send into network
-        // write msg length
-        lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | REDUCE_MSG_LEN);
-        // write msg type
-        lnic_write_i(REDUCE_TYPE);
-        // write target_host_id, target_msg_ptr, minimax_val, timestamp
-        lnic_copy();
-        lnic_copy();
-        lnic_write_r(minimax_val);
-        lnic_copy();
-      }
-    } else { // REDUCE_MSG
-      // discard target_host_id
-      lnic_read();
-      // get msg state ptr
-      struct state *state_ptr;
-      state_ptr = (struct state *)lnic_read();
-      // lookup map_cnt, response_cnt, minimax_val
-      uint64_t map_cnt, response_cnt, minimax_val, msg_minimax_val;
-      map_cnt = (*state_ptr).map_cnt;
-      (*state_ptr).response_cnt += 1; // increment response_cnt
-      response_cnt = (*state_ptr).response_cnt;
-      minimax_val = (*state_ptr).minimax_val;
-      msg_minimax_val = lnic_read();
-      // record timestamp of first reduce msg
-      if (response_cnt == 1) {
-        reduce_start_time = lnic_read();
-      } else {
-        lnic_read();
-      }
-      // compute running min val
-      if (msg_minimax_val < minimax_val) {
-        (*state_ptr).minimax_val = msg_minimax_val;
-      }
-      // check if all responses have been received
-      if (response_cnt == map_cnt) {
-        // send reduce_msg to parent
-        // write msg length
-        lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | REDUCE_MSG_LEN);
-        // write msg type
-        lnic_write_i(REDUCE_TYPE);
-        // write target_host_id, target_msg_ptr, minimax_val
-        lnic_write_r((*state_ptr).src_host_id);
-        lnic_write_r((*state_ptr).src_msg_ptr);
-        lnic_write_r((*state_ptr).minimax_val);
-	lnic_write_r(reduce_start_time);
-      }
+othello_start:
+  lnic_wait();
+  // read app hdr
+  app_hdr = lnic_read();
+  // read Othello hdr and branch based on msg_type
+  lnic_branch("bne", map_type, process_reduce);
+  // process map msg
+  board = lnic_read();
+  compute_boards(board, new_boards, &num_boards);
+  // TODO(sibanez): these reads are not gauranteed to occur in the correct order ...
+  max_depth = lnic_read();
+  cur_depth = lnic_read();
+  //printf("Processing Map message.\n\tboard = %lu\n\tmax_depth = %lu\n\tcur_depth = %lu\n", board, max_depth, cur_depth);
+  if (cur_depth < max_depth) {
+    // send out new boards in map msgs
+    // record msg state (on stack because don't want to implement malloc)
+    msg_state.src_host_id = lnic_read();
+    msg_state.src_msg_ptr = lnic_read();
+    map_start_time = lnic_read();
+    msg_state.map_cnt = num_boards;
+    msg_state.response_cnt = 0;
+    msg_state.minimax_val = MAX_INT;
+    // send map msgs
+    for (i = 0; i < num_boards; i++) {
+      // write msg len
+      lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | MAP_MSG_LEN);
+      // write msg type
+      lnic_write_i(MAP_TYPE);
+      // write new_board, max_depth, cur_depth, src_host_id, src_msg_ptr, timestamp
+      lnic_write_r(new_boards[i]); // TODO(sibanez): need a lnic_write_m() for memory writes?
+      lnic_write_r(max_depth);
+      lnic_write_r(cur_depth + 1);
+      lnic_write_i(HOST_ID);
+      lnic_write_r(&msg_state);
+      lnic_write_r(map_start_time);
     }
+  } else {
+    // evaluate_boards to compute the min (or max)
+    evaluate_boards(new_boards, num_boards, &minimax_val);
+    // construct reduce msg and send into network
+    // write msg length
+    lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | REDUCE_MSG_LEN);
+    // write msg type
+    lnic_write_i(REDUCE_TYPE);
+    // write target_host_id, target_msg_ptr, minimax_val, timestamp
+    lnic_copy();
+    lnic_copy();
+    lnic_write_r(minimax_val);
+    lnic_copy();
   }
+  goto othello_start;
+process_reduce:
+  // discard target_host_id
+  lnic_read();
+  // get msg state ptr
+  state_ptr = (struct state *)lnic_read();
+  // lookup map_cnt, response_cnt, minimax_val
+  map_cnt = (*state_ptr).map_cnt;
+  (*state_ptr).response_cnt += 1; // increment response_cnt
+  response_cnt = (*state_ptr).response_cnt;
+  minimax_val = (*state_ptr).minimax_val;
+  msg_minimax_val = lnic_read();
+  // record timestamp of first reduce msg
+  if (response_cnt == 1) {
+    reduce_start_time = lnic_read();
+  } else {
+    lnic_read();
+  }
+  // compute running min val
+  if (msg_minimax_val < minimax_val) {
+    (*state_ptr).minimax_val = msg_minimax_val;
+  }
+  // check if all responses have been received
+  if (response_cnt == map_cnt) {
+    // send reduce_msg to parent
+    // write msg length
+    lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | REDUCE_MSG_LEN);
+    // write msg type
+    lnic_write_i(REDUCE_TYPE);
+    // write target_host_id, target_msg_ptr, minimax_val
+    lnic_write_m((*state_ptr).src_host_id);
+    lnic_write_m((*state_ptr).src_msg_ptr);
+    lnic_write_m((*state_ptr).minimax_val);
+    lnic_write_r(reduce_start_time);
+  }
+  goto othello_start;
   return 0;
 }
 
