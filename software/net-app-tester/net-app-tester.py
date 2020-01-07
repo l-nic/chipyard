@@ -34,7 +34,6 @@ def write_csv(dname, fname, df):
     with open(os.path.join(log_dir, fname), 'w') as f:
         f.write(df.to_csv(index=False))
 
-# Test to check basic loopback functionality
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkt_len):
         msg_len = pkt_len - len(lnic_req()) # bytes
@@ -60,6 +59,32 @@ class Loopback(unittest.TestCase):
         # record latencies
         df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
         write_csv('loopback', 'pkt_len_latency.csv', df)
+
+class Stream(unittest.TestCase):
+    def do_loopback(self, pkt_len):
+        msg_len = pkt_len - len(lnic_req()) # bytes
+        payload = Raw('\x00'*msg_len)
+        req = lnic_req() / payload
+        # send request / receive response
+        resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        self.assertIsNotNone(resp)
+        resp_data = resp[LNIC].payload
+        self.assertEqual(len(resp_data), len(payload))
+        latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+        return latency
+    def test_single(self):
+        pkt_len = 64*2 # bytes
+        latency = self.do_loopback(pkt_len)
+        print 'Latency = {} cycles'.format(latency)
+    def test_pkt_length(self):
+        pkt_len = range(64, 64*15, 64)
+        latency = []
+        for l in pkt_len:
+            print 'Testing pkt_len = {} bytes'.format(l)
+            latency.append(self.do_loopback(l))
+        # record latencies
+        df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
+        write_csv('stream', 'pkt_len_latency.csv', df)
 
 class NNInference(unittest.TestCase):
     def setUp(self):

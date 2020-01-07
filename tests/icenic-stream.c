@@ -21,6 +21,10 @@ static int process_packet(void *buf, uint8_t *mac)
   uint32_t tmp_ip_addr;
   uint16_t tmp_lnic_addr;
   ssize_t size;
+  uint64_t *data;
+  int num_words;
+  uint16_t msg_len;
+  int i;
 
   // receive pkt
   nic_recv(buf);
@@ -54,6 +58,15 @@ static int process_packet(void *buf, uint8_t *mac)
   tmp_lnic_addr = lnic->dst;
   lnic->dst = lnic->src;
   lnic->src = tmp_lnic_addr;
+
+  // increment every 8B word of the msg (except the last)
+  data = (void *)lnic + LNIC_HEADER_SIZE;
+  msg_len = ntohs(lnic->msg_len);
+  num_words = msg_len/8;
+  if (msg_len % 8 != 0) { num_words++; }
+  for (i = 0; i < num_words-1; i++) {
+    data[i] = htonl(ntohl(data[i]) + 1);
+  }
 
   // send pkt back out
   size = ntohs(ipv4->length) + ETH_HEADER_SIZE;

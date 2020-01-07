@@ -15,6 +15,8 @@ PROGRAMS += lnic-nn-inference-gpr
 PROGRAMS += icenic-nn-inference
 PROGRAMS += lnic-othello-gpr
 PROGRAMS += icenic-othello
+PROGRAMS += lnic-stream-gpr
+PROGRAMS += icenic-stream
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
