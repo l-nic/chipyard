@@ -10,15 +10,15 @@
 
 int main(void)
 {
-  uint32_t pkt_buf[MAX_PKT_LEN/4];
+  uint64_t pkt_buf[MAX_PKT_LEN/8];
   int pkt_len;
   int i;
 
   // receive pkt
   pkt_len = nic_recv(pkt_buf);
   printf("Received pkt of length: %d bytes\n", pkt_len);
-  for (i = 0; i < pkt_len/sizeof(uint32_t); i++) {
-    printf("%x\n", pkt_buf[i]);
+  for (i = 0; i < pkt_len/sizeof(uint64_t); i++) {
+    printf("%lx\n", pkt_buf[i]);
   }
   // send pkt
   nic_send(pkt_buf, pkt_len);
