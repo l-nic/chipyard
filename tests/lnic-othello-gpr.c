@@ -53,6 +53,9 @@
  */
 
 int main(void) {
+  // register context ID with L-NIC
+  lnic_add_context(0);
+
   // local variables
   uint64_t app_hdr;
   uint64_t board;

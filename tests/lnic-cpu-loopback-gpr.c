@@ -11,8 +11,8 @@ int main(void)
 	int num_words;
 	int i;
 
-	// send initial boot msg
-	lnic_boot();
+	// register context ID with L-NIC
+        lnic_add_context(0);
 
 	while (1) {
 		// wait for a pkt to arrive

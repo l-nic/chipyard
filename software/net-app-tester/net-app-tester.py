@@ -42,6 +42,7 @@ class Loopback(unittest.TestCase):
         # send request / receive response
         resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         self.assertIsNotNone(resp)
+        self.assertEqual(resp[LNIC].dst, MY_CONTEXT)
         resp_data = resp[LNIC].payload
         self.assertEqual(len(resp_data), len(payload))
         latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
@@ -68,6 +69,7 @@ class Stream(unittest.TestCase):
         # send request / receive response
         resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         self.assertIsNotNone(resp)
+        self.assertEqual(resp[LNIC].dst, MY_CONTEXT)
         resp_data = resp[LNIC].payload
         self.assertEqual(len(resp_data), len(payload))
         latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
