@@ -14,6 +14,7 @@ PROGRAMS += simple-icenic-cpu-loopback
 PROGRAMS += lnic-nn-inference-gpr
 PROGRAMS += icenic-nn-inference
 PROGRAMS += lnic-othello-gpr
+PROGRAMS += lnic-scheduler
 PROGRAMS += icenic-othello
 PROGRAMS += lnic-stream-gpr
 PROGRAMS += icenic-stream
