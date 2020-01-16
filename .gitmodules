@@ -97,3 +97,7 @@
 [submodule "toolchains/qemu"]
 	path = toolchains/qemu
 	url = https://github.com/qemu/qemu.git
+[submodule "toolchains/riscv-tools/riscv-opcodes"]
+	path = toolchains/riscv-tools/riscv-opcodes
+	url = https://github.com/l-nic/riscv-opcodes.git
+	branch = lnic-dev
