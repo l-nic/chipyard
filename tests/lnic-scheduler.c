@@ -160,7 +160,14 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
       if (candidate_thread->finished) {
         continue;
       }
-      if (!selected_thread || candidate_thread->priority > selected_thread->priority || candidate_thread->skipped > selected_thread->skipped) {
+      csr_write(0x53, candidate_thread->id); // Set the current lnic context
+      uint64_t candidate_thread_messages_pending = csr_read(0x52); // Read the pending messages
+      uint64_t selected_thread_messages_pending = 0;
+      if (selected_thread) {
+        csr_write(0x53, selected_thread->id);
+        selected_thread_messages_pending = csr_read(0x52);
+      }
+      if (!selected_thread || candidate_thread_messages_pending > selected_thread_messages_pending || candidate_thread->priority > selected_thread->priority || candidate_thread->skipped > selected_thread->skipped) {
         selected_thread = candidate_thread;
       }
     }
@@ -168,7 +175,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
     // Increment the skipped count of every thread that was not chosen
     for (int i = 0; i < num_threads; i++) {
       struct thread_t* rejected_thread = &threads[i];
-      if (rejected_thread == selected_thread || rejected_thread->priority < selected_thread->priority) {
+      if (rejected_thread == selected_thread) {
         continue;
       }
       rejected_thread->skipped++;
@@ -179,7 +186,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
 
     // Switch to the new thread
     selected_thread->skipped = 0;
-    // printf("Switching to new thread %#lx at %#lx\n", selected_thread, selected_thread->epc);
+    printf("Switching to new thread %#lx at %#lx\n", selected_thread, selected_thread->epc);
     epc = selected_thread->epc;
     for (int i = 0; i < 32; i++) {
       regs[i] = selected_thread->regs[i];
