@@ -71,19 +71,27 @@ static inline uint64_t nic_macaddr(void)
 
 #define ceil_div(n, d) (((n) - 1) / (d) + 1)
 
+// R type: .insn r opcode, func3, func7, rd, rs1, rs2
+
 static inline uint16_t ntohs(uint16_t nint)
 {
-        return ((nint & 0xff) << 8) | ((nint >> 8) & 0xff);
+	uint16_t result;
+	asm volatile (".insn r 0x33, 0, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
+        return result;
 }
 
 static inline uint32_t ntohi(uint32_t nint)
 {
-        return (((uint32_t)ntohs(nint & 0xffff) << 16) | (ntohs(nint >> 16) & 0xffff));
+	uint32_t result;
+	asm volatile (".insn r 0x33, 1, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
+        return result;
 }
 
 static inline uint64_t ntohl(uint64_t nint)
 {
-	return (((uint64_t)ntohi(nint & 0xffffffff) << 32) | (ntohi(nint >> 32) & 0xffffffff));
+	uint64_t result;
+	asm volatile (".insn r 0x33, 2, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
+        return result;
 }
 
 static inline uint16_t htons(uint16_t nint)
