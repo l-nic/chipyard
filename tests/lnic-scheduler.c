@@ -142,7 +142,7 @@ void remove_thread(struct thread_t* thread) {
 
 
 uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
-  printf("cause is %#lx\n", cause);
+  // printf("cause is %#lx\n", cause);
   if (cause == 0x8000000000000007) {
     struct thread_t* current_thread = NULL;
     if (csr_read(mscratch) != 0) {
@@ -179,7 +179,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
 
     // Switch to the new thread
     selected_thread->skipped = 0;
-    printf("Switching to new thread %#lx at %#lx\n", selected_thread, selected_thread->epc);
+    // printf("Switching to new thread %#lx at %#lx\n", selected_thread, selected_thread->epc);
     epc = selected_thread->epc;
     for (int i = 0; i < 32; i++) {
       regs[i] = selected_thread->regs[i];
@@ -190,7 +190,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
     // Restart the timer for the next timer interrupt
     uint64_t* mtime_ptr_lo = 0x200bff8;
     uint64_t* mtimecmp_ptr_lo = 0x2004000;
-    *mtimecmp_ptr_lo = *mtime_ptr_lo + 100;
+    *mtimecmp_ptr_lo = *mtime_ptr_lo + 40;
 
     return epc;
   }
@@ -235,7 +235,7 @@ int app1_main(void) {
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
     for (i = 0; i < num_words; i++) {
-      lnic_copy();
+      lnic_add_one();
     }
   }
   return 0;
@@ -264,8 +264,7 @@ int app2_main(void) {
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
     for (i = 0; i < num_words; i++) {
-      lnic_zero1();
-      lnic_zero2();
+      lnic_add_two();
     }
   }
   return 0;

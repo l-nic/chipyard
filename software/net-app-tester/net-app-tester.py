@@ -7,9 +7,12 @@ import Othello_headers as Othello
 import struct
 import pandas as pd
 import os
+import threading
+import traceback
+import time
 
 TEST_IFACE = "tap0"
-TIMEOUT_SEC = 3 # seconds
+TIMEOUT_SEC = 6 # seconds
 
 NIC_MAC = "08:11:22:33:44:08"
 MY_MAC = "08:55:66:77:88:08"
@@ -18,14 +21,14 @@ NIC_IP = "10.0.0.1"
 MY_IP = "10.1.2.3"
 
 DST_CONTEXT = 0
-MY_CONTEXT = 0x1234
+MY_CONTEXT = 0x1235
 
 LOG_DIR = '/vagrant/logs'
 
-def lnic_req():
+def lnic_req(my_context=MY_CONTEXT, dst_context=DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
-            LNIC(src=MY_CONTEXT, dst=DST_CONTEXT)
+            LNIC(src=my_context, dst=dst_context)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -34,32 +37,123 @@ def write_csv(dname, fname, df):
     with open(os.path.join(log_dir, fname), 'w') as f:
         f.write(df.to_csv(index=False))
 
+class ParallelLoopback(unittest.TestCase):
+    def test_range(self):
+        # packet_lengths = range(64, 64*20, 64)
+        packet_lengths = [64] * 32
+        contexts = [(0x1235, 0), (0x1236, 1)]
+        print str(len(contexts)*len(packet_lengths))
+        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=10)#len(contexts)*len(packet_lengths))
+        sniffer.start()
+        for pkt_len in packet_lengths:
+            for my_context, dst_context in contexts:
+                msg_len = pkt_len - len(lnic_req()) # bytes
+                payload = Raw('\x00'*msg_len)
+                req = lnic_req(my_context=my_context, dst_context=dst_context) / payload
+                sendp(req, iface=TEST_IFACE)
+                time.sleep(.1)
+        sniffer.join()
+        # print sniffer.results
+        real_packets = 0
+        for resp in sniffer.results:
+            self.assertIsNotNone(resp)
+            if resp[LNIC].dst == 0x1235 or resp[LNIC].dst == 0x1236:
+                resp_data = resp[LNIC].payload
+                resp_value = struct.unpack('!Q', str(resp_data)[:8])[0]
+                print "Packet from context id " + str(resp[LNIC].src) + " contains value " + str(resp_value)
+                real_packets += 1
+        print "Total packets received: " + str(real_packets)
+        return
+
+        # Start the sender threads and the packet sniffer
+        exc0 = []
+        exc1 = []
+        context0_thread = threading.Thread(target=self.context0, args=(exc0, pkt_len))
+        context1_thread = threading.Thread(target=self.context1, args=(exc1, pkt_len))
+        sniffer = AsyncSniffer(iface=TEST_IFACE, count=2*num_packets)
+        sniffer.start()
+        context0_thread.start()
+        context1_thread.start()
+        context0_thread.join()
+        context1_thread.join()
+        print "All data sent"
+
+        # Handle exceptions in the sender threads
+        if len(exc0) > 0 or len(exc1) > 0:
+            if len(exc0) > 0:
+                print exc0[0]
+            if len(exc1) > 0:
+                print exc1[0]
+            raise Exception("Context thread encountered exception")
+        
+        # Wait for all packets to be received, and print the results
+        sniffer.join()
+        print sniffer.results
+        for resp in sniffer.results:
+            print(hexdump(resp))
+            self.assertIsNotNone(resp)
+            print "Dst id: " + str(resp[LNIC].dst)
+            resp_data = resp[LNIC].payload
+            print "Data: " + str(struct.unpack('!Q', str(resp_data)[:8])[0])
+        #print t.stop()
+
+    def context0(self, exc, pkt_len):
+        try:
+            my_context = 0x1235
+            dst_context = 0
+            self.send_packets(my_context, dst_context, pkt_len)
+        except Exception as e:
+            exc.append(traceback.format_exc())
+
+    def context1(self, exc, pkt_len):
+        try:
+            my_context = 0x1236
+            dst_context = 1
+            self.send_packets(my_context, dst_context, pkt_len)
+        except Exception as e:
+            exc.append(traceback.format_exc())
+
+    def send_packets(self, my_context, dst_context, pkt_len):
+        for l in pkt_len:
+            print 'Testing pkt_len = {} bytes'.format(l)
+            self.do_loopback(my_context, dst_context, l)
+
+    def do_loopback(self, my_context, dst_context, pkt_len):
+        msg_len = pkt_len - len(lnic_req()) # bytes
+        payload = Raw('\x00'*msg_len)
+        req = lnic_req(my_context=my_context, dst_context=dst_context) / payload
+        # send request
+        sendp(req, iface=TEST_IFACE)
+
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkt_len):
         msg_len = pkt_len - len(lnic_req()) # bytes
         payload = Raw('\x00'*msg_len)
-        req = lnic_req() / payload
+        req = lnic_req(dst_context=1) / payload
+        #self.prev_context = not self.prev_context
         # send request / receive response
         resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
         self.assertIsNotNone(resp)
-        self.assertEqual(resp[LNIC].dst, MY_CONTEXT)
+        self.assertEqual(resp[LNIC].dst, MY_CONTEXT or 0x192)
         resp_data = resp[LNIC].payload
         self.assertEqual(len(resp_data), len(payload))
-        latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
-        return latency
+        # latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+        return struct.unpack('!Q', str(resp_data)[:8])[0]
     def test_single(self):
         pkt_len = 64 # bytes
-        latency = self.do_loopback(pkt_len)
-        print 'Latency = {} cycles'.format(latency)
+        returned_word = self.do_loopback(pkt_len)
+        #print 'Latency = {} cycles'.format(latency)
+        print "Returned word: " + str(returned_word)
     def test_pkt_length(self):
         pkt_len = range(64, 64*20, 64)
-        latency = []
+        returned_words = []
         for l in pkt_len:
             print 'Testing pkt_len = {} bytes'.format(l)
-            latency.append(self.do_loopback(l))
+            returned_words.append(self.do_loopback(l))
+        print returned_words
         # record latencies
-        df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
-        write_csv('loopback', 'pkt_len_latency.csv', df)
+        #df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
+        #write_csv('loopback', 'pkt_len_latency.csv', df)
 
 class Stream(unittest.TestCase):
     def do_loopback(self, pkt_len):
