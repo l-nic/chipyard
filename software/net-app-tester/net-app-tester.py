@@ -145,7 +145,8 @@ class Loopback(unittest.TestCase):
         #print 'Latency = {} cycles'.format(latency)
         print "Returned word: " + str(returned_word)
     def test_pkt_length(self):
-        pkt_len = range(64, 64*20, 64)
+        # pkt_len = range(64, 64*20, 64)
+        pkt_len = [64] * 90
         returned_words = []
         for l in pkt_len:
             print 'Testing pkt_len = {} bytes'.format(l)
