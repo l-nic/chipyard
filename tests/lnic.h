@@ -12,10 +12,11 @@
 #define CONTEXT_MASK 0x00000000ffff0000
 #define LEN_MASK     0x000000000000ffff
 
-#define lnic_add_context(cid) ({ write_csr(0x053, cid); write_csr(0x054, 1); })
+#define lnic_add_context(cid, priority) ({ write_csr(0x053, cid); write_csr(0x055, priority); write_csr(0x054, 1); })
 
 // poll CSR lmsgsrdy until non-zero
-#define lnic_wait() while (read_csr(0x052) == 0)
+#define lnic_wait() while (read_csr(0x052) == 0) { write_csr(0x056, 1); }
+
 #define lnic_read() ({ uint64_t __tmp; \
   asm volatile ("mv %0, "LREAD  : "=r"(__tmp)); \
   __tmp; })

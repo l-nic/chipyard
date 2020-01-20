@@ -22,10 +22,10 @@ MY_CONTEXT = 0x1234
 
 LOG_DIR = '/vagrant/logs'
 
-def lnic_req():
+def lnic_req(lnic_dst = DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
-            LNIC(src=MY_CONTEXT, dst=DST_CONTEXT)
+            LNIC(src=MY_CONTEXT, dst=lnic_dst)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -193,4 +193,14 @@ class OthelloTest(unittest.TestCase):
         # record latencies
         df = pd.DataFrame({'fanout':fanout, 'map_latency':map_latency, 'reduce_latency':reduce_latency})
         write_csv('othello', 'fanout_latency.csv', df)
+
+
+class Multithread(unittest.TestCase):
+    def test_basic(self):
+        pkt_len = 64 # bytes
+        msg_len = pkt_len - len(lnic_req()) # bytes
+        payload = Raw('\x00'*msg_len)
+        sendp(lnic_req(1) / payload, iface=TEST_IFACE)
+        sendp(lnic_req(0) / payload, iface=TEST_IFACE)
+        self.assertTrue(True)
 

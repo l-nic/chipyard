@@ -30,7 +30,7 @@
 
 int main(void) {
   // register context ID with L-NIC
-  lnic_add_context(0);
+  lnic_add_context(0, 0);
 
   // allocate stack memory for weights
   uint64_t weights[MAX_NUM_EDGES];

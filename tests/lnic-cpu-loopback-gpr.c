@@ -12,7 +12,7 @@ int main(void)
 	int i;
 
 	// register context ID with L-NIC
-        lnic_add_context(0);
+        lnic_add_context(0, 0);
 
 	while (1) {
 		// wait for a pkt to arrive
