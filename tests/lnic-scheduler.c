@@ -5,6 +5,40 @@
 #include "lnic.h"
 #include "lnic-scheduler.h"
 
+int app1_main(void) {
+  uint64_t app_hdr;
+  uint16_t msg_len;
+  int num_words;
+  int i;
+
+  // register context ID with L-NIC
+        lnic_add_context(0, 0);
+
+  while (1) {
+    // wait for a pkt to arrive
+    lnic_wait();
+    // read request application hdr
+    app_hdr = lnic_read();
+    // write response application hdr
+    lnic_write_r(app_hdr);
+    // extract msg_len
+    msg_len = (uint16_t)app_hdr;
+//    printf("Received msg of length: %hu bytes", msg_len);
+    num_words = msg_len/LNIC_WORD_SIZE;
+    if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
+    // copy msg words back into network
+    for (i = 0; i < num_words; i++) {
+      lnic_copy();
+    }
+  }
+  return 0;
+}
+
+int app2_main(void) {
+  lnic_add_context(1, 1);
+  while (1);
+}
+
 // Thread metadata storage in global state
 struct thread_t threads[MAX_THREADS];
 uint64_t num_threads = 0;
@@ -34,20 +68,22 @@ void remove_thread(struct thread_t* thread) {
 
 uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
   if (cause == TIMER_INT_CAUSE) {
+    // Back up the current user thread, if there is one
     struct thread_t* current_thread = NULL;
     if (csr_read(mscratch) != 0) {
-      // Back up the current user thread, if there is one
       current_thread = csr_read(mscratch);
       current_thread->epc = epc;
       for (int i = 0; i < NUM_REGS; i++) {
         current_thread->regs[i] = regs[i];
       }
     }
+
     // Select a thread.to run
     struct thread_t* selected_thread = NULL;
     for (int i = 0; i < num_threads; i++) {
       struct thread_t* candidate_thread = &threads[i];
       if (candidate_thread->finished) {
+        // Skip any threads that have completed
         continue;
       }
       csr_write(0x53, candidate_thread->id); // Set the current lnic context
@@ -57,7 +93,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
         csr_write(0x53, selected_thread->id);
         selected_thread_messages_pending = csr_read(0x52);
       }
-      if (!selected_thread || candidate_thread_messages_pending > selected_thread_messages_pending || candidate_thread->priority > selected_thread->priority || candidate_thread->skipped > selected_thread->skipped) {
+      if (!selected_thread || candidate_thread->priority > selected_thread->priority || candidate_thread->skipped > selected_thread->skipped) {
         selected_thread = candidate_thread;
       }
     }
@@ -105,64 +141,6 @@ void start_thread(int (*target)(void)) {
   thread->regs[REG_SP] = sp - STACK_SIZE_BYTES * (1 + thread->id);
   thread->regs[REG_GP] = gp;
   thread->regs[REG_TP] = tp;
-}
-
-int app1_main(void) {
-  uint64_t app_hdr;
-  uint16_t msg_len;
-  int num_words;
-  int i;
-
-  // register context ID with L-NIC
-        lnic_add_context(0, 0);
-
-  while (1) {
-    // wait for a pkt to arrive
-    lnic_wait();
-    // read request application hdr
-    app_hdr = lnic_read();
-    // write response application hdr
-    lnic_write_r(app_hdr);
-    // extract msg_len
-    msg_len = (uint16_t)app_hdr;
-//    printf("Received msg of length: %hu bytes", msg_len);
-    num_words = msg_len/LNIC_WORD_SIZE;
-    if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
-    // copy msg words back into network
-    for (i = 0; i < num_words; i++) {
-      lnic_add_int_i(1);
-    }
-  }
-  return 0;
-}
-
-int app2_main(void) {
-  uint64_t app_hdr;
-  uint16_t msg_len;
-  int num_words;
-  int i;
-
-  // register context ID with L-NIC
-        lnic_add_context(1, 1);
-
-  while (1) {
-    // wait for a pkt to arrive
-    lnic_wait();
-    // read request application hdr
-    app_hdr = lnic_read();
-    // write response application hdr
-    lnic_write_r(app_hdr);
-    // extract msg_len
-    msg_len = (uint16_t)app_hdr;
-//    printf("Received msg of length: %hu bytes", msg_len);
-    num_words = msg_len/LNIC_WORD_SIZE;
-    if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
-    // copy msg words back into network
-    for (i = 0; i < num_words; i++) {
-      lnic_add_int_i(2);
-    }
-  }
-  return 0;
 }
 
 int main(void) {
