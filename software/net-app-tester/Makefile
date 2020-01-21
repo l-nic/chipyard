@@ -7,11 +7,8 @@ loopback:
 priority_mix:
 	python -m unittest net-app-tester.PriorityMix
 
-old_tester_loopback:
-	python -m unittest old_tester.Loopback
-
 parallel_loopback:
-	python -m unittest old_tester.ParallelLoopback
+	python -m unittest net-app-tester.ParallelLoopback
 
 stream:
 	python -m unittest net-app-tester.Stream

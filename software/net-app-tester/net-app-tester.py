@@ -27,10 +27,10 @@ HIGH = 0
 
 LOG_DIR = '/vagrant/logs'
 
-def lnic_req(lnic_dst = DST_CONTEXT):
+def lnic_req(my_context=MY_CONTEXT, lnic_dst = DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
-            LNIC(src=MY_CONTEXT, dst=lnic_dst)
+            LNIC(src=my_context, dst=lnic_dst)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -38,6 +38,33 @@ def write_csv(dname, fname, df):
       os.makedirs(log_dir)
     with open(os.path.join(log_dir, fname), 'w') as f:
         f.write(df.to_csv(index=False))
+
+class ParallelLoopback(unittest.TestCase):
+    def test_range(self):
+        # packet_lengths = range(64, 64*20, 64)
+        packet_lengths = [64] * 32
+        contexts = [(0x1235, 0), (0x1236, 1)]
+        print str(len(contexts)*len(packet_lengths))
+        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=20)# count=len(contexts)*len(packet_lengths))
+        sniffer.start()
+        for pkt_len in packet_lengths:
+            for my_context, dst_context in contexts:
+                msg_len = pkt_len - len(lnic_req()) # bytes
+                payload = Raw('\x00'*msg_len)
+                req = lnic_req(my_context=my_context, lnic_dst=dst_context) / payload
+                sendp(req, iface=TEST_IFACE)
+                time.sleep(.1)
+        sniffer.join()
+        print sniffer.results
+        real_packets = 0
+        for resp in sniffer.results:
+            self.assertIsNotNone(resp)
+            if resp[LNIC].dst == 0x1235 or resp[LNIC].dst == 0x1236:
+                resp_data = resp[LNIC].payload
+                resp_value = struct.unpack('!Q', str(resp_data)[:8])[0]
+                print "Packet from context id " + str(resp[LNIC].src) + " contains value " + str(resp_value)
+                real_packets += 1
+        print "Total packets received: " + str(real_packets)
 
 class PriorityMix(unittest.TestCase):
     def do_loopback(self, pkt_len, priority):
@@ -55,6 +82,10 @@ class PriorityMix(unittest.TestCase):
         app_packets = 0
         for resp in sniffer.results:
             self.assertIsNotNone(resp)
+            try:
+                _ = resp[LNIC].dst
+            except IndexError:
+                continue
             if resp[LNIC].dst == MY_CONTEXT:
                 resp_data = resp[LNIC].payload
                 latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
@@ -67,7 +98,7 @@ class PriorityMix(unittest.TestCase):
         self.assertEqual(app_packets, len([LOW, HIGH]))
     def test_range(self):
         high_priority_target_fraction = 0.8
-        num_copies = 3
+        num_copies = 2
         latency_low = []
         latency_high = []
         packet_lengths = list(range(64, 64*20, 64))
@@ -89,6 +120,10 @@ class PriorityMix(unittest.TestCase):
         app_packets = 0
         for resp in sniffer.results:
             self.assertIsNotNone(resp)
+            try:
+                _ = resp[LNIC].dst
+            except IndexError:
+                continue
             if resp[LNIC].dst == MY_CONTEXT:
                 resp_data = resp[LNIC].payload
                 latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
@@ -98,8 +133,10 @@ class PriorityMix(unittest.TestCase):
                 else:
                     latency_high.append(latency)
                 app_packets += 1
-        print latency_low
-        print latency_high
+        print "Low priority latencies: " + str(latency_low)
+        print "Low count {}, avg {}".format(len(latency_low), sum(latency_low)/float(len(latency_low)))
+        print "\nHigh priority latencies: " + str(latency_high)
+        print "High count {}, avg {}".format(len(latency_high), sum(latency_high)/float(len(latency_high)))
         self.assertEqual(app_packets, len(packet_lengths))
 
 class Loopback(unittest.TestCase):
