@@ -88,6 +88,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
       }
       csr_write(0x53, candidate_thread->id); // Set the current lnic context
       uint64_t candidate_thread_messages_pending = csr_read(0x52); // Read the pending messages
+      printf("Candidate thread %d messages pending is %d, target context is %d\n", candidate_thread->id, candidate_thread_messages_pending, csr_read(0x58));
       uint64_t selected_thread_messages_pending = 0;
       if (selected_thread) {
         csr_write(0x53, selected_thread->id);
@@ -160,7 +161,7 @@ int main(void) {
   printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start
-  csr_set(mie, TIMER_INT_ENABLE);
+  csr_set(mie, TIMER_INT_ENABLE | LNIC_INT_ENABLE);
   asm volatile ("wfi");
   
   // Should never reach here as long as user threads are running,

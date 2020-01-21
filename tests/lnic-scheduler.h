@@ -8,6 +8,10 @@
 #define MTIME_PTR_LO 0x200bff8
 #define MTIMECMP_PTR_LO 0x2004000
 
+// LNIC interrupt control
+#define LNIC_INT_ENABLE 0x10000
+#define LNIC_INT_CAUSE 0
+
 // Exit error codes
 #define ERR_THREADS_EXHAUSTED 22
 #define ERR_NO_THREAD_SELECTED 9
