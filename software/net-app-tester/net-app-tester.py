@@ -7,9 +7,10 @@ import Othello_headers as Othello
 import struct
 import pandas as pd
 import os
+import random
 
 TEST_IFACE = "tap0"
-TIMEOUT_SEC = 3 # seconds
+TIMEOUT_SEC = 7 # seconds
 
 NIC_MAC = "08:11:22:33:44:08"
 MY_MAC = "08:55:66:77:88:08"
@@ -19,6 +20,10 @@ MY_IP = "10.1.2.3"
 
 DST_CONTEXT = 0
 MY_CONTEXT = 0x1234
+
+# Priorities
+LOW = 1
+HIGH = 0
 
 LOG_DIR = '/vagrant/logs'
 
@@ -33,6 +38,69 @@ def write_csv(dname, fname, df):
       os.makedirs(log_dir)
     with open(os.path.join(log_dir, fname), 'w') as f:
         f.write(df.to_csv(index=False))
+
+class PriorityMix(unittest.TestCase):
+    def do_loopback(self, pkt_len, priority):
+        msg_len = pkt_len - len(lnic_req()) # bytes
+        payload = Raw('\x00'*msg_len)
+        req = lnic_req(lnic_dst=priority) / payload
+        sendp(req, iface=TEST_IFACE)
+    def test_single(self):
+        pkt_len = 64
+        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=5)
+        sniffer.start()
+        self.do_loopback(pkt_len, LOW)
+        self.do_loopback(pkt_len, HIGH)
+        sniffer.join()
+        app_packets = 0
+        for resp in sniffer.results:
+            self.assertIsNotNone(resp)
+            if resp[LNIC].dst == MY_CONTEXT:
+                resp_data = resp[LNIC].payload
+                latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+                self.assertTrue(resp[LNIC].src == LOW or resp[LNIC].src == HIGH)
+                if resp[LNIC].src == LOW:
+                    print 'Low Priority Latency = {} cycles'.format(latency)
+                else:
+                    print 'High Priority Latency = {} cycles'.format(latency)
+                app_packets += 1
+        self.assertEqual(app_packets, len([LOW, HIGH]))
+    def test_range(self):
+        high_priority_target_fraction = 0.8
+        num_copies = 3
+        latency_low = []
+        latency_high = []
+        packet_lengths = list(range(64, 64*20, 64))
+        packet_lengths = [elem for elem in packet_lengths for i in range(num_copies)]
+        priorities = [LOW] * len(packet_lengths)
+        for i in range(int(high_priority_target_fraction*len(packet_lengths))):
+            priorities[i] = HIGH
+        random.shuffle(packet_lengths)
+        random.shuffle(priorities)
+        print packet_lengths
+        print priorities
+        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=30)
+        sniffer.start()
+        for i in range(len(packet_lengths)):
+            self.do_loopback(packet_lengths[i], priorities[i])
+            time.sleep(0.5)
+        sniffer.join()
+        print sniffer.results
+        app_packets = 0
+        for resp in sniffer.results:
+            self.assertIsNotNone(resp)
+            if resp[LNIC].dst == MY_CONTEXT:
+                resp_data = resp[LNIC].payload
+                latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+                self.assertTrue(resp[LNIC].src == LOW or resp[LNIC].src == HIGH)
+                if resp[LNIC].src == LOW:
+                    latency_low.append(latency)
+                else:
+                    latency_high.append(latency)
+                app_packets += 1
+        print latency_low
+        print latency_high
+        self.assertEqual(app_packets, len(packet_lengths))
 
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkt_len):

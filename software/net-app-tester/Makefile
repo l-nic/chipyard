@@ -4,6 +4,15 @@
 loopback:
 	python -m unittest net-app-tester.Loopback
 
+priority_mix:
+	python -m unittest net-app-tester.PriorityMix
+
+old_tester_loopback:
+	python -m unittest old_tester.Loopback
+
+parallel_loopback:
+	python -m unittest old_tester.ParallelLoopback
+
 stream:
 	python -m unittest net-app-tester.Stream
 

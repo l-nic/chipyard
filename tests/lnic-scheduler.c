@@ -72,7 +72,6 @@ struct thread_t* new_thread() {
   }
   struct thread_t* next_thread = &threads[num_threads];
   next_thread->epc = 0;
-  next_thread->priority = 1;
   next_thread->id = num_threads;
   next_thread->skipped = 0;
   next_thread->finished = 0;
@@ -109,7 +108,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
       if (candidate_thread->finished) {
         continue;
       }
-      printf("Target context is %d\n", csr_read(0x58));
+      //printf("Target context is %d\n", csr_read(0x58));
 
       // Automatically accept the NIC's suggested context, if it exists
       if (candidate_thread->id == target_context) {
@@ -139,7 +138,7 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
 
     // Switch to the new thread
     selected_thread->skipped = 0;
-    printf("Switching to new thread %d at %#lx\n", selected_thread->id, selected_thread->epc);
+    //printf("Switching to new thread %d at %#lx\n", selected_thread->id, selected_thread->epc);
     epc = selected_thread->epc;
     for (int i = 0; i < NUM_REGS; i++) {
       regs[i] = selected_thread->regs[i];
@@ -162,7 +161,6 @@ void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   struct thread_t* thread = new_thread();
   thread->epc = target;
   thread->id = id;
-  thread->priority = priority;
   lnic_add_context(id, priority);
   volatile uint64_t sp, gp, tp;
   asm volatile("mv %0, sp" : "=r"(sp));
