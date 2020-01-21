@@ -5,17 +5,14 @@
 #include "lnic.h"
 #include "lnic-scheduler.h"
 
-
-
-
-
-struct thread_t threads[10]; // TODO: This should really be a variable number
+// Thread metadata storage in global state
+struct thread_t threads[MAX_THREADS];
 uint64_t num_threads = 0;
 
 struct thread_t* new_thread() {
-  csr_clear(mie, 0b10000000); // Don't want to accidentally hit a timer interrupt and loop through the threads right now
-  if (num_threads == 10) {
-    exit(22);
+  csr_clear(mie, TIMER_INT_ENABLE);
+  if (num_threads == MAX_THREADS) {
+    exit(ERR_THREADS_EXHAUSTED);
   }
   struct thread_t* next_thread = &threads[num_threads];
   next_thread->epc = 0;
@@ -24,27 +21,25 @@ struct thread_t* new_thread() {
   next_thread->skipped = 0;
   next_thread->finished = 0;
   num_threads++;
-  csr_set(mie, 0b10000000);
+  csr_set(mie, TIMER_INT_ENABLE);
   return next_thread;
 }
 
 void remove_thread(struct thread_t* thread) {
-  csr_clear(mie, 0b10000000); // Don't want to accidentally hit a timer interrupt and loop through the threads right now
+  csr_clear(mie, TIMER_INT_ENABLE);
   thread->finished = 1;
-  csr_set(mie, 0b10000000);
+  csr_set(mie, TIMER_INT_ENABLE);
 }
 
 
-
 uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
-  // printf("cause is %#lx\n", cause);
-  if (cause == 0x8000000000000007) {
+  if (cause == TIMER_INT_CAUSE) {
     struct thread_t* current_thread = NULL;
     if (csr_read(mscratch) != 0) {
       // Back up the current user thread, if there is one
       current_thread = csr_read(mscratch);
       current_thread->epc = epc;
-      for (int i = 0; i < 32; i++) {
+      for (int i = 0; i < NUM_REGS; i++) {
         current_thread->regs[i] = regs[i];
       }
     }
@@ -76,27 +71,28 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
       rejected_thread->skipped++;
     }
     if (!selected_thread) {
-      exit(9);
+      exit(ERR_NO_THREAD_SELECTED);
     }
 
     // Switch to the new thread
     selected_thread->skipped = 0;
     printf("Switching to new thread %#lx at %#lx\n", selected_thread, selected_thread->epc);
     epc = selected_thread->epc;
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < NUM_REGS; i++) {
       regs[i] = selected_thread->regs[i];
     }
     csr_write(mscratch, selected_thread);
     csr_write(0x53, selected_thread->id);
 
     // Restart the timer for the next timer interrupt
-    uint64_t* mtime_ptr_lo = 0x200bff8;
-    uint64_t* mtimecmp_ptr_lo = 0x2004000;
-    *mtimecmp_ptr_lo = *mtime_ptr_lo + 40;
+    uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
+    uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
+    *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
 
     return epc;
   }
-  exit(99);
+  printf("Unknown exception with cause %#lx\n", cause);
+  exit(ERR_UNKNOWN_EXCEPTION);
 }
 
 void start_thread(int (*target)(void)) {
@@ -106,12 +102,9 @@ void start_thread(int (*target)(void)) {
   asm volatile("mv %0, sp" : "=r"(sp));
   asm volatile("mv %0, gp" : "=r"(gp));
   asm volatile("mv %0, tp" : "=r"(tp));
-  thread->regs[REG_SP] = sp - 1024 * (1 + thread->id);
+  thread->regs[REG_SP] = sp - STACK_SIZE_BYTES * (1 + thread->id);
   thread->regs[REG_GP] = gp;
   thread->regs[REG_TP] = tp;
-
-
-  //thread->regs[REG_SP] = 
 }
 
 int app1_main(void) {
@@ -176,9 +169,9 @@ int main(void) {
   printf("Hello from scheduler base\n");
 
   // Turn on the timer
-  uint64_t* mtime_ptr_lo = 0x200bff8;
-  uint64_t* mtimecmp_ptr_lo = 0x2004000;
-  *mtimecmp_ptr_lo = *mtime_ptr_lo + 100;
+  uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
+  uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
+  *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
   csr_write(mscratch, 0);
 
   // Set up the application threads
@@ -189,7 +182,7 @@ int main(void) {
   printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start
-  csr_set(mie, 0b10000000);
+  csr_set(mie, TIMER_INT_ENABLE);
   asm volatile ("wfi");
   
   // Should never reach here as long as user threads are running,

@@ -1,11 +1,24 @@
 
+#define MAX_THREADS 10
+#define TIME_SLICE_RTC_TICKS 40
+
 // Timer interrupt control
-#define SIE_STIE 0x00000020 /* Timer Interrupt Enable */
+#define TIMER_INT_ENABLE 0b10000000 /* Timer interrupts enabled */
+#define TIMER_INT_CAUSE  0x8000000000000007 /* Current interrupt is from timer */
+#define MTIME_PTR_LO 0x200bff8
+#define MTIMECMP_PTR_LO 0x2004000
+
+// Exit error codes
+#define ERR_THREADS_EXHAUSTED 22
+#define ERR_NO_THREAD_SELECTED 9
+#define ERR_UNKNOWN_EXCEPTION 99
 
 // Stack setup calling convention register indices
+#define NUM_REGS 32
 #define REG_SP 2
 #define REG_GP 3
 #define REG_TP 4
+#define STACK_SIZE_BYTES 1024
 
 // Kernel thread structure
 struct thread_t {
