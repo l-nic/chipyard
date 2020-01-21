@@ -21,10 +21,7 @@
   asm volatile ("mv %0, "LREAD  : "=r"(__tmp)); \
   __tmp; })
 #define lnic_copy() asm volatile ("mv "LWRITE", "LREAD)
-#define lnic_zero1() asm volatile ("mv zero, "LREAD)
-#define lnic_zero2() asm volatile ("mv "LWRITE", zero")
-#define lnic_add_one()  asm volatile ("add "LWRITE", "LREAD", 1")
-#define lnic_add_two()  asm volatile ("add "LWRITE", "LREAD", 2")
+#define lnic_add_int_i(val)  asm volatile ("add "LWRITE", "LREAD", %0" : /*no outputs*/ : "i"(val))
 #define lnic_write_r(val) asm volatile ("mv "LWRITE", %0" : /*no outputs*/ : "r"(val))
 #define lnic_write_i(val) asm volatile ("li "LWRITE", %0" : /*no outputs*/ : "i"(val))
 #define lnic_write_m(val) asm volatile ("ld "LWRITE", %0" : /*no outputs*/ : "m"(val))

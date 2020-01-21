@@ -3,116 +3,11 @@
 #include <string.h>
 
 #include "lnic.h"
-
-register volatile uint64_t global_ptr2 asm ("t6");
-
-
-// We're going to need to lift most of the interrupt handling routines out of the linux
-// source and put them here.
-// The stvec will need to be routed to an exception handler.
-// The sscratch register will need to be updated to keep a handle to our
-// kernel data structures.
-// Unlike in the actual kernel, everything is in supervisor (or machine)
-// mode, so it can probably just stay there the whole time.
-
-// We'll also need a little bit of the sbi interface, or we won't be
-// able to set any timers or print anything from the kernel.
-
-#define SBI_SET_TIMER 0
-#define SBI_CONSOLE_PUTCHAR 1
-
-#define REG_SP 2
-#define REG_GP 3
-#define REG_TP 4
+#include "lnic-scheduler.h"
 
 
-#define SBI_CALL(which, arg0, arg1, arg2) ({      \
-  register uintptr_t a0 asm ("a0") = (uintptr_t)(arg0); \
-  register uintptr_t a1 asm ("a1") = (uintptr_t)(arg1); \
-  register uintptr_t a2 asm ("a2") = (uintptr_t)(arg2); \
-  register uintptr_t a7 asm ("a7") = (uintptr_t)(which);  \
-  asm volatile ("ecall"         \
-          : "+r" (a0)       \
-          : "r" (a1), "r" (a2), "r" (a7)    \
-          : "memory");        \
-  a0;             \
-})
-
-#define SBI_CALL_1(which, arg0) SBI_CALL(which, arg0, 0, 0)
 
 
-static inline void sbi_console_putchar(int ch)
-{
-  SBI_CALL_1(SBI_CONSOLE_PUTCHAR, ch);
-}
-
-#define csr_read(csr)           \
-({                \
-  register unsigned long __v;       \
-  __asm__ __volatile__ ("csrr %0, " #csr      \
-            : "=r" (__v) :      \
-            : "memory");      \
-  __v;              \
-})
-
-#define csr_write(csr, val)         \
-({                \
-  unsigned long __v = (unsigned long)(val);   \
-  __asm__ __volatile__ ("csrw " #csr ", %0"   \
-            : : "rK" (__v)      \
-            : "memory");      \
-})
-
-static inline void sbi_set_timer(uint64_t stime_value)
-{
-  SBI_CALL_1(SBI_SET_TIMER, stime_value);
-}
-
-typedef unsigned long cycles_t;
-
-static inline cycles_t get_cycles_inline(void)
-{
-  cycles_t n;
-
-  __asm__ __volatile__ (
-    "rdtime %0"
-    : "=r" (n));
-  return n;
-}
-#define get_cycles get_cycles_inline
-
-static inline uint64_t get_cycles64(void)
-{
-        return get_cycles();
-}
-
-
-#define SIE_STIE 0x00000020 /* Timer Interrupt Enable */
-
-#define csr_set(csr, val)         \
-({                \
-  unsigned long __v = (unsigned long)(val);   \
-  __asm__ __volatile__ ("csrs " #csr ", %0"   \
-            : : "rK" (__v)      \
-            : "memory");      \
-})
-
-#define csr_clear(csr, val)         \
-({                \
-  unsigned long __v = (unsigned long)(val);   \
-  __asm__ __volatile__ ("csrc " #csr ", %0"   \
-            : : "rK" (__v)      \
-            : "memory");      \
-})
-
-struct thread_t {
-  uintptr_t epc;
-  uintptr_t regs[32];
-  uint64_t priority;
-  uintptr_t id;
-  uint64_t skipped;
-  int finished;
-};
 
 struct thread_t threads[10]; // TODO: This should really be a variable number
 uint64_t num_threads = 0;
@@ -242,7 +137,7 @@ int app1_main(void) {
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
     for (i = 0; i < num_words; i++) {
-      lnic_add_one();
+      lnic_add_int_i(1);
     }
   }
   return 0;
@@ -271,7 +166,7 @@ int app2_main(void) {
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
     for (i = 0; i < num_words; i++) {
-      lnic_add_two();
+      lnic_add_int_i(2);
     }
   }
   return 0;
