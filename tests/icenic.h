@@ -76,21 +76,21 @@ static inline uint64_t nic_macaddr(void)
 static inline uint16_t ntohs(uint16_t nint)
 {
 	uint16_t result;
-	asm volatile (".insn r 0x33, 0, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
+	//asm volatile (".insn r 0x33, 0, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
         return result;
 }
 
 static inline uint32_t ntohi(uint32_t nint)
 {
 	uint32_t result;
-	asm volatile (".insn r 0x33, 1, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
+	//asm volatile (".insn r 0x33, 1, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
         return result;
 }
 
 static inline uint64_t ntohl(uint64_t nint)
 {
 	uint64_t result;
-	asm volatile (".insn r 0x33, 2, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
+	//asm volatile (".insn r 0x33, 2, 0x2A, %0, %1, x0" : "=r"(result) : "r"(nint));
         return result;
 }
 
