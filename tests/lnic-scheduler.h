@@ -28,7 +28,6 @@
 struct thread_t {
   uintptr_t epc;
   uintptr_t regs[32];
-  uint64_t priority;
   uintptr_t id;
   uint64_t skipped;
   int finished;

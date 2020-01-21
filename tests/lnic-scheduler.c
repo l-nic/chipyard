@@ -89,7 +89,7 @@ void remove_thread(struct thread_t* thread) {
 
 
 uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
-  if (cause == TIMER_INT_CAUSE) {
+  if (cause == TIMER_INT_CAUSE || cause == LNIC_INT_CAUSE) {
     // Back up the current user thread, if there is one
     struct thread_t* current_thread = NULL;
     if (csr_read(mscratch) != 0) {
@@ -152,9 +152,6 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
     uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
     *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
 
-    return epc;
-  } else if (cause == LNIC_INT_CAUSE) {
-    printf("Lnic interrupt\n");
     return epc;
   }
   printf("Unknown exception with cause %#lx\n", cause);
