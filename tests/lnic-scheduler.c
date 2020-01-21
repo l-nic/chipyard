@@ -12,7 +12,7 @@ int app1_main(void) {
   int i;
 
   // register context ID with L-NIC
-        lnic_add_context(0, 0);
+   //     lnic_add_context(0, 1);
 
   while (1) {
     // wait for a pkt to arrive
@@ -28,15 +28,37 @@ int app1_main(void) {
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
     for (i = 0; i < num_words; i++) {
-      lnic_copy();
+      lnic_add_int_i(1);
     }
   }
   return 0;
 }
 
 int app2_main(void) {
-  lnic_add_context(1, 1);
-  while (1);
+  //lnic_add_context(1, 0);
+  //while (1);
+    uint64_t app_hdr;
+  uint16_t msg_len;
+  int num_words;
+  int i;
+  while (1) {
+    // wait for a pkt to arrive
+    lnic_wait();
+    // read request application hdr
+    app_hdr = lnic_read();
+    // write response application hdr
+    lnic_write_r(app_hdr);
+    // extract msg_len
+    msg_len = (uint16_t)app_hdr;
+//    printf("Received msg of length: %hu bytes", msg_len);
+    num_words = msg_len/LNIC_WORD_SIZE;
+    if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
+    // copy msg words back into network
+    for (i = 0; i < num_words; i++) {
+      lnic_add_int_i(2);
+    }
+  }
+  return 0;
 }
 
 // Thread metadata storage in global state
@@ -78,23 +100,25 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
       }
     }
 
-    // Select a thread.to run
+    // Select a thread to run
+    uint64_t target_context = csr_read(0x58);
     struct thread_t* selected_thread = NULL;
     for (int i = 0; i < num_threads; i++) {
       struct thread_t* candidate_thread = &threads[i];
+      // Skip any threads that have completed
       if (candidate_thread->finished) {
-        // Skip any threads that have completed
         continue;
       }
-      csr_write(0x53, candidate_thread->id); // Set the current lnic context
-      uint64_t candidate_thread_messages_pending = csr_read(0x52); // Read the pending messages
-      printf("Candidate thread %d messages pending is %d, target context is %d\n", candidate_thread->id, candidate_thread_messages_pending, csr_read(0x58));
-      uint64_t selected_thread_messages_pending = 0;
-      if (selected_thread) {
-        csr_write(0x53, selected_thread->id);
-        selected_thread_messages_pending = csr_read(0x52);
+      printf("Target context is %d\n", csr_read(0x58));
+
+      // Automatically accept the NIC's suggested context, if it exists
+      if (candidate_thread->id == target_context) {
+        selected_thread = candidate_thread;
+        break;
       }
-      if (!selected_thread || candidate_thread->priority > selected_thread->priority || candidate_thread->skipped > selected_thread->skipped) {
+
+      // Default to LRU if the NIC suggests a non-existent context
+      if (!selected_thread || candidate_thread->skipped > selected_thread->skipped) {
         selected_thread = candidate_thread;
       }
     }
@@ -107,13 +131,15 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
       }
       rejected_thread->skipped++;
     }
+
+    // Throw an error if no thread could be selected
     if (!selected_thread) {
       exit(ERR_NO_THREAD_SELECTED);
     }
 
     // Switch to the new thread
     selected_thread->skipped = 0;
-    printf("Switching to new thread %#lx at %#lx\n", selected_thread, selected_thread->epc);
+    printf("Switching to new thread %d at %#lx\n", selected_thread->id, selected_thread->epc);
     epc = selected_thread->epc;
     for (int i = 0; i < NUM_REGS; i++) {
       regs[i] = selected_thread->regs[i];
@@ -127,14 +153,20 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
     *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
 
     return epc;
+  } else if (cause == LNIC_INT_CAUSE) {
+    printf("Lnic interrupt\n");
+    return epc;
   }
   printf("Unknown exception with cause %#lx\n", cause);
   exit(ERR_UNKNOWN_EXCEPTION);
 }
 
-void start_thread(int (*target)(void)) {
+void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   struct thread_t* thread = new_thread();
   thread->epc = target;
+  thread->id = id;
+  thread->priority = priority;
+  lnic_add_context(id, priority);
   volatile uint64_t sp, gp, tp;
   asm volatile("mv %0, sp" : "=r"(sp));
   asm volatile("mv %0, gp" : "=r"(gp));
@@ -155,9 +187,9 @@ int main(void) {
 
   // Set up the application threads
   printf("Starting app 1\n");
-  start_thread(app1_main);
+  start_thread(app1_main, 0, 0);
   printf("Started app 1\n");
-  start_thread(app2_main);
+  start_thread(app2_main, 1, 1);
   printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start

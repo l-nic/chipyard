@@ -10,7 +10,7 @@
 
 // LNIC interrupt control
 #define LNIC_INT_ENABLE 0x10000
-#define LNIC_INT_CAUSE 0
+#define LNIC_INT_CAUSE 0x8000000000000010
 
 // Exit error codes
 #define ERR_THREADS_EXHAUSTED 22
