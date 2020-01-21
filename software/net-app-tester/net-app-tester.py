@@ -97,11 +97,12 @@ class PriorityMix(unittest.TestCase):
                 app_packets += 1
         self.assertEqual(app_packets, len([LOW, HIGH]))
     def test_range(self):
-        high_priority_target_fraction = 0.8
+        high_priority_target_fraction = 0.5
         num_copies = 2
         latency_low = []
         latency_high = []
         packet_lengths = list(range(64, 64*20, 64))
+        packet_lengths = [64] * 32
         packet_lengths = [elem for elem in packet_lengths for i in range(num_copies)]
         priorities = [LOW] * len(packet_lengths)
         for i in range(int(high_priority_target_fraction*len(packet_lengths))):
@@ -114,7 +115,7 @@ class PriorityMix(unittest.TestCase):
         sniffer.start()
         for i in range(len(packet_lengths)):
             self.do_loopback(packet_lengths[i], priorities[i])
-            time.sleep(0.5)
+            time.sleep(0.1)
         sniffer.join()
         print sniffer.results
         app_packets = 0
@@ -163,6 +164,8 @@ class Loopback(unittest.TestCase):
             print 'Testing pkt_len = {} bytes'.format(l)
             latency.append(self.do_loopback(l))
         # record latencies
+        print latency
+        print sum(latency) / float(len(latency))
         df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
         write_csv('loopback', 'pkt_len_latency.csv', df)
 
