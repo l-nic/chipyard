@@ -24,15 +24,6 @@
 #define REG_TP 4
 #define STACK_SIZE_BYTES 1024
 
-// Kernel thread structure
-struct thread_t {
-  uintptr_t epc;
-  uintptr_t regs[32];
-  uintptr_t id;
-  uint64_t skipped;
-  int finished;
-};
-
 // CSR modification macros
 #define csr_read(csr)           \
 ({                \

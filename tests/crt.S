@@ -1,6 +1,7 @@
 # See LICENSE for license details.
 
 #include "encoding.h"
+#include "lnic-scheduler.h"
 
 #if __riscv_xlen == 64
 # define LREG ld
@@ -137,85 +138,125 @@ _start:
 
   .align 2
 trap_entry:
-  addi sp, sp, -272
+  csrrw x2, mscratch, x2 # x2 now in mscratch
+  beq x2, zero, non_thread # If no need to backup thread, skip ahead
+  SREG x1, 1*REGBYTES(x2) # Store x1
+  mv x1, x2 # New x1 will be the data structure reference
+  csrr x2, mscratch # Put x2 back where it should be
+  SREG x2, 2*REGBYTES(x1) # Store x2
+  # x1 now contains the data structure ref, old x1 and x2 are pushed
+  SREG x3, 3*REGBYTES(x1)
+  SREG x4, 4*REGBYTES(x1)
+  SREG x5, 5*REGBYTES(x1)
+  SREG x6, 6*REGBYTES(x1)
+  SREG x7, 7*REGBYTES(x1)
+  SREG x8, 8*REGBYTES(x1)
+  SREG x9, 9*REGBYTES(x1)
+  SREG x10, 10*REGBYTES(x1)
+  SREG x11, 11*REGBYTES(x1)
+  SREG x12, 12*REGBYTES(x1)
+  SREG x13, 13*REGBYTES(x1)
+  SREG x14, 14*REGBYTES(x1)
+  SREG x15, 15*REGBYTES(x1)
+  SREG x16, 16*REGBYTES(x1)
+  SREG x17, 17*REGBYTES(x1)
+  SREG x18, 18*REGBYTES(x1)
+  SREG x19, 19*REGBYTES(x1)
+  SREG x20, 20*REGBYTES(x1)
+  SREG x21, 21*REGBYTES(x1)
+  SREG x22, 22*REGBYTES(x1)
+  SREG x23, 23*REGBYTES(x1)
+  SREG x24, 24*REGBYTES(x1)
+  SREG x25, 25*REGBYTES(x1)
+  SREG x26, 26*REGBYTES(x1)
+  SREG x27, 27*REGBYTES(x1)
+  SREG x28, 28*REGBYTES(x1)
+  SREG x29, 29*REGBYTES(x1)
+  csrr x4, mepc
+  SREG x4, 30*REGBYTES(x1)
+  j true_thread
+non_thread:
+  mv x1, x2
+true_thread:
+  # Now free to use all regs, x1 taken for structure ref
+  csrr x2, mcause
+  li x3, TIMER_INT_CAUSE
+  beq x2, x3, known_int
+  li x3, LNIC_INT_CAUSE
+  beq x2, x3, known_int
+  li a0, 77
+  jal exit
 
-  SREG x1, 1*REGBYTES(sp)
-  SREG x2, 2*REGBYTES(sp)
-  SREG x3, 3*REGBYTES(sp)
-  SREG x4, 4*REGBYTES(sp)
-  SREG x5, 5*REGBYTES(sp)
-  SREG x6, 6*REGBYTES(sp)
-  SREG x7, 7*REGBYTES(sp)
-  SREG x8, 8*REGBYTES(sp)
-  SREG x9, 9*REGBYTES(sp)
-  SREG x10, 10*REGBYTES(sp)
-  SREG x11, 11*REGBYTES(sp)
-  SREG x12, 12*REGBYTES(sp)
-  SREG x13, 13*REGBYTES(sp)
-  SREG x14, 14*REGBYTES(sp)
-  SREG x15, 15*REGBYTES(sp)
-  SREG x16, 16*REGBYTES(sp)
-  SREG x17, 17*REGBYTES(sp)
-  SREG x18, 18*REGBYTES(sp)
-  SREG x19, 19*REGBYTES(sp)
-  SREG x20, 20*REGBYTES(sp)
-  SREG x21, 21*REGBYTES(sp)
-  SREG x22, 22*REGBYTES(sp)
-  SREG x23, 23*REGBYTES(sp)
-  SREG x24, 24*REGBYTES(sp)
-  SREG x25, 25*REGBYTES(sp)
-  SREG x26, 26*REGBYTES(sp)
-  SREG x27, 27*REGBYTES(sp)
-  SREG x28, 28*REGBYTES(sp)
-  SREG x29, 29*REGBYTES(sp)
-#  SREG x30, 30*REGBYTES(sp)
-#  SREG x31, 31*REGBYTES(sp)
+known_int:
+  # x1 has structure ref, x2 has mcause
+  # All gpr's and mepc backed up
+  csrr x3, 0x58 # Load target context id
+  #la x4, threads # Load threads base address
+  mv x4, zero
+  beq x3, zero, context_zero
+context_one:
+  add x4, x4, 248 # Correct threads address
+context_zero:
+  # x1 initial structure ref, x4 final structure ref, x3 target context id
 
-  csrr a0, mcause
-  csrr a1, mepc
-  mv a2, sp
-  jal handle_trap
-  csrw mepc, a0
+  # Restart the timer
+  li x6, MTIME_PTR_LO
+  LREG x5, 0(x6)
+  addi x5, x5, TIME_SLICE_RTC_TICKS
+  li x6, MTIMECMP_PTR_LO
+  SREG x5, 0(x6)
 
-  # Remain in M-mode after eret
-  li t0, MSTATUS_MPP
-  csrs mstatus, t0
+  # Load new id's and return value
+  csrw mscratch, x4
+  csrw 0x53, x3
+  LREG x6, 30*REGBYTES(x4)
+  csrw mepc, x6
 
-  LREG x1, 1*REGBYTES(sp)
-  LREG x3, 3*REGBYTES(sp)
-  LREG x4, 4*REGBYTES(sp)
-  LREG x5, 5*REGBYTES(sp)
-  LREG x6, 6*REGBYTES(sp)
-  LREG x7, 7*REGBYTES(sp)
-  LREG x8, 8*REGBYTES(sp)
-  LREG x9, 9*REGBYTES(sp)
-  LREG x10, 10*REGBYTES(sp)
-  LREG x11, 11*REGBYTES(sp)
-  LREG x12, 12*REGBYTES(sp)
-  LREG x13, 13*REGBYTES(sp)
-  LREG x14, 14*REGBYTES(sp)
-  LREG x15, 15*REGBYTES(sp)
-  LREG x16, 16*REGBYTES(sp)
-  LREG x17, 17*REGBYTES(sp)
-  LREG x18, 18*REGBYTES(sp)
-  LREG x19, 19*REGBYTES(sp)
-  LREG x20, 20*REGBYTES(sp)
-  LREG x21, 21*REGBYTES(sp)
-  LREG x22, 22*REGBYTES(sp)
-  LREG x23, 23*REGBYTES(sp)
-  LREG x24, 24*REGBYTES(sp)
-  LREG x25, 25*REGBYTES(sp)
-  LREG x26, 26*REGBYTES(sp)
-  LREG x27, 27*REGBYTES(sp)
-  LREG x28, 28*REGBYTES(sp)
-  LREG x29, 29*REGBYTES(sp)
-  LREG x2, 2*REGBYTES(sp)
+  # Remain in M-mode after mret
+  li x7, MSTATUS_MPP
+  csrs mstatus, x7
 
-#  LREG x30, 30*REGBYTES(sp)
-#  LREG x31, 31*REGBYTES(sp)
+  mv x1, x4
 
-  addi sp, sp, 272
+  # x1 final structure ref
+  # Restore all GPRs other than x1
+  LREG x2, 2*REGBYTES(x1)
+  LREG x3, 3*REGBYTES(x1)
+  LREG x4, 4*REGBYTES(x1)
+  LREG x5, 5*REGBYTES(x1)
+  LREG x6, 6*REGBYTES(x1)
+  LREG x7, 7*REGBYTES(x1)
+  LREG x8, 8*REGBYTES(x1)
+  LREG x9, 9*REGBYTES(x1)
+  LREG x10, 10*REGBYTES(x1)
+  LREG x11, 11*REGBYTES(x1)
+  LREG x12, 12*REGBYTES(x1)
+  LREG x13, 13*REGBYTES(x1)
+  LREG x14, 14*REGBYTES(x1)
+  LREG x15, 15*REGBYTES(x1)
+  LREG x16, 16*REGBYTES(x1)
+  LREG x17, 17*REGBYTES(x1)
+  LREG x18, 18*REGBYTES(x1)
+  LREG x19, 19*REGBYTES(x1)
+  LREG x20, 20*REGBYTES(x1)
+  LREG x21, 21*REGBYTES(x1)
+  LREG x22, 22*REGBYTES(x1)
+  LREG x23, 23*REGBYTES(x1)
+  LREG x24, 24*REGBYTES(x1)
+  LREG x25, 25*REGBYTES(x1)
+  LREG x26, 26*REGBYTES(x1)
+  LREG x27, 27*REGBYTES(x1)
+  LREG x28, 28*REGBYTES(x1)
+  LREG x29, 29*REGBYTES(x1)
+
+  # Restore x1 and return
+  LREG x1, 1*REGBYTES(x1)
   mret
+
+.section ".data"
+.globl threads
+threads:
+.skip REGBYTES*31*2
 
 .section ".tdata.begin"
 .globl _tdata_begin
