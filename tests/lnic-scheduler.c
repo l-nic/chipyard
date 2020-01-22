@@ -101,43 +101,56 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
 
     // Select a thread to run
     uint64_t target_context = csr_read(0x58);
-    struct thread_t* selected_thread = NULL;
-    for (int i = 0; i < num_threads; i++) {
-      struct thread_t* candidate_thread = &threads[i];
-      // Skip any threads that have completed
-      if (candidate_thread->finished) {
-        continue;
-      }
-      //printf("Target context is %d\n", csr_read(0x58));
+    struct thread_t* selected_thread = &threads[target_context];
+    // struct thread_t* selected_thread = NULL;
+    // for (int i = 0; i < num_threads; i++) {
+    //   struct thread_t* candidate_thread = &threads[i];
+    //   // Skip any threads that have completed
+    //   if (candidate_thread->finished) {
+    //     continue;
+    //   }
+    //   //printf("Target context is %d\n", csr_read(0x58));
 
-      // Automatically accept the NIC's suggested context, if it exists
-      if (candidate_thread->id == target_context) {
-        selected_thread = candidate_thread;
-        break;
-      }
+    //   // Automatically accept the NIC's suggested context, if it exists
+    //   if (candidate_thread->id == target_context) {
+    //     selected_thread = candidate_thread;
+    //     break;
+    //   }
 
-      // Default to LRU if the NIC suggests a non-existent context
-      if (!selected_thread || candidate_thread->skipped > selected_thread->skipped) {
-        selected_thread = candidate_thread;
-      }
-    }
+    //   // Default to LRU if the NIC suggests a non-existent context
+    //   if (!selected_thread || candidate_thread->skipped > selected_thread->skipped) {
+    //     selected_thread = candidate_thread;
+    //   }
+    // }
 
     // Increment the skipped count of every thread that was not chosen
-    for (int i = 0; i < num_threads; i++) {
-      struct thread_t* rejected_thread = &threads[i];
-      if (rejected_thread == selected_thread) {
-        continue;
-      }
-      rejected_thread->skipped++;
-    }
+    // for (int i = 0; i < num_threads; i++) {
+    //   struct thread_t* rejected_thread = &threads[i];
+    //   if (rejected_thread == selected_thread) {
+    //     continue;
+    //   }
+    //   rejected_thread->skipped++;
+    // }
+
+    // Should be fine for paper figures as is, since we mostly need comparisons
+    // of this and this without LNIC interrupts and target context CSR.
+    // Run the priority mix test with different percentages at different priorities,
+    // and with different nanokernel options enabled. All results line up with
+    // what we should expect at the moment, with the current sending delay
+    // and packet size.
+    // Probably want to look at baseline vs. no LNIC interrupt vs. no
+    // target context selection
+    // Might also want to add an application option to manually delay the app
+    // based off of a field in the packet.
+    // Get rid of the LRU stuff and error checking to cut out more tail latency.
 
     // Throw an error if no thread could be selected
-    if (!selected_thread) {
-      exit(ERR_NO_THREAD_SELECTED);
-    }
+    // if (!selected_thread) {
+    //   exit(ERR_NO_THREAD_SELECTED);
+    // }
 
     // Switch to the new thread
-    selected_thread->skipped = 0;
+    //selected_thread->skipped = 0;
     //printf("Switching to new thread %d at %#lx\n", selected_thread->id, selected_thread->epc);
     epc = selected_thread->epc;
     for (int i = 0; i < NUM_REGS; i++) {
