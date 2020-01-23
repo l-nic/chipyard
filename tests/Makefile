@@ -11,6 +11,7 @@ PROGRAMS += lnic-cpu-loopback-gpr
 PROGRAMS += lnic-cpu-loopback-csr
 PROGRAMS += icenic-cpu-loopback
 PROGRAMS += simple-icenic-cpu-loopback
+PROGRAMS += lnic-throughput-gpr
 PROGRAMS += lnic-nn-inference-gpr
 PROGRAMS += icenic-nn-inference
 PROGRAMS += lnic-othello-gpr

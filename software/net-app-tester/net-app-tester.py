@@ -2,6 +2,7 @@
 import unittest
 from scapy.all import *
 from LNIC_headers import LNIC
+import Throughput_headers as Throughput
 import NN_headers as NN
 import Othello_headers as Othello
 import struct
@@ -21,6 +22,8 @@ DST_CONTEXT = 0
 MY_CONTEXT = 0x1234
 
 LOG_DIR = '/vagrant/logs'
+
+NUM_SAMPLES = 5
 
 def lnic_req(lnic_dst = DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
@@ -53,13 +56,77 @@ class Loopback(unittest.TestCase):
         print 'Latency = {} cycles'.format(latency)
     def test_pkt_length(self):
         pkt_len = range(64, 64*20, 64)
+        length = []
         latency = []
         for l in pkt_len:
-            print 'Testing pkt_len = {} bytes'.format(l)
-            latency.append(self.do_loopback(l))
+            for i in range(NUM_SAMPLES):
+                print 'Testing pkt_len = {} bytes'.format(l)
+                length.append(l)
+                latency.append(self.do_loopback(l))
         # record latencies
-        df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
+        df = pd.DataFrame({'pkt_len':length, 'latency':latency})
         write_csv('loopback', 'pkt_len_latency.csv', df)
+
+class ThroughputTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, Throughput.Throughput)
+
+    def start_rx_msg(self, num_msgs):
+        return lnic_req() / Throughput.Throughput() / Throughput.StartRx(num_msgs=num_msgs) / Raw('\x00'*8)
+
+    def start_tx_msg(self, num_msgs, msg_size):
+        return lnic_req() / Throughput.Throughput() / Throughput.StartTx(num_msgs=num_msgs, msg_size=msg_size) / Raw('\x00'*8)
+
+    def data_msg(self):
+        return lnic_req() / Throughput.Throughput(msg_type=Throughput.DATA_TYPE)
+
+    def do_rx_test(self, num_pkts, pkt_len):
+        # test RX throughput - how fast can the application receive msgs?
+        pkts = []
+        pkts += [self.start_rx_msg(num_pkts)]
+        for i in range(num_pkts):
+            pkts += [self.data_msg() / Raw('\x00'*(pkt_len - len(self.data_msg())))]
+        # start sniffing for DONE msg
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
+                    count=1, timeout=1*len(pkts))
+        sniffer.start()
+        # send in pkts
+        sendp(pkts, iface=TEST_IFACE)
+        # wait for DONE msg
+        sniffer.join()
+        self.assertEqual(1, len(sniffer.results))
+        done_msg = sniffer.results[0]
+        total_latency = struct.unpack('!Q', str(done_msg)[-8:])[0]
+        throughput = len(pkts)/float(total_latency)
+        return throughput # pkts/cycle
+    def do_tx_test(self, num_pkts, pkt_len):
+        # test TX throughput - how fast can the application generate pkts?
+        pkts = []
+        msg_len = pkt_len - len(lnic_req())
+        pkts += [self.start_tx_msg(num_pkts, msg_len)]
+        # start sniffing for generated DATA msgs
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
+                    count=num_pkts, timeout=1*len(pkts))
+        sniffer.start()
+        # send in START msg
+        sendp(pkts, iface=TEST_IFACE)
+        # wait for all generated DATA msgs
+        sniffer.join()
+        self.assertEqual(num_pkts, len(sniffer.results))
+        final_msg = sniffer.results[-1]
+        total_latency = struct.unpack('!Q', str(final_msg)[-8:])[0]
+        throughput = num_pkts/float(total_latency)
+        return throughput # pkts/cycle
+    def test_rx_throughput(self):
+        pkt_len = 64 # bytes
+        num_pkts = 200
+        throughput = self.do_rx_test(num_pkts, pkt_len)
+        print 'RX Throughput = {} pkts/cycle ({} bytes/cycle)'.format(throughput, throughput*pkt_len)
+    def test_tx_throughput(self):
+        pkt_len = 64 # bytes
+        num_pkts = 200
+        throughput = self.do_tx_test(num_pkts, pkt_len)
+        print 'RX Throughput = {} pkts/cycle ({} bytes/cycle)'.format(throughput, throughput*pkt_len)
 
 class Stream(unittest.TestCase):
     def do_loopback(self, pkt_len):
@@ -80,12 +147,15 @@ class Stream(unittest.TestCase):
         print 'Latency = {} cycles'.format(latency)
     def test_pkt_length(self):
         pkt_len = range(64, 64*15, 64)
+        length = []
         latency = []
         for l in pkt_len:
-            print 'Testing pkt_len = {} bytes'.format(l)
-            latency.append(self.do_loopback(l))
+            for i in range(NUM_SAMPLES):
+              print 'Testing pkt_len = {} bytes'.format(l)
+              length.append(l)
+              latency.append(self.do_loopback(l))
         # record latencies
-        df = pd.DataFrame({'pkt_len':pkt_len, 'latency':latency})
+        df = pd.DataFrame({'pkt_len':length, 'latency':latency})
         write_csv('stream', 'pkt_len_latency.csv', df)
 
 class NNInference(unittest.TestCase):
@@ -126,12 +196,15 @@ class NNInference(unittest.TestCase):
         print 'Latency = {} cycles'.format(latency)
 
     def test_num_edges(self):
-        num_edges = range(2, 10)
+        num_edges = range(2, 21)
+        edges = []
         latency = []
         for n in num_edges:
-            latency.append(self.do_test(n))
+            for i in range(NUM_SAMPLES):
+                edges.append(n)
+                latency.append(self.do_test(n))
         # record latencies
-        df = pd.DataFrame({'num_edges':num_edges, 'latency':latency})
+        df = pd.DataFrame({'num_edges':edges, 'latency':latency})
         write_csv('nn', 'num_edges_latency.csv', df)
 
 class OthelloTest(unittest.TestCase):
@@ -183,13 +256,16 @@ class OthelloTest(unittest.TestCase):
         print 'Reduce Latency = {} cycles'.format(reduce_latency)
 
     def test_fanout(self):
-        fanout = range(2, 10)
+        fanout_vals = range(2, 10)
+        fanout = []
         map_latency = []
         reduce_latency = []
-        for n in fanout:
-            mlat, rlat = self.do_internal_node_test(n)
-            map_latency.append(mlat)
-            reduce_latency.append(rlat)
+        for n in fanout_vals:
+            for i in range(NUM_SAMPLES):
+                fanout.append(n)
+                mlat, rlat = self.do_internal_node_test(n)
+                map_latency.append(mlat)
+                reduce_latency.append(rlat)
         # record latencies
         df = pd.DataFrame({'fanout':fanout, 'map_latency':map_latency, 'reduce_latency':reduce_latency})
         write_csv('othello', 'fanout_latency.csv', df)

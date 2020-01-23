@@ -2,7 +2,10 @@
 # Makefile to run specific tests
 
 loopback:
-	python -m unittest net-app-tester.Loopback
+	python -m unittest net-app-tester.LoopbackLatency
+
+throughput:
+	python -m unittest net-app-tester.ThroughputTest
 
 stream:
 	python -m unittest net-app-tester.Stream
