@@ -56,11 +56,12 @@ int main(void)
       msg_size = lnic_read(); // size of msgs to generate (bytes)
       start_time = lnic_read();
       // generate all required msgs
+      app_hdr = (app_hdr & (IP_MASK | CONTEXT_MASK)) | msg_size;
+      num_words = msg_size/LNIC_WORD_SIZE;
+      if (msg_size % LNIC_WORD_SIZE != 0) { num_words++; }
       for (i = 0; i < num_msgs; i++) {
-        lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | msg_size);
+        lnic_write_r(app_hdr);
 	lnic_write_i(DATA_TYPE); // msg_type
-        num_words = msg_size/LNIC_WORD_SIZE;
-	if (msg_size % LNIC_WORD_SIZE != 0) { num_words++; }
 	for (j = 0; j < num_words-2; j++) {
           lnic_write_i(0); // dummy data to generate
 	}

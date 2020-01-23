@@ -88,7 +88,7 @@ class ThroughputTest(unittest.TestCase):
             pkts += [self.data_msg() / Raw('\x00'*(pkt_len - len(self.data_msg())))]
         # start sniffing for DONE msg
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=1, timeout=1*len(pkts))
+                    count=1, timeout=10)
         sniffer.start()
         # send in pkts
         sendp(pkts, iface=TEST_IFACE)
@@ -106,7 +106,7 @@ class ThroughputTest(unittest.TestCase):
         pkts += [self.start_tx_msg(num_pkts, msg_len)]
         # start sniffing for generated DATA msgs
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=num_pkts, timeout=1*len(pkts))
+                    count=num_pkts, timeout=10)
         sniffer.start()
         # send in START msg
         sendp(pkts, iface=TEST_IFACE)
