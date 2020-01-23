@@ -5,6 +5,7 @@ from LNIC_headers import LNIC
 import Throughput_headers as Throughput
 import NN_headers as NN
 import Othello_headers as Othello
+import NBody_headers as NBody
 import struct
 import pandas as pd
 import os
@@ -270,6 +271,40 @@ class OthelloTest(unittest.TestCase):
         df = pd.DataFrame({'fanout':fanout, 'map_latency':map_latency, 'reduce_latency':reduce_latency})
         write_csv('othello', 'fanout_latency.csv', df)
 
+class NBodyTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, NBody.NBody)
+
+    def config_msg(self, xcom, ycom, num_msgs):
+        return lnic_req() / NBody.NBody() / NBody.Config(xcom=xcom, ycom=ycom, num_msgs=num_msgs)
+
+    def traversal_req(self, xpos, ypos):
+        return lnic_req() / NBody.NBody() / NBody.TraversalReq(xpos=xpos, ypos=ypos)
+
+    def do_test(self, num_msgs):
+        inputs = []
+        inputs.append(self.config_msg(1, 1, num_msgs))
+        # generate traversal req msgs
+        inputs += [self.traversal_req(0, 0) for i in range(num_msgs)]
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
+                    count=1, timeout=TIMEOUT_SEC)
+        sniffer.start()
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        # check response
+        self.assertTrue(len(sniffer.results) > 0)
+        resp = sniffer.results[0]
+        self.assertTrue(resp.haslayer(NBody.TraversalResp))
+        self.assertEqual(resp[NBody.TraversalResp].force, 1)
+        # return latency
+        return resp[NBody.TraversalResp].timestamp
+
+    def test_basic(self):
+        latency = self.do_test(10)
+        print 'Latency = {} cycles'.format(latency)
 
 class Multithread(unittest.TestCase):
     def test_basic(self):

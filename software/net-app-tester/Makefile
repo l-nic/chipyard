@@ -16,6 +16,9 @@ nn_inference:
 othello:
 	python -m unittest net-app-tester.OthelloTest
 
+nbody:
+	python -m unittest net-app-tester.NBodyTest
+
 multithread:
 	python -m unittest net-app-tester.Multithread
 

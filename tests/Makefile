@@ -20,6 +20,7 @@ PROGRAMS += icenic-othello
 PROGRAMS += lnic-stream-gpr
 PROGRAMS += icenic-stream
 PROGRAMS += lnic-multi-thread-basic
+PROGRAMS += lnic-nbody-node-gpr
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
