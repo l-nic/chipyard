@@ -11,6 +11,8 @@ PROGRAMS += lnic-cpu-loopback-gpr
 PROGRAMS += lnic-cpu-loopback-csr
 PROGRAMS += icenic-cpu-loopback
 PROGRAMS += simple-icenic-cpu-loopback
+PROGRAMS += lnic-throughput-gpr
+PROGRAMS += icenic-throughput
 PROGRAMS += lnic-nn-inference-gpr
 PROGRAMS += icenic-nn-inference
 PROGRAMS += lnic-othello-gpr
@@ -19,6 +21,7 @@ PROGRAMS += icenic-othello
 PROGRAMS += lnic-stream-gpr
 PROGRAMS += icenic-stream
 PROGRAMS += lnic-multi-thread-basic
+PROGRAMS += lnic-nbody-node-gpr
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
