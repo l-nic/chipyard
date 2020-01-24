@@ -10,6 +10,7 @@ int app1_main(void) {
   uint16_t msg_len;
   int num_words;
   int i;
+  uint64_t stall_duration;
 
   // register context ID with L-NIC
    //     lnic_add_context(0, 1);
@@ -27,8 +28,13 @@ int app1_main(void) {
     num_words = msg_len/LNIC_WORD_SIZE;
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
-    for (i = 0; i < num_words; i++) {
-      lnic_add_int_i(1);
+    stall_duration = lnic_read();
+    for (i = 0; i < stall_duration; i++) {
+      asm volatile("nop");
+    }
+    lnic_write_r(stall_duration);
+    for (i = 1; i < num_words; i++) {
+      lnic_copy();
     }
   }
   return 0;
@@ -41,6 +47,7 @@ int app2_main(void) {
   uint16_t msg_len;
   int num_words;
   int i;
+  uint64_t stall_duration;
   while (1) {
     // wait for a pkt to arrive
     lnic_wait();
@@ -54,8 +61,13 @@ int app2_main(void) {
     num_words = msg_len/LNIC_WORD_SIZE;
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
-    for (i = 0; i < num_words; i++) {
-      lnic_add_int_i(2);
+    stall_duration = lnic_read();
+    for (i = 0; i < stall_duration; i++) {
+      asm volatile("nop");
+    }
+    lnic_write_r(stall_duration);
+    for (i = 1; i < num_words; i++) {
+      lnic_copy();
     }
   }
   return 0;
@@ -194,7 +206,7 @@ int main(void) {
   // Should never reach here as long as user threads are running,
   // since the scheduler isn't aware that this thread exists.
   
-  printf("Done.\n");
+  printf("Done.\n"); 
   return 0;
 }
 

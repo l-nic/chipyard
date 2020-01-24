@@ -66,6 +66,59 @@ class ParallelLoopback(unittest.TestCase):
                 real_packets += 1
         print "Total packets received: " + str(real_packets)
 
+class PriorityVaryDuration(unittest.TestCase):
+    def do_loopback(self, pkt_len, priority, stall_duration):
+        msg_len = pkt_len - len(lnic_req()) # bytes
+        stall_packed = struct.pack('!Q',  stall_duration)
+        padding = '\x00'*(msg_len - len(stall_packed))
+        payload = Raw(stall_packed + padding)
+        req = lnic_req(lnic_dst=priority) / payload
+        sendp(req, iface=TEST_IFACE)
+    def test_range(self):
+        durations = range(0, 210, 10)
+        for d in durations:
+            self.iter_range(stall_duration=d)
+    def iter_range(self, stall_duration=0):
+        high_priority_target_fraction = 0.8
+        latency_low = []
+        latency_high = []
+        packet_lengths = [64] * 64
+        priorities = [LOW] * len(packet_lengths)
+        for i in range(int(high_priority_target_fraction*len(packet_lengths))):
+            priorities[i] = HIGH
+        random.shuffle(priorities)
+        print packet_lengths
+        print priorities
+        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=30)
+        sniffer.start()
+        for i in range(len(packet_lengths)):
+            self.do_loopback(packet_lengths[i], priorities[i], stall_duration)
+            time.sleep(0.1)
+        sniffer.join()
+        print sniffer.results
+        app_packets = 0
+        for resp in sniffer.results:
+            self.assertIsNotNone(resp)
+            try:
+                _ = resp[LNIC].dst
+            except IndexError:
+                continue
+            if resp[LNIC].dst == MY_CONTEXT:
+                resp_data = resp[LNIC].payload
+                latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+                self.assertTrue(resp[LNIC].src == LOW or resp[LNIC].src == HIGH)
+                if resp[LNIC].src == LOW:
+                    latency_low.append(latency)
+                else:
+                    latency_high.append(latency)
+                app_packets += 1
+        print "High priority target fraction is " + str(high_priority_target_fraction)
+        print "Stall duration is " + str(stall_duration)
+        print "Low priority latencies: " + str(latency_low)
+        print "Low count {}, avg {}".format(len(latency_low), sum(latency_low)/float(len(latency_low)))
+        print "\nHigh priority latencies: " + str(latency_high)
+        print "High count {}, avg {}".format(len(latency_high), sum(latency_high)/float(len(latency_high)))
+
 class PriorityMix(unittest.TestCase):
     def do_loopback(self, pkt_len, priority):
         msg_len = pkt_len - len(lnic_req()) # bytes
@@ -96,8 +149,14 @@ class PriorityMix(unittest.TestCase):
                     print 'High Priority Latency = {} cycles'.format(latency)
                 app_packets += 1
         self.assertEqual(app_packets, len([LOW, HIGH]))
+
     def test_range(self):
-        high_priority_target_fraction = 0.5
+        fractions = [.2, .3, .4, .5, .6, .7, .8]
+        repetitions = [0, 1, 2]
+        for frac in fractions:
+            for rep in repetitions:
+                self.iter_range(high_priority_target_fraction=frac)
+    def iter_range(self, high_priority_target_fraction=0.5):
         num_copies = 2
         latency_low = []
         latency_high = []
@@ -134,11 +193,12 @@ class PriorityMix(unittest.TestCase):
                 else:
                     latency_high.append(latency)
                 app_packets += 1
+        print "High priority target fraction is " + str(high_priority_target_fraction)
         print "Low priority latencies: " + str(latency_low)
         print "Low count {}, avg {}".format(len(latency_low), sum(latency_low)/float(len(latency_low)))
         print "\nHigh priority latencies: " + str(latency_high)
         print "High count {}, avg {}".format(len(latency_high), sum(latency_high)/float(len(latency_high)))
-        self.assertEqual(app_packets, len(packet_lengths))
+        # self.assertEqual(app_packets, len(packet_lengths))
 
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkt_len):

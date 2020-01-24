@@ -7,6 +7,9 @@ loopback:
 priority_mix:
 	python -m unittest net-app-tester.PriorityMix
 
+var_duration:
+	python -m unittest net-app-tester.PriorityVaryDuration
+
 parallel_loopback:
 	python -m unittest net-app-tester.ParallelLoopback
 
