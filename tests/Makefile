@@ -1,7 +1,7 @@
 GCC=riscv64-unknown-elf-gcc
 OBJDUMP=riscv64-unknown-elf-objdump
 CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31
-LDFLAGS=-static -nostdlib -nostartfiles -lgcc
+LDFLAGS=-static -nostdlib -nostartfiles -lgcc -lm
 
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
 PROGRAMS += lnic-nic-loopback-gpr
@@ -21,6 +21,7 @@ PROGRAMS += lnic-stream-gpr
 PROGRAMS += icenic-stream
 PROGRAMS += lnic-multi-thread-basic
 PROGRAMS += lnic-nbody-node-gpr
+PROGRAMS += icenic-nbody-node
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
