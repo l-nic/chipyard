@@ -14,8 +14,8 @@ class NBody(Packet):
 class Config(Packet):
     name = "Config"
     fields_desc = [
-        IEEEDoubleField("xcom", 0),
-        IEEEDoubleField("ycom", 0),
+        LongField("xcom", 0),
+        LongField("ycom", 0),
         LongField("num_msgs", 0),
         LongField("timestamp", 0)
     ]
@@ -23,15 +23,15 @@ class Config(Packet):
 class TraversalReq(Packet):
     name = "TraversalReq"
     fields_desc = [
-        IEEEDoubleField("xpos", 0),
-        IEEEDoubleField("ypos", 0),
+        LongField("xpos", 0),
+        LongField("ypos", 0),
         LongField("timestamp", 0)
     ]
 
 class TraversalResp(Packet):
     name = "TraversalResp"
     fields_desc = [
-        IEEEDoubleField("force", 0),
+        LongField("force", 0),
         LongField("timestamp", 0)
     ]
 

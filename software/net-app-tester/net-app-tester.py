@@ -10,6 +10,7 @@ import struct
 import pandas as pd
 import os
 import random
+import numpy as np
 
 TEST_IFACE = "tap0"
 TIMEOUT_SEC = 7 # seconds
@@ -437,6 +438,7 @@ class OthelloTest(unittest.TestCase):
         write_csv('othello', 'fanout_latency.csv', df)
 
 class NBodyTest(unittest.TestCase):
+    G = 667e2
     def setUp(self):
         bind_layers(LNIC, NBody.NBody)
 
@@ -448,28 +450,47 @@ class NBodyTest(unittest.TestCase):
 
     def do_test(self, num_msgs):
         inputs = []
-        inputs.append(self.config_msg(1, 1, num_msgs))
+        xcom = 50
+        ycom = 50
+        xpos = 0
+        ypos = 0
+        inputs.append(self.config_msg(xcom, ycom, num_msgs))
         # generate traversal req msgs
-        inputs += [self.traversal_req(0, 0) for i in range(num_msgs)]
+        inputs += [self.traversal_req(xpos, ypos) for i in range(num_msgs)]
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=1, timeout=TIMEOUT_SEC)
+                    count=num_msgs, timeout=20)
         sniffer.start()
         # send inputs get response
         sendp(inputs, iface=TEST_IFACE)
         # wait for all responses
         sniffer.join()
         # check response
-        self.assertTrue(len(sniffer.results) > 0)
-        resp = sniffer.results[0]
-        self.assertTrue(resp.haslayer(NBody.TraversalResp))
-        self.assertEqual(resp[NBody.TraversalResp].force, 1)
+        self.assertEqual(len(sniffer.results), num_msgs)
+        final_resp = sniffer.results[-1]
+        self.assertTrue(final_resp.haslayer(NBody.TraversalResp))
+        # compute expected force
+        dist = np.sqrt((xcom - xpos)**2 + (ycom - ypos)**2)
+        expected_force = NBodyTest.G / dist**2
+        self.assertAlmostEqual(final_resp[NBody.TraversalResp].force, expected_force, delta=1)
         # return latency
-        return resp[NBody.TraversalResp].timestamp
+        return final_resp[NBody.TraversalResp].timestamp
 
     def test_basic(self):
-        latency = self.do_test(10)
+        latency = self.do_test(3)
         print 'Latency = {} cycles'.format(latency)
+
+    def test_num_edges(self):
+        num_msgs = range(10, 101, 10)
+        msgs = []
+        latency = []
+        for n in num_msgs:
+            #for i in range(NUM_SAMPLES):
+            msgs.append(n)
+            latency.append(self.do_test(n))
+        # record latencies
+        df = pd.DataFrame({'num_msgs':msgs, 'latency':latency})
+        write_csv('nbody', 'num_msgs_latency.csv', df)
 
 class Multithread(unittest.TestCase):
     def test_basic(self):
