@@ -294,22 +294,22 @@ class NBodyTest(unittest.TestCase):
         inputs += [self.traversal_req(xpos, ypos) for i in range(num_msgs)]
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=1, timeout=10)
+                    count=num_msgs, timeout=20)
         sniffer.start()
         # send inputs get response
         sendp(inputs, iface=TEST_IFACE)
         # wait for all responses
         sniffer.join()
         # check response
-        self.assertTrue(len(sniffer.results) > 0)
-        resp = sniffer.results[0]
-        self.assertTrue(resp.haslayer(NBody.TraversalResp))
+        self.assertEqual(len(sniffer.results), num_msgs)
+        final_resp = sniffer.results[-1]
+        self.assertTrue(final_resp.haslayer(NBody.TraversalResp))
         # compute expected force
         dist = np.sqrt((xcom - xpos)**2 + (ycom - ypos)**2)
         expected_force = NBodyTest.G / dist**2
-        self.assertAlmostEqual(resp[NBody.TraversalResp].force, expected_force, delta=1)
+        self.assertAlmostEqual(final_resp[NBody.TraversalResp].force, expected_force, delta=1)
         # return latency
-        return resp[NBody.TraversalResp].timestamp
+        return final_resp[NBody.TraversalResp].timestamp
 
     def test_basic(self):
         latency = self.do_test(3)

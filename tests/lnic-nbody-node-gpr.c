@@ -74,14 +74,13 @@ int main(void) {
       lnic_read(); // discard timestamp
       // compute force on the particle
       compute_force(xcom, ycom, xpos, ypos, &force);
-      // TODO(sibanez): should really send either TraversalResp for each msg that is processed, but we won't do that yet
+      // send out TraversalResp
+      lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | RESP_MSG_LEN);
+      lnic_write_i(TRAVERSAL_RESP_TYPE);
+      lnic_write_r(force);
+      lnic_write_r(start_time);
       msg_cnt++;
     }
-    // send out TraversalResp
-    lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | RESP_MSG_LEN);
-    lnic_write_i(TRAVERSAL_RESP_TYPE);
-    lnic_write_r(force);
-    lnic_write_r(start_time);
   }
   return 0;
 }

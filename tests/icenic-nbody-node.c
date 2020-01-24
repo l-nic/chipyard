@@ -97,17 +97,16 @@ int main(void)
       xpos = ntohl(traversal_req->xpos);
       ypos = ntohl(traversal_req->ypos);
       compute_force(xcom, ycom, xpos, ypos, &force);
-      // TODO(sibanez): should really send either TraversalResp or TraversalReq for each msg that is processed, but we won't do that yet
+      // send out TraversalResp
+      swap_addresses(buffer, macaddr);
+      nbody->type = htonl(TRAVERSAL_RESP_TYPE);
+      traversal_resp = (void *)nbody + NBODY_HEADER_SIZE;
+      traversal_resp->force = htonl(force);
+      traversal_resp->timestamp = htonl(start_time);
+      size = ceil_div(RESP_PKT_LEN, 8) * 8;
+      nic_send(buffer, size);
       msg_cnt++;
     }
-    // send out TraversalResp
-    swap_addresses(buffer, macaddr);
-    nbody->type = htonl(TRAVERSAL_RESP_TYPE);
-    traversal_resp = (void *)nbody + NBODY_HEADER_SIZE;
-    traversal_resp->force = htonl(force);
-    traversal_resp->timestamp = htonl(start_time);
-    size = ceil_div(RESP_PKT_LEN, 8) * 8;
-    nic_send(buffer, size);
   }
   return 0;
 }
