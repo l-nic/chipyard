@@ -30,7 +30,8 @@ HIGH = 0
 
 LOG_DIR = '/vagrant/logs'
 
-NUM_SAMPLES = 5
+NUM_SAMPLES = 1
+
 def lnic_req(my_context=MY_CONTEXT, lnic_dst = DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
@@ -348,10 +349,17 @@ class NNInference(unittest.TestCase):
         inputs += [NNInference.weight_msg(i, 1) for i in range(num_edges)]
         # data = index+1
         inputs += [NNInference.data_msg(i, i+1) for i in range(num_edges)]
-        # send inputs get response
-        resp = srp1(inputs, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        # start sniffing for DONE msg
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
+                    count=1, timeout=TIMEOUT_SEC)
+        sniffer.start()
+        # send inputs
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for response
+        sniffer.join()
         # check response
-        self.assertIsNotNone(resp)
+        self.assertEqual(len(sniffer.results), 1)
+        resp = sniffer.results[0]
         self.assertTrue(resp.haslayer(NN.Data))
         self.assertEqual(resp[NN.Data].index, 0)
         self.assertEqual(resp[NN.Data].data, sum([i+1 for i in range(num_edges)]))
@@ -392,13 +400,20 @@ class OthelloTest(unittest.TestCase):
         # send in initial map msg and receive outgoing map messages
         parent_id = 10
         parent_msg_ptr = 0x1234
-        responses = srp(OthelloTest.map_msg(board=fanout, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr),
-                iface=TEST_IFACE, timeout=TIMEOUT_SEC, multi=True)
+        req = OthelloTest.map_msg(board=fanout, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr)
+        # start sniffing for DONE msg
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
+                    count=fanout, timeout=TIMEOUT_SEC)
+        sniffer.start()
+        # send in the request
+        sendp(req, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
         # check responses / build reduce msgs
-        self.assertEqual(len(responses[0]), fanout)
+        self.assertEqual(len(sniffer.results), fanout)
         reduce_msgs = []
         map_latency = None
-        for _, p in responses[0]:
+        for p in sniffer.results:
             self.assertTrue(p.haslayer(Othello.Map))
             self.assertEqual(p[Othello.Map].cur_depth, 2)
             reduce_msgs.append(OthelloTest.reduce_msg(
@@ -406,10 +421,17 @@ class OthelloTest(unittest.TestCase):
                 target_msg_ptr=p[Othello.Map].src_msg_ptr,
                 minimax_val=1))
             map_latency = p[Othello.Map].timestamp
-        # send in reduce messages and receive final reduce msg
-        resp = srp1(reduce_msgs, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        # start sniffing for DONE msg
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
+                    count=1, timeout=TIMEOUT_SEC)
+        sniffer.start()
+        # send in reduce messages
+        sendp(reduce_msgs, iface=TEST_IFACE)
+        # wait for response
+        sniffer.join()
         # check reduce msg responses
-        self.assertIsNotNone(resp)
+        self.assertEqual(len(sniffer.results), 1)
+        resp = sniffer.results[0]
         self.assertTrue(resp.haslayer(Othello.Reduce))
         self.assertEqual(resp[Othello.Reduce].target_host_id, parent_id)
         self.assertEqual(resp[Othello.Reduce].target_msg_ptr, parent_msg_ptr)
