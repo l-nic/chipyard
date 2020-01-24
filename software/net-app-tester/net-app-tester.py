@@ -72,7 +72,7 @@ class SchedulerTest(unittest.TestCase):
                     count=num_lp_msgs + num_hp_msgs, timeout=200)
         sniffer.start()
         # send in pkts
-        sendp(inputs, iface=TEST_IFACE, inter=0.3)
+        sendp(inputs, iface=TEST_IFACE, inter=0.4)
         # wait for all responses
         sniffer.join()
         # check responses
