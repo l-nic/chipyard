@@ -7,6 +7,9 @@ loopback:
 throughput:
 	python -m unittest net-app-tester.ThroughputTest
 
+scheduler_test:
+	python -m unittest net-app-tester.SchedulerTest
+
 priority_mix:
 	python -m unittest net-app-tester.PriorityMix
 

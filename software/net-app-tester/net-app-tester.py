@@ -6,11 +6,16 @@ import Throughput_headers as Throughput
 import NN_headers as NN
 import Othello_headers as Othello
 import NBody_headers as NBody
+import DummyApp_headers as DummyApp
 import struct
 import pandas as pd
 import os
 import random
 import numpy as np
+
+# set random seed for consistent sims
+random.seed(1)
+np.random.seed(1)
 
 TEST_IFACE = "tap0"
 TIMEOUT_SEC = 7 # seconds
@@ -43,6 +48,48 @@ def write_csv(dname, fname, df):
       os.makedirs(log_dir)
     with open(os.path.join(log_dir, fname), 'w') as f:
         f.write(df.to_csv(index=False))
+
+class SchedulerTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, DummyApp.DummyApp)
+
+    def app_msg(self, priority, service_time, pkt_len):
+        return lnic_req(lnic_dst=priority) / DummyApp.DummyApp(service_time=service_time) / Raw('\x00'*(pkt_len - len(lnic_req()) - len(DummyApp.DummyApp())))
+
+    def test_scheduler(self):
+        num_lp_msgs = 80
+        num_hp_msgs = 40
+        service_time = 500
+        inputs = []
+        # add low priority msgs 
+        inputs += [self.app_msg(LOW, service_time, 64) for i in range(num_lp_msgs)]
+        # add high priority msgs
+        inputs += [self.app_msg(HIGH, service_time, 64) for i in range(num_hp_msgs)]
+        # shuffle pkts
+        random.shuffle(inputs)
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
+                    count=num_lp_msgs + num_hp_msgs, timeout=200)
+        sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE, inter=0.3)
+        # wait for all responses
+        sniffer.join()
+        # check responses
+        self.assertEqual(len(sniffer.results), num_lp_msgs + num_hp_msgs)
+        hp_latency = []
+        lp_latency = []
+        for p in sniffer.results:
+            self.assertTrue(p.haslayer(LNIC))
+            latency = struct.unpack('!Q', str(p)[-8:])[0]
+            self.assertTrue(p[LNIC].src in [LOW, HIGH])
+            if p[LNIC].src == LOW:
+                lp_latency.append(latency)
+            else:
+                hp_latency.append(latency)
+        # record latencies in a DataFrame
+        df = pd.DataFrame({'low_priority': pd.Series(lp_latency), 'high_priority': pd.Series(hp_latency)}, dtype=float)
+        write_csv('scheduler', 'latency.csv', df)
 
 class ParallelLoopback(unittest.TestCase):
     def test_range(self):

@@ -184,7 +184,7 @@ void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
 }
 
 int main(void) {
-  printf("Hello from scheduler base\n");
+//  printf("Hello from scheduler base\n");
 
   // Turn on the timer
   uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
@@ -193,14 +193,15 @@ int main(void) {
   csr_write(mscratch, 0);
 
   // Set up the application threads
-  printf("Starting app 1\n");
+//  printf("Starting app 1\n");
   start_thread(app1_main, 0, 0);
-  printf("Started app 1\n");
+//  printf("Started app 1\n");
   start_thread(app2_main, 1, 1);
-  printf("Started app 2\n");
+//  printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start
-  csr_set(mie, TIMER_INT_ENABLE | LNIC_INT_ENABLE);
+  csr_set(mie, LNIC_INT_ENABLE);
+  csr_clear(mie, TIMER_INT_ENABLE);
   asm volatile ("wfi");
   
   // Should never reach here as long as user threads are running,

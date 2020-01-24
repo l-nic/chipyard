@@ -1,6 +1,6 @@
 
 #define MAX_THREADS 10
-#define TIME_SLICE_RTC_TICKS 40
+#define TIME_SLICE_RTC_TICKS 150
 
 // Timer interrupt control
 #define TIMER_INT_ENABLE 0b10000000 /* Timer interrupts enabled */
