@@ -5,6 +5,9 @@
 #include "lnic.h"
 #include "lnic-scheduler.h"
 
+/**
+ * High priority app - measure latency
+ */
 int app1_main(void) {
   uint64_t app_hdr;
   uint16_t msg_len;
@@ -40,6 +43,9 @@ int app1_main(void) {
   return 0;
 }
 
+/**
+ * Low priority app - measure throughput
+ */
 int app2_main(void) {
   //lnic_add_context(1, 0);
   //while (1);
@@ -48,26 +54,52 @@ int app2_main(void) {
   int num_words;
   int i;
   uint64_t stall_duration;
+  uint64_t start_time;
   while (1) {
-    // wait for a pkt to arrive
+    // wait for first msg to arrive
     lnic_wait();
-    // read request application hdr
+    // read/write application hdr
     app_hdr = lnic_read();
-    // write response application hdr
     lnic_write_r(app_hdr);
     // extract msg_len
     msg_len = (uint16_t)app_hdr;
-//    printf("Received msg of length: %hu bytes", msg_len);
     num_words = msg_len/LNIC_WORD_SIZE;
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
-    // copy msg words back into network
+    // process data
     stall_duration = lnic_read();
     for (i = 0; i < stall_duration; i++) {
       asm volatile("nop");
     }
     lnic_write_r(stall_duration);
-    for (i = 1; i < num_words; i++) {
+    // copy words back into network
+    for (i = 2; i < num_words; i++) {
       lnic_copy();
+    }
+    // extract timestamp of first pkt
+    start_time = lnic_read();
+    lnic_write_r(start_time);
+    // put start_time in all future msgs
+    while (1) {
+      lnic_wait();
+      // read/write app_hdr
+      app_hdr = lnic_read();
+      lnic_write_r(app_hdr);
+      // extract msg_len
+      msg_len = (uint16_t)app_hdr;
+      num_words = msg_len/LNIC_WORD_SIZE;
+      if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
+      // process data
+      stall_duration = lnic_read();
+      for (i = 0; i < stall_duration; i++) {
+        asm volatile("nop");
+      }
+      lnic_write_r(stall_duration);
+      // copy words back into network
+      for (i = 2; i < num_words; i++) {
+        lnic_copy();
+      }
+      lnic_read(); // discard timestamp
+      lnic_write_r(start_time);
     }
   }
   return 0;

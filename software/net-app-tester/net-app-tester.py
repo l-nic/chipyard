@@ -78,18 +78,18 @@ class SchedulerTest(unittest.TestCase):
         # check responses
         self.assertEqual(len(sniffer.results), num_lp_msgs + num_hp_msgs)
         hp_latency = []
-        lp_latency = []
+        lp_throughput = []
         for p in sniffer.results:
             self.assertTrue(p.haslayer(LNIC))
             latency = struct.unpack('!Q', str(p)[-8:])[0]
             self.assertTrue(p[LNIC].src in [LOW, HIGH])
             if p[LNIC].src == LOW:
-                lp_latency.append(latency)
+                lp_throughput.append((len(lp_throughput) + 1)/float(latency)) # msgs/cycle
             else:
                 hp_latency.append(latency)
         # record latencies in a DataFrame
-        df = pd.DataFrame({'low_priority': pd.Series(lp_latency), 'high_priority': pd.Series(hp_latency)}, dtype=float)
-        write_csv('scheduler', 'latency.csv', df)
+        df = pd.DataFrame({'low_priority_throughput': pd.Series(lp_throughput), 'high_priority_latency': pd.Series(hp_latency)}, dtype=float)
+        write_csv('scheduler', 'stats.csv', df)
 
 class ParallelLoopback(unittest.TestCase):
     def test_range(self):
