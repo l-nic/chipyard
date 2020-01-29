@@ -18,7 +18,7 @@
 #define ERR_UNKNOWN_EXCEPTION 99
 
 // Stack setup calling convention register indices
-#define NUM_REGS 32
+#define NUM_REGS 30
 #define REG_SP 2
 #define REG_GP 3
 #define REG_TP 4
@@ -27,11 +27,8 @@
 // Kernel thread structure
 struct thread_t {
   uintptr_t epc;
-  uintptr_t regs[32];
-  uintptr_t id;
-  uint64_t skipped;
-  int finished;
-};
+  uintptr_t regs[NUM_REGS];
+} __attribute__((packed));
 
 // CSR modification macros
 #define csr_read(csr)           \
