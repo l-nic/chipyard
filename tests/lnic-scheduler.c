@@ -22,9 +22,6 @@ int app1_main(void) {
   int i;
   uint64_t stall_duration;
 
-  // register context ID with L-NIC
-   //     lnic_add_context(0, 1);
-
   while (1) {
     // wait for a pkt to arrive
     lnic_wait();
@@ -54,9 +51,7 @@ int app1_main(void) {
  * Low priority app - measure throughput
  */
 int app2_main(void) {
-  //lnic_add_context(1, 0);
-  //while (1);
-    uint64_t app_hdr;
+  uint64_t app_hdr;
   uint16_t msg_len;
   int num_words;
   int i;
@@ -128,44 +123,6 @@ struct thread_t* new_thread() {
   return next_thread;
 }
 
-
-uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
-  if (cause == TIMER_INT_CAUSE || cause == LNIC_INT_CAUSE) {
-    // Should now always have an mscratch reference
-    if (csr_read(mscratch) == 0) {
-      exit(15);
-    }
-
-    volatile uint64_t x1, x2, x8, x15;
-    asm volatile("mv %0, x1" : "=r"(x1));
-    asm volatile("mv %0, x2" : "=r"(x2));
-    asm volatile("mv %0, x8" : "=r"(x8));
-    asm volatile("mv %0, x15" : "=r"(x15));
-    printf("X1 is %#lx, X2 is %#lx, X8 is %#lx, X15 is %#lx, threads base is %#lx, regs is %#lx\n", x1, x2, x8, x15, threads, regs);
-    printf("mscratch is %#lx\n", csr_read(mscratch));
-
-    // Select a thread to run and switch to it
-    uint64_t target_context = csr_read(0x58);
-    struct thread_t* selected_thread = threads + target_context + 1;
-    epc = selected_thread->epc;
-    for (int i = 0; i < NUM_REGS; i++) {
-      regs[i] = selected_thread->regs[i];
-    }
-    printf("Selecting new thread %d\n", target_context);
-    printf("Selected struct at addr %#lx\n", selected_thread);
-    csr_write(0x53, target_context);
-
-    // Restart the timer for the next timer interrupt
-    uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
-    uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
-    *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
-
-    return epc;
-  }
-  printf("Unknown exception with cause %#lx\n", cause);
-  exit(ERR_UNKNOWN_EXCEPTION);
-}
-
 void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   struct thread_t* thread = new_thread();
   thread->epc = target;
@@ -180,20 +137,19 @@ void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
 }
 
 int main(void) {
-  printf("Hello from scheduler base\n");
+//  printf("Hello from scheduler base\n");
 
   // Turn on the timer
   uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
   uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
   *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
   csr_write(mscratch, &threads[0]); // mscratch now holds thread base addr
-  printf("Mscratch is %#lx\n", csr_read(mscratch));
   // Set up the application threads
-  printf("Starting app 1\n");
+//  printf("Starting app 1\n");
   start_thread(app1_main, 0, 0);
-  printf("Started app 1\n");
+//  printf("Started app 1\n");
   start_thread(app2_main, 1, 1);
-  printf("Started app 2\n");
+//  printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start
   csr_write(0x53, num_threads - 1); // Set the main thread's id to an illegal value
