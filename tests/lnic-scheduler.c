@@ -107,7 +107,7 @@ int app2_main(void) {
 
 // Thread metadata storage in global state
 struct thread_t threads[MAX_THREADS + 2]; // Extra one for dummy main thread, and another because index 0 is reserved for asm scratch space
-uint64_t num_threads = 0;
+uint64_t num_threads = 1;
 
 struct thread_t* new_thread() {
   csr_clear(mie, TIMER_INT_ENABLE);
@@ -135,23 +135,17 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
     asm volatile("mv %0, x8" : "=r"(x8));
     asm volatile("mv %0, x15" : "=r"(x15));
     printf("X1 is %#lx, X2 is %#lx, X8 is %#lx, X15 is %#lx, threads base is %#lx, regs is %#lx\n", x1, x2, x8, x15, threads, regs);
-
-    // Back up the current user thread
-    struct thread_t* base_thread = csr_read(mscratch);
-    struct thread_t* current_thread = base_thread + csr_read(0x53);
-    current_thread->epc = epc;
-    for (int i = 0; i < NUM_REGS; i++) {
-      current_thread->regs[i] = regs[i];
-    }
+    printf("mscratch is %#lx\n", csr_read(mscratch));
 
     // Select a thread to run and switch to it
     uint64_t target_context = csr_read(0x58);
-    struct thread_t* selected_thread = base_thread + target_context;
+    struct thread_t* selected_thread = threads + target_context + 1;
     epc = selected_thread->epc;
     for (int i = 0; i < NUM_REGS; i++) {
       regs[i] = selected_thread->regs[i];
     }
     printf("Selecting new thread %d\n", target_context);
+    printf("Selected struct at addr %#lx\n", selected_thread);
     csr_write(0x53, target_context);
 
     // Restart the timer for the next timer interrupt
@@ -195,7 +189,7 @@ int main(void) {
   printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start
-  csr_write(0x53, num_threads); // Set the main thread's id to an illegal value
+  csr_write(0x53, num_threads - 1); // Set the main thread's id to an illegal value
   // This will keep it from being re-scheduled.
   // As long as it doesn't use the lnic, this should be fine.
   csr_set(mie, LNIC_INT_ENABLE);
