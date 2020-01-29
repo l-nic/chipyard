@@ -1,6 +1,8 @@
 # See LICENSE for license details.
 
 #include "encoding.h"
+#include "lnic-scheduler.h"
+
 
 #if __riscv_xlen == 64
 # define LREG ld
@@ -222,6 +224,14 @@ trap_entry:
   LREG x27, 27*REGBYTES(x1)
   LREG x28, 28*REGBYTES(x1)
   LREG x29, 29*REGBYTES(x1)
+
+  # Reset the timer interrupt
+  li x3, MTIME_PTR_LO
+  LREG x3, 0(x3)
+  addi x3, x3, TIME_SLICE_RTC_TICKS
+  li x2, MTIMECMP_PTR_LO
+  SREG x3, 0(x2)
+  
 
   # Load target context remaining regs
   LREG x3, 30*REGBYTES(x1)

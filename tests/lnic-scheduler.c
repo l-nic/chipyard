@@ -5,6 +5,13 @@
 #include "lnic.h"
 #include "lnic-scheduler.h"
 
+// Kernel thread structure
+struct thread_t {
+  uintptr_t regs[NUM_REGS];
+  uintptr_t epc;
+  uintptr_t padding;
+} __attribute__((packed));
+
 /**
  * High priority app - measure latency
  */
