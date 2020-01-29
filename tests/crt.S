@@ -187,9 +187,16 @@ trap_entry:
   SREG x28, 28*REGBYTES(x1)
   SREG x29, 29*REGBYTES(x1)
 
+  # Handle exceptions other than scheduling interrupts
   csrr x3, mcause
-  # TODO: Do something with mcause
+  li x4, TIMER_INT_CAUSE
+  beq x3, x4, valid
+  li x4, LNIC_INT_CAUSE
+  beq x3, x4, valid
+  mv a0, x3
+  j exit
 
+valid:
   # Switch x1 to target context
   csrr x1, 0x58 # Target context id now in x1
   csrw 0x53, x1
