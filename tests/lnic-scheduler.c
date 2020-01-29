@@ -106,7 +106,7 @@ int app2_main(void) {
 }
 
 // Thread metadata storage in global state
-struct thread_t threads[MAX_THREADS + 1]; // Extra one for dummy main thread
+struct thread_t threads[MAX_THREADS + 2]; // Extra one for dummy main thread, and another because index 0 is reserved for asm scratch space
 uint64_t num_threads = 0;
 
 struct thread_t* new_thread() {
@@ -128,6 +128,13 @@ uintptr_t handle_trap(uintptr_t cause, uintptr_t epc, uintptr_t* regs) {
     if (csr_read(mscratch) == 0) {
       exit(15);
     }
+
+    volatile uint64_t x1, x2, x8, x15;
+    asm volatile("mv %0, x1" : "=r"(x1));
+    asm volatile("mv %0, x2" : "=r"(x2));
+    asm volatile("mv %0, x8" : "=r"(x8));
+    asm volatile("mv %0, x15" : "=r"(x15));
+    printf("X1 is %#lx, X2 is %#lx, X8 is %#lx, X15 is %#lx, threads base is %#lx, regs is %#lx\n", x1, x2, x8, x15, threads, regs);
 
     // Back up the current user thread
     struct thread_t* base_thread = csr_read(mscratch);
@@ -179,7 +186,7 @@ int main(void) {
   uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
   *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
   csr_write(mscratch, &threads[0]); // mscratch now holds thread base addr
-
+  printf("Mscratch is %#lx\n", csr_read(mscratch));
   // Set up the application threads
   printf("Starting app 1\n");
   start_thread(app1_main, 0, 0);

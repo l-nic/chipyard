@@ -139,37 +139,53 @@ _start:
 trap_entry:
   addi sp, sp, -272
 
-  SREG x1, 1*REGBYTES(sp)
-  SREG x2, 2*REGBYTES(sp)
-  SREG x3, 3*REGBYTES(sp)
-  SREG x4, 4*REGBYTES(sp)
-  SREG x5, 5*REGBYTES(sp)
-  SREG x6, 6*REGBYTES(sp)
-  SREG x7, 7*REGBYTES(sp)
-  SREG x8, 8*REGBYTES(sp)
-  SREG x9, 9*REGBYTES(sp)
-  SREG x10, 10*REGBYTES(sp)
-  SREG x11, 11*REGBYTES(sp)
-  SREG x12, 12*REGBYTES(sp)
-  SREG x13, 13*REGBYTES(sp)
-  SREG x14, 14*REGBYTES(sp)
-  SREG x15, 15*REGBYTES(sp)
-  SREG x16, 16*REGBYTES(sp)
-  SREG x17, 17*REGBYTES(sp)
-  SREG x18, 18*REGBYTES(sp)
-  SREG x19, 19*REGBYTES(sp)
-  SREG x20, 20*REGBYTES(sp)
-  SREG x21, 21*REGBYTES(sp)
-  SREG x22, 22*REGBYTES(sp)
-  SREG x23, 23*REGBYTES(sp)
-  SREG x24, 24*REGBYTES(sp)
-  SREG x25, 25*REGBYTES(sp)
-  SREG x26, 26*REGBYTES(sp)
-  SREG x27, 27*REGBYTES(sp)
-  SREG x28, 28*REGBYTES(sp)
-  SREG x29, 29*REGBYTES(sp)
-#  SREG x30, 30*REGBYTES(sp)
-#  SREG x31, 31*REGBYTES(sp)
+  # Calculate the base and current thread struct addr
+  csrrw x2, mscratch, x2 # Store x2 so we have a scratch reg
+  SREG x1, 1*REGBYTES(x2) # Store x1 so we have a second scratch reg
+  csrr x1, 0x53 # Load current context id
+  addi x1, x1, 0x1 # Adjust for one-offset in threads
+  slli x1, x1, 0x8 # Account for thread struct size
+  add x1, x2, x1 # Current thread struct addr now in x1, base addr now in x2
+
+  # Save the registers that were moved around earlier
+  SREG x3, 3*REGBYTES(x1)
+  csrr x3, mscratch # Load the old x2 value
+  SREG x3, 2*REGBYTES(x1)
+  LREG x3, 1*REGBYTES(x2) # Load the old x1 value
+  SREG x3, 1*REGBYTES(x1)
+  csrw mscratch, x2 # Save the base addr back in mscratch
+
+  # All registers from x4 to x29 can now be stored normally
+  SREG x4, 4*REGBYTES(x1)
+  SREG x5, 5*REGBYTES(x1)
+  SREG x6, 6*REGBYTES(x1)
+  SREG x7, 7*REGBYTES(x1)
+  SREG x8, 8*REGBYTES(x1)
+  SREG x9, 9*REGBYTES(x1)
+  SREG x10, 10*REGBYTES(x1)
+  SREG x11, 11*REGBYTES(x1)
+  SREG x12, 12*REGBYTES(x1)
+  SREG x13, 13*REGBYTES(x1)
+  SREG x14, 14*REGBYTES(x1)
+  SREG x15, 15*REGBYTES(x1)
+  SREG x16, 16*REGBYTES(x1)
+  SREG x17, 17*REGBYTES(x1)
+  SREG x18, 18*REGBYTES(x1)
+  SREG x19, 19*REGBYTES(x1)
+  SREG x20, 20*REGBYTES(x1)
+  SREG x21, 21*REGBYTES(x1)
+  SREG x22, 22*REGBYTES(x1)
+  SREG x23, 23*REGBYTES(x1)
+  SREG x24, 24*REGBYTES(x1)
+  SREG x25, 25*REGBYTES(x1)
+  SREG x26, 26*REGBYTES(x1)
+  SREG x27, 27*REGBYTES(x1)
+  SREG x28, 28*REGBYTES(x1)
+  SREG x29, 29*REGBYTES(x1)
+
+  mv x8, x1
+  mv x15, x2
+  LREG sp, 2*REGBYTES(x1)
 
   csrr a0, mcause
   csrr a1, mepc

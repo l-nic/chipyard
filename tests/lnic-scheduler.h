@@ -26,8 +26,9 @@
 
 // Kernel thread structure
 struct thread_t {
-  uintptr_t epc;
   uintptr_t regs[NUM_REGS];
+  uintptr_t epc;
+  uintptr_t padding;
 } __attribute__((packed));
 
 // CSR modification macros
