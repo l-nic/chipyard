@@ -57,8 +57,8 @@ class SchedulerTest(unittest.TestCase):
         return lnic_req(lnic_dst=priority) / DummyApp.DummyApp(service_time=service_time) / Raw('\x00'*(pkt_len - len(lnic_req()) - len(DummyApp.DummyApp())))
 
     def test_scheduler(self):
-        num_lp_msgs = 80
-        num_hp_msgs = 40
+        num_lp_msgs = 160
+        num_hp_msgs = 80
         service_time = 500
         inputs = []
         # add low priority msgs 
@@ -69,7 +69,7 @@ class SchedulerTest(unittest.TestCase):
         random.shuffle(inputs)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=num_lp_msgs + num_hp_msgs, timeout=200)
+                    count=num_lp_msgs + num_hp_msgs, timeout=400)
         sniffer.start()
         # send in pkts
         sendp(inputs, iface=TEST_IFACE, inter=0.4)
