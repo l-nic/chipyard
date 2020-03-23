@@ -6,6 +6,7 @@ target
 *.vcd
 *.swp
 *.log
+*.jou
 *.pyc
 *#
 *~

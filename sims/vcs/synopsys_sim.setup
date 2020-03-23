@@ -1,0 +1,3 @@
+riscv_lib: riscv_lib/
+xil_defaultlib: /home/vagrant/chipyard/vivado/ip/ip_user_files/sim_scripts/sdnet_0/vcs/vcs_lib/xil_defaultlib
+OTHERS=/home/vagrant/chipyard/vivado/ip/managed_ip_project/managed_ip_project.cache/compile_simlib/vcs/synopsys_sim.setup
