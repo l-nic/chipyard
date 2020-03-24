@@ -70,28 +70,18 @@ VLOGAN_OPTS = \
 	+define+RANDOMIZE_INVALID_ASSIGN \
 	+libext+.v
 
-#VCS_CC_OPTS = \
-#	-CC "-I$(VCS_HOME)/include" \
-#	-CC "-I$(RISCV)/include" \
-#	-CC "-std=c++11" \
-#	$(RISCV)/lib/libfesvr.a
-
-#VCS_OPTS = -notice -line 
-VCS_OPTS = 
+VCS_OPTS = -notice -line
 
 #########################################################################################
 # vcs simulator rules
 #########################################################################################
-$(sim): riscv_lib riscv_dpi.so
-	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ \
-	-debug_pp
-
-$(sim_debug): riscv_lib riscv_dpi.so
-	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ \
-	+define+DEBUG -debug_pp
-
-riscv_lib: $(sim_vsrcs) $(sim_common_files)
+$(sim): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
 	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) -work riscv_lib
+	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ -debug_access+designer
+
+$(sim_debug): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
+	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) +define+DEBUG -work riscv_lib
+	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ -debug_access+designer
 
 riscv_dpi.so: $(sim_common_files)
 	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include\
