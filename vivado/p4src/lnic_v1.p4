@@ -215,8 +215,8 @@ control MyProcessing(inout headers hdr,
             hdr.app.setValid();
 
             // Fill out App header
-            hdr.app.ipv4_addr = hdr.ipv4.dstAddr;
-            hdr.app.lnic_addr = hdr.lnic.dst_context;
+            hdr.app.ipv4_addr = hdr.ipv4.srcAddr;
+            hdr.app.lnic_addr = hdr.lnic.src_context;
             hdr.app.msg_len = hdr.lnic.msg_len;
 
             // Fill out metadata for packets going to CPU
