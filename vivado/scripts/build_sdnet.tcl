@@ -18,7 +18,7 @@ if {![string equal [get_ips $sdnet] ""]} {
 
 create_ip -name sdnet -vendor xilinx.com -library ip -version 2.1 -module_name $sdnet -dir $build_dir
 set_property -dict [subst {
-    CONFIG.TDATA_NUM_BYTES {8}
+    CONFIG.TDATA_NUM_BYTES {64}
     CONFIG.P4_FILE {${p4_file}}
     CONFIG.DEBUG_IO_CAPTURE_ENABLE {true}
     CONFIG.CAM_DEBUG_HW_LOOKUP {true}

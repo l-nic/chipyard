@@ -35,7 +35,7 @@
 import sdnet_0_pkg::*;
 
 module SDNetWrapper #(
-  parameter TDATA_W = 64
+  parameter TDATA_W = 512
 ) (
   // Packet In
   input                     net_net_in_valid,
