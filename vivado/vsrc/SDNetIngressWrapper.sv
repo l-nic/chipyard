@@ -44,16 +44,6 @@ module SDNetIngressWrapper #(
   input   [(TDATA_W/8)-1:0] net_net_in_bits_keep,
   input                     net_net_in_bits_last,
 
-  // Metadata In
-  input                     net_meta_in_valid,
-  input                     net_meta_in_bits_ingress_id,
-  input              [15:0] net_meta_in_bits_msg_id,
-  input              [15:0] net_meta_in_bits_offset,
-  input              [15:0] net_meta_in_bits_lnic_src,
-  input                     net_meta_in_bits_egress_id,
-  input              [15:0] net_meta_in_bits_lnic_dst,
-  input              [15:0] net_meta_in_bits_msg_len,
-
   // Packet Out
   output                    net_net_out_valid,
   input                     net_net_out_ready,
@@ -61,15 +51,26 @@ module SDNetIngressWrapper #(
   output  [(TDATA_W/8)-1:0] net_net_out_bits_keep,
   output                    net_net_out_bits_last,
 
+  // Extern call outputs
+  output                    net_get_rx_msg_info_req_valid,
+  output             [31:0] net_get_rx_msg_info_req_bits_src_ip,
+  output             [15:0] net_get_rx_msg_info_req_bits_src_context,
+  output             [15:0] net_get_rx_msg_info_req_bits_tx_msg_id,
+  output             [15:0] net_get_rx_msg_info_req_bits_msg_len,
+
+  // Extern call inputs
+  input                     net_get_rx_msg_info_resp_valid,
+  input                     net_get_rx_msg_info_resp_bits_fail,
+  input              [15:0] net_get_rx_msg_info_resp_bits_rx_msg_id,
+
   // Metadata Out
   output                    net_meta_out_valid,
-  output                    net_meta_out_bits_ingress_id,
-  output             [15:0] net_meta_out_bits_msg_id,
-  output             [15:0] net_meta_out_bits_offset,
-  output             [15:0] net_meta_out_bits_lnic_src,
-  output                    net_meta_out_bits_egress_id,
-  output             [15:0] net_meta_out_bits_lnic_dst,
+  output             [31:0] net_meta_out_src_ip,
+  output             [15:0] net_meta_out_src_context,
   output             [15:0] net_meta_out_bits_msg_len,
+  output              [7:0] net_meta_out_bits_pkt_offset,
+  output             [15:0] net_meta_out_dst_context,
+  output             [15:0] net_meta_out_rx_msg_id,
 
   input                     reset,
   input                     clock
@@ -94,31 +95,36 @@ module SDNetIngressWrapper #(
   wire              [1:0] s_axil_rresp;
   wire                    s_axil_rready;
 
-  wire                user_metadata_in_valid;
+  reg                 user_metadata_in_valid;
   USER_META_DATA_T    user_metadata_in;
   wire                user_metadata_out_valid;
   USER_META_DATA_T    user_metadata_out;
 
-  assign user_metadata_in_valid = net_meta_in_valid;
-  assign user_metadata_in = {net_meta_in_bits_ingress_id,
-                             net_meta_in_bits_msg_id,
-                             net_meta_in_bits_offset,
-                             net_meta_in_bits_lnic_src,
-                             net_meta_in_bits_egress_id,
-                             net_meta_in_bits_lnic_dst,
-                             net_meta_in_bits_msg_len};
+  USER_EXTERN_VALID_T user_extern_out_valid;
+  USER_EXTERN_OUT_T   user_extern_out;
+  USER_EXTERN_VALID_T user_extern_in_valid;
+  USER_EXTERN_IN_T    user_extern_in;
 
   assign net_meta_out_valid = user_metadata_out_valid;
-  assign {net_meta_out_bits_ingress_id,
-          net_meta_out_bits_msg_id,
-          net_meta_out_bits_offset,
-          net_meta_out_bits_lnic_src,
-          net_meta_out_bits_egress_id,
-          net_meta_out_bits_lnic_dst,
-          net_meta_out_bits_msg_len} = user_metadata_out;
+  assign {net_meta_out_src_ip,
+          net_meta_out_src_context,
+          net_meta_out_bits_msg_len,
+          net_meta_out_bits_pkt_offset,
+          net_meta_out_dst_context,
+          net_meta_out_rx_msg_id} = user_metadata_out;
+
+  assign net_get_rx_msg_info_req_valid = user_extern_out_valid.get_rx_msg_info;
+  assign {net_get_rx_msg_info_req_bits_src_ip,
+          net_get_rx_msg_info_req_bits_src_context,
+          net_get_rx_msg_info_req_bits_tx_msg_id,
+          net_get_rx_msg_info_req_bits_msg_len} = user_extern_out.get_rx_msg_info;
+
+  assign user_extern_in_valid.get_rx_msg_info = net_get_rx_msg_info_resp_valid;
+  assign user_extern_in.get_rx_msg_info = {net_get_rx_msg_info_resp_bits_fail,
+                                           net_get_rx_msg_info_resp_bits_rx_msg_id};
 
   // SDNet module
-  sdnet_0 sdnet_inst (
+  sdnet_ingress sdnet_ingress_inst (
     // Clocks & Resets
     .s_axis_aclk             (clock),
     .s_axis_aresetn          (~reset),
@@ -135,6 +141,11 @@ module SDNetIngressWrapper #(
     .user_metadata_in_valid  (user_metadata_in_valid),
     .user_metadata_out       (user_metadata_out),
     .user_metadata_out_valid (user_metadata_out_valid),
+    // User Extern Data
+    .user_extern_in          (user_extern_in),
+    .user_extern_in_valid    (user_extern_in_valid),
+    .user_extern_out         (user_extern_out),
+    .user_extern_out_valid   (user_extern_out_valid),
     // AXI4 Stream Slave port
     .s_axis_tvalid           (net_net_in_valid),
     .s_axis_tready           (net_net_in_ready),
@@ -167,4 +178,42 @@ module SDNetIngressWrapper #(
     .s_axi_rresp             (s_axil_rresp)
   );
 
-endmodule: SDNetWrapper
+  assign user_metadata_in = 'b0;
+
+  // State machine to drive user_metadata_in_valid
+  reg state, next_state;
+  localparam START = 0;
+  localparam WAIT_EOP = 1;
+
+  always @(*) begin
+    // defaults
+    next_state = state;
+    net_net_in_valid = 0;
+
+    case (state)
+      START: begin
+        if (net_net_in_valid && net_net_in_ready) begin
+          net_net_in_valid = 1;
+          if (!net_net_in_bits_last) begin
+            next_state = WAIT_EOP;
+          end
+        end
+      end
+      WAIT_EOP: begin
+        if (net_net_in_valid && net_net_in_ready && net_net_in_bits_last) begin
+          next_state = START;
+        end
+      end
+    endcase
+  end
+
+  always @(posedge clock) begin
+    if (reset) begin
+      state <= START;
+    end
+    else begin
+      state <= next_state;
+    end
+  end
+
+endmodule: SDNetIngressWrapper

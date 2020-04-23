@@ -32,9 +32,9 @@
 // *************************************************************************
 //`timescale 1ns/1ps
 
-import sdnet_0_pkg::*;
+import sdnet_egress_pkg::*;
 
-module SDNetWrapper #(
+module SDNetEgressWrapper #(
   parameter TDATA_W = 512
 ) (
   // Packet In
@@ -46,13 +46,14 @@ module SDNetWrapper #(
 
   // Metadata In
   input                     net_meta_in_valid,
-  input                     net_meta_in_bits_ingress_id,
-  input              [15:0] net_meta_in_bits_msg_id,
-  input              [15:0] net_meta_in_bits_offset,
-  input              [15:0] net_meta_in_bits_lnic_src,
-  input                     net_meta_in_bits_egress_id,
-  input              [15:0] net_meta_in_bits_lnic_dst,
+  input              [31:0] net_meta_in_bits_dst_ip,
+  input              [15:0] net_meta_in_bits_dst_context,
   input              [15:0] net_meta_in_bits_msg_len,
+  input               [7:0] net_meta_in_bits_pkt_offset,
+  input              [15:0] net_meta_in_bits_src_context,
+  input              [15:0] net_meta_in_bits_tx_msg_id,
+  input              [15:0] net_meta_in_bits_buf_ptr,
+  input               [7:0] net_meta_in_bits_buf_size_class,
 
   // Packet Out
   output                    net_net_out_valid,
@@ -60,16 +61,6 @@ module SDNetWrapper #(
   output      [TDATA_W-1:0] net_net_out_bits_data,
   output  [(TDATA_W/8)-1:0] net_net_out_bits_keep,
   output                    net_net_out_bits_last,
-
-  // Metadata Out
-  output                    net_meta_out_valid,
-  output                    net_meta_out_bits_ingress_id,
-  output             [15:0] net_meta_out_bits_msg_id,
-  output             [15:0] net_meta_out_bits_offset,
-  output             [15:0] net_meta_out_bits_lnic_src,
-  output                    net_meta_out_bits_egress_id,
-  output             [15:0] net_meta_out_bits_lnic_dst,
-  output             [15:0] net_meta_out_bits_msg_len,
 
   input                     reset,
   input                     clock
@@ -100,25 +91,17 @@ module SDNetWrapper #(
   USER_META_DATA_T    user_metadata_out;
 
   assign user_metadata_in_valid = net_meta_in_valid;
-  assign user_metadata_in = {net_meta_in_bits_ingress_id,
-                             net_meta_in_bits_msg_id,
-                             net_meta_in_bits_offset,
-                             net_meta_in_bits_lnic_src,
-                             net_meta_in_bits_egress_id,
-                             net_meta_in_bits_lnic_dst,
-                             net_meta_in_bits_msg_len};
-
-  assign net_meta_out_valid = user_metadata_out_valid;
-  assign {net_meta_out_bits_ingress_id,
-          net_meta_out_bits_msg_id,
-          net_meta_out_bits_offset,
-          net_meta_out_bits_lnic_src,
-          net_meta_out_bits_egress_id,
-          net_meta_out_bits_lnic_dst,
-          net_meta_out_bits_msg_len} = user_metadata_out;
+  assign user_metadata_in = {net_meta_in_bits_dst_ip,
+                             net_meta_in_bits_dst_context,
+                             net_meta_in_bits_msg_len,
+                             net_meta_in_bits_pkt_offset,
+                             net_meta_in_bits_src_context,
+                             net_meta_in_bits_tx_msg_id,
+                             net_meta_in_bits_buf_ptr,
+                             net_meta_in_bits_buf_size_class};
 
   // SDNet module
-  sdnet_0 sdnet_inst (
+  sdnet_egress sdnet_egress_inst (
     // Clocks & Resets
     .s_axis_aclk             (clock),
     .s_axis_aresetn          (~reset),
@@ -167,4 +150,4 @@ module SDNetWrapper #(
     .s_axi_rresp             (s_axil_rresp)
   );
 
-endmodule: SDNetWrapper
+endmodule: SDNetEgressWrapper
