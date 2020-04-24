@@ -65,12 +65,12 @@ module SDNetIngressWrapper #(
 
   // Metadata Out
   output                    net_meta_out_valid,
-  output             [31:0] net_meta_out_src_ip,
-  output             [15:0] net_meta_out_src_context,
+  output             [31:0] net_meta_out_bits_src_ip,
+  output             [15:0] net_meta_out_bits_src_context,
   output             [15:0] net_meta_out_bits_msg_len,
   output              [7:0] net_meta_out_bits_pkt_offset,
-  output             [15:0] net_meta_out_dst_context,
-  output             [15:0] net_meta_out_rx_msg_id,
+  output             [15:0] net_meta_out_bits_dst_context,
+  output             [15:0] net_meta_out_bits_rx_msg_id,
 
   input                     reset,
   input                     clock
@@ -106,12 +106,12 @@ module SDNetIngressWrapper #(
   USER_EXTERN_IN_T    user_extern_in;
 
   assign net_meta_out_valid = user_metadata_out_valid;
-  assign {net_meta_out_src_ip,
-          net_meta_out_src_context,
+  assign {net_meta_out_bits_src_ip,
+          net_meta_out_bits_src_context,
           net_meta_out_bits_msg_len,
           net_meta_out_bits_pkt_offset,
-          net_meta_out_dst_context,
-          net_meta_out_rx_msg_id} = user_metadata_out;
+          net_meta_out_bits_dst_context,
+          net_meta_out_bits_rx_msg_id} = user_metadata_out;
 
   assign net_get_rx_msg_info_req_valid = user_extern_out_valid.get_rx_msg_info;
   assign {net_get_rx_msg_info_req_bits_src_ip,
@@ -188,12 +188,12 @@ module SDNetIngressWrapper #(
   always @(*) begin
     // defaults
     next_state = state;
-    net_net_in_valid = 0;
+    user_metadata_in_valid = 0;
 
     case (state)
       START: begin
         if (net_net_in_valid && net_net_in_ready) begin
-          net_net_in_valid = 1;
+          user_metadata_in_valid = 1;
           if (!net_net_in_bits_last) begin
             next_state = WAIT_EOP;
           end

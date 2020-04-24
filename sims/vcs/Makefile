@@ -45,7 +45,8 @@ include $(base_dir)/common.mk
 VLOGAN = vlogan -full64
 VCS = vcs -full64
 
-sim_vsrcs += /home/vagrant/chipyard/vivado/vsrc/SDNetWrapper.sv
+sim_vsrcs += /home/vagrant/chipyard/vivado/vsrc/SDNetIngressWrapper.sv
+sim_vsrcs += /home/vagrant/chipyard/vivado/vsrc/SDNetEgressWrapper.sv
 
 VLOGAN_OPTS = \
 	+lint=all,noVCDE,noONGS,noUI \

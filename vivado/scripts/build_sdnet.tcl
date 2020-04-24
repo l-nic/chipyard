@@ -1,10 +1,8 @@
 
 # Build SDNet IP
 
-set p4_file $::env(CHIPYARD_ROOT)/vivado/p4src/lnic_v1.p4
 set build_dir $::env(CHIPYARD_ROOT)/vivado/ip
 set proj_dir ${build_dir}/managed_ip_project
-set sdnet sdnet_0
 set xci_file ${build_dir}/${sdnet}/${sdnet}.xci
 
 open_project ${proj_dir}/managed_ip_project.xpr
