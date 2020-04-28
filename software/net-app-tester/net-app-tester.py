@@ -29,6 +29,9 @@ MY_IP = "10.1.2.3"
 DST_CONTEXT = 0
 MY_CONTEXT = 0x1234
 
+# max # of msg bytes within a pkt
+MAX_SEG_BYTES = 1024
+
 # Priorities
 LOW = 1
 HIGH = 0
@@ -37,10 +40,10 @@ LOG_DIR = '/vagrant/logs'
 
 NUM_SAMPLES = 1
 
-def lnic_req(msg_len, my_context=MY_CONTEXT, dst_context=DST_CONTEXT):
+def lnic_pkt(msg_len, pkt_offset, src_context=MY_CONTEXT, dst_context=DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
-            LNIC(src_context=my_context, dst_context=dst_context, msg_len=msg_len)
+            LNIC(src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -48,6 +51,24 @@ def write_csv(dname, fname, df):
       os.makedirs(log_dir)
     with open(os.path.join(log_dir, fname), 'w') as f:
         f.write(df.to_csv(index=False))
+
+def print_pkts(pkts):
+    for i in range(len(pkts)):
+      print "---- Pkt {} ----".format(i)
+      pkts[i].show2()
+      hexdump(pkts[i])
+
+def packetize(msg):
+    """Generate LNIC pkts for the given msg
+    """
+    num_pkts = len(msg)/MAX_SEG_BYTES if len(msg) % MAX_SEG_BYTES == 0 else (len(msg)/MAX_SEG_BYTES) + 1
+    pkts = []
+    for i in range(num_pkts-1):
+        p = lnic_pkt(len(msg), i) / Raw(msg[i*MAX_SEG_BYTES:(i+1)*MAX_SEG_BYTES])
+        pkts.append(p)
+    p = lnic_pkt(len(msg), num_pkts-1) / Raw(msg[(num_pkts-1)*MAX_SEG_BYTES:])
+    pkts.append(p)
+    return pkts
 
 class SchedulerTest(unittest.TestCase):
     def setUp(self):
@@ -253,35 +274,34 @@ class PriorityMix(unittest.TestCase):
         # self.assertEqual(app_packets, len(packet_lengths))
 
 class Loopback(unittest.TestCase):
-    def do_loopback(self, pkt_len):
-        msg_len = pkt_len - len(lnic_req(0)) # bytes
-        payload = Raw('\x00'*msg_len)
-        req = lnic_req(msg_len) / payload
-        print "Request:"
-        req.show2()
-        hexdump(req)
-        # send request / receive response
+    def do_loopback(self, pkts):
+        print "Request Pkts:"
+        print_pkts(pkts)
+        # send request pkts / receive response pkts
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst_context == MY_CONTEXT,
-                    count=1, timeout=TIMEOUT_SEC)
+                    count=len(pkts), timeout=TIMEOUT_SEC)
         sniffer.start()
         # send in pkts
-        sendp(req, iface=TEST_IFACE)
+        sendp(pkts, iface=TEST_IFACE)
         # wait for DONE msg
         sniffer.join()
-        self.assertEqual(1, len(sniffer.results))
-        resp = sniffer.results[0]
-        print "Response:"
-        resp.show2()
-        hexdump(resp)
-        self.assertIsNotNone(resp)
-        self.assertEqual(resp[LNIC].dst_context, MY_CONTEXT)
-        resp_data = resp[LNIC].payload
-        self.assertEqual(len(resp_data), len(payload))
-        latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+        self.assertEqual(len(pkts), len(sniffer.results))
+        print "Response Pkts:"
+        print_pkts(sniffer.results)
+        latency = 0 # default
+        for i in range(len(sniffer.results)):
+          p = sniffer.results[i]
+          self.assertEqual(p[LNIC].src_context, DST_CONTEXT)
+          self.assertEqual(len(p), len(pkts[i]))
+          resp_data = p[LNIC].payload
+          latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+        # return latency indicated in final pkt
         return latency
     def test_single(self):
-        pkt_len = 128 # bytes
-        latency = self.do_loopback(pkt_len)
+        msg_len = MAX_SEG_BYTES + 82 # bytes
+        msg = '\x00'*msg_len
+        pkts = packetize(msg) 
+        latency = self.do_loopback(pkts)
         print 'Latency = {} cycles'.format(latency)
 #    def test_pkt_length(self):
 #        pkt_len = range(64, 64*20, 64)
