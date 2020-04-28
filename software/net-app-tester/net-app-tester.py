@@ -37,10 +37,10 @@ LOG_DIR = '/vagrant/logs'
 
 NUM_SAMPLES = 1
 
-def lnic_req(my_context=MY_CONTEXT, lnic_dst = DST_CONTEXT):
+def lnic_req(msg_len, my_context=MY_CONTEXT, dst_context=DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
-            LNIC(src=my_context, dst=lnic_dst)
+            LNIC(src_context=my_context, dst_context=dst_context, msg_len=msg_len)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -254,33 +254,47 @@ class PriorityMix(unittest.TestCase):
 
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkt_len):
-        msg_len = pkt_len - len(lnic_req()) # bytes
+        msg_len = pkt_len - len(lnic_req(0)) # bytes
         payload = Raw('\x00'*msg_len)
-        req = lnic_req() / payload
+        req = lnic_req(msg_len) / payload
+        print "Request:"
+        req.show2()
+        hexdump(req)
         # send request / receive response
-        resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst_context == MY_CONTEXT,
+                    count=1, timeout=TIMEOUT_SEC)
+        sniffer.start()
+        # send in pkts
+        sendp(req, iface=TEST_IFACE)
+        # wait for DONE msg
+        sniffer.join()
+        self.assertEqual(1, len(sniffer.results))
+        resp = sniffer.results[0]
+        print "Response:"
+        resp.show2()
+        hexdump(resp)
         self.assertIsNotNone(resp)
-        self.assertEqual(resp[LNIC].dst, MY_CONTEXT)
+        self.assertEqual(resp[LNIC].dst_context, MY_CONTEXT)
         resp_data = resp[LNIC].payload
         self.assertEqual(len(resp_data), len(payload))
         latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
         return latency
     def test_single(self):
-        pkt_len = 64 # bytes
+        pkt_len = 128 # bytes
         latency = self.do_loopback(pkt_len)
         print 'Latency = {} cycles'.format(latency)
-    def test_pkt_length(self):
-        pkt_len = range(64, 64*20, 64)
-        length = []
-        latency = []
-        for l in pkt_len:
-            for i in range(NUM_SAMPLES):
-                print 'Testing pkt_len = {} bytes'.format(l)
-                length.append(l)
-                latency.append(self.do_loopback(l))
-        # record latencies
-        df = pd.DataFrame({'pkt_len':length, 'latency':latency})
-        write_csv('loopback', 'pkt_len_latency.csv', df)
+#    def test_pkt_length(self):
+#        pkt_len = range(64, 64*20, 64)
+#        length = []
+#        latency = []
+#        for l in pkt_len:
+#            for i in range(NUM_SAMPLES):
+#                print 'Testing pkt_len = {} bytes'.format(l)
+#                length.append(l)
+#                latency.append(self.do_loopback(l))
+#        # record latencies
+#        df = pd.DataFrame({'pkt_len':length, 'latency':latency})
+#        write_csv('loopback', 'pkt_len_latency.csv', df)
 
 class ThroughputTest(unittest.TestCase):
     def setUp(self):
