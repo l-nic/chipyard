@@ -298,7 +298,7 @@ class Loopback(unittest.TestCase):
         # return latency indicated in final pkt
         return latency
     def test_single(self):
-        msg_len = MAX_SEG_BYTES + 82 # bytes
+        msg_len = MAX_SEG_BYTES + 80 # bytes
         msg = '\x00'*msg_len
         pkts = packetize(msg) 
         latency = self.do_loopback(pkts)

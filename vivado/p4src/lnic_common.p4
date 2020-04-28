@@ -78,6 +78,9 @@ header lnic_t {
     MsgID_t tx_msg_id;
     bit<16> buf_ptr;
     bit<8> buf_size_class;
+    // TODO(sibanez): this is here to ensure headers are 8B aligned, a temporary simplification assumed
+    // by the SimNetwork and Timestamp module
+    bit<16> padding;
 }
 
 // header structure

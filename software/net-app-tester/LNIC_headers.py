@@ -13,7 +13,8 @@ class LNIC(Packet):
         ByteField("pkt_offset", 0),
         ShortField("tx_msg_id", 0),
         ShortField("buf_ptr", 0),
-        ByteField("buf_size_class", 0)
+        ByteField("buf_size_class", 0),
+        ShortField("padding", 0),
     ]
 
 bind_layers(IP, LNIC, proto=LNIC_PROTO)
