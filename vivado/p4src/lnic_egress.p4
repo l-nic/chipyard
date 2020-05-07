@@ -31,25 +31,13 @@
 #include <xsa.p4>
 #include "lnic_common.p4"
 
-// Input metadata
-struct metadata {
-    IPv4Addr_t  dst_ip;
-    ContextID_t dst_context;
-    bit<16>     msg_len;
-    bit<8>      pkt_offset;
-    ContextID_t src_context;
-    MsgID_t     tx_msg_id;
-    bit<16>     buf_ptr;
-    bit<8>      buf_size_class;
-}
-
 // ****************************************************************************** //
 // *************************** P A R S E R  ************************************* //
 // ****************************************************************************** //
 
 parser MyParser(packet_in packet, 
                 out headers hdr, 
-                inout metadata meta, 
+                inout egress_metadata meta, 
                 inout standard_metadata_t smeta) {
 
     state start {
@@ -63,7 +51,7 @@ parser MyParser(packet_in packet,
 // ****************************************************************************** //
 
 control MyProcessing(inout headers hdr, 
-                     inout metadata meta, 
+                     inout egress_metadata meta, 
                      inout standard_metadata_t smeta) {
 
     apply {
@@ -91,11 +79,28 @@ control MyProcessing(inout headers hdr,
         hdr.ipv4.srcAddr = NIC_IP_ADDR;
         hdr.ipv4.dstAddr = meta.dst_ip;
 
+        // set flags for LNIC header
+        bit<8> flags = 0;
+        if (meta.genACK) {
+            flags = flags | ACK_MASK;
+        }
+        if (meta.genNACK) {
+            flags = flags | NACK_MASK;
+        }
+        if (meta.genPULL) {
+            flags = flags | PULL_MASK;
+        }
+        if (!( meta.genACK || meta.genNACK || meta.genPULL )) {
+            flags = DATA_MASK;
+        }
+
         // Fill out LNIC header fields
+        hdr.lnic.flags = flags;
         hdr.lnic.src_context = meta.src_context;
         hdr.lnic.dst_context = meta.dst_context;
         hdr.lnic.msg_len = meta.msg_len;
         hdr.lnic.pkt_offset = meta.pkt_offset;
+        hdr.lnic.pull_offset = meta.pull_offset;
         hdr.lnic.tx_msg_id = meta.tx_msg_id;
         hdr.lnic.buf_ptr = meta.buf_ptr;
         hdr.lnic.buf_size_class = meta.buf_size_class;
@@ -108,7 +113,7 @@ control MyProcessing(inout headers hdr,
 
 control MyDeparser(packet_out packet, 
                    in headers hdr,
-                   inout metadata meta, 
+                   inout egress_metadata meta, 
                    inout standard_metadata_t smeta) {
     apply {
         packet.emit(hdr.eth);

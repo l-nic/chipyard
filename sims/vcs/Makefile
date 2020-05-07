@@ -92,7 +92,6 @@ riscv_dpi.so: $(sim_common_files)
 		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimJTAG.cc \
 		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimNetwork.cc \
 		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimSerial.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/switch.cc \
 		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
 
 

@@ -43,7 +43,7 @@ NUM_SAMPLES = 1
 def lnic_pkt(msg_len, pkt_offset, src_context=MY_CONTEXT, dst_context=DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
-            LNIC(src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset)
+            LNIC(flags='DATA', src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -278,31 +278,26 @@ class Loopback(unittest.TestCase):
         print "Request Pkts:"
         print_pkts(pkts)
         # send request pkts / receive response pkts
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst_context == MY_CONTEXT,
-                    count=len(pkts), timeout=TIMEOUT_SEC)
+#        filt = lambda x: x.haslayer(LNIC) and x[LNIC].dst_context == MY_CONTEXT
+        filt = lambda x: x.haslayer(LNIC)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=filt, count=3*len(pkts), timeout=TIMEOUT_SEC)
         sniffer.start()
         # send in pkts
         sendp(pkts, iface=TEST_IFACE)
-        # wait for DONE msg
+        # wait for all response pkts
         sniffer.join()
-        self.assertEqual(len(pkts), len(sniffer.results))
+        self.assertEqual(3*len(pkts), len(sniffer.results))
         print "Response Pkts:"
         print_pkts(sniffer.results)
-        latency = 0 # default
+        # TODO(sibanez): check that ACK and PULL and DATA pkts are all here ...
         for i in range(len(sniffer.results)):
           p = sniffer.results[i]
           self.assertEqual(p[LNIC].src_context, DST_CONTEXT)
-          self.assertEqual(len(p), len(pkts[i]))
-          resp_data = p[LNIC].payload
-          latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
-        # return latency indicated in final pkt
-        return latency
     def test_single(self):
-        msg_len = MAX_SEG_BYTES + 80 # bytes
+        msg_len = 80 # bytes
         msg = '\x00'*msg_len
         pkts = packetize(msg) 
-        latency = self.do_loopback(pkts)
-        print 'Latency = {} cycles'.format(latency)
+        self.do_loopback(pkts)
 #    def test_pkt_length(self):
 #        pkt_len = range(64, 64*20, 64)
 #        length = []

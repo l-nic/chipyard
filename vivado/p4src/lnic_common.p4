@@ -42,6 +42,37 @@ const bit<16> LNIC_HDR_BYTES = 12;
 const bit<16> IPV4_TYPE = 0x0800;
 const bit<8> LNIC_PROTO = 0x99;
 
+// NOTE: this must match up with LNIC.scala
+const bit<16> RTT_PKTS = 16;
+
+// ******************************************************************************* //
+// *************************** M E T A D A T A *********************************** //
+// ******************************************************************************* //
+
+struct ingress_metadata {
+    IPv4Addr_t   src_ip;
+    ContextID_t  src_context;
+    bit<16>      msg_len;
+    bit<8>       pkt_offset;
+    ContextID_t  dst_context;
+    MsgID_t      rx_msg_id;
+}
+
+struct egress_metadata {
+    IPv4Addr_t  dst_ip;
+    ContextID_t dst_context;
+    bit<16>     msg_len;
+    bit<8>      pkt_offset;
+    ContextID_t src_context;
+    MsgID_t     tx_msg_id;
+    bit<16>     buf_ptr;
+    bit<8>      buf_size_class;
+    bit<16>     pull_offset;
+    bool        genACK;
+    bool        genNACK;
+    bool        genPULL;
+}
+
 // ****************************************************************************** //
 // *************************** H E A D E R S  *********************************** //
 // ****************************************************************************** //
@@ -69,18 +100,22 @@ header ipv4_t {
     IPv4Addr_t dstAddr;
 }
 
+const bit<8> DATA_MASK = 0b00000001;
+const bit<8> ACK_MASK  = 0b00000010;
+const bit<8> NACK_MASK = 0b00000100;
+const bit<8> PULL_MASK = 0b00001000;
+const bit<8> CHOP_MASK = 0b00010000;
 // L-NIC transport header
 header lnic_t {
+    bit<8> flags;
     ContextID_t src_context;
     ContextID_t dst_context;
     bit<16> msg_len;
     bit<8> pkt_offset;
+    bit<16> pull_offset;
     MsgID_t tx_msg_id;
     bit<16> buf_ptr;
     bit<8> buf_size_class;
-    // TODO(sibanez): this is here to ensure headers are 8B aligned, a temporary simplification assumed
-    // by the SimNetwork and Timestamp module
-    bit<16> padding;
 }
 
 // header structure

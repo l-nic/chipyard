@@ -11,7 +11,7 @@ open_project ${proj_dir}/managed_ip_project.xpr
 if {![string equal [get_ips $sdnet] ""]} {
     puts "INFO: Deleting current ${sdnet} IP"
     remove_files ${xci_file}
-    file delete -force ${build_dir}/ip/${sdnet}
+    file delete -force ${build_dir}/${sdnet}
 }
 
 create_ip -name sdnet -vendor xilinx.com -library ip -version 2.1 -module_name $sdnet -dir $build_dir

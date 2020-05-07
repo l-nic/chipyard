@@ -54,6 +54,10 @@ module SDNetEgressWrapper #(
   input              [15:0] net_meta_in_bits_tx_msg_id,
   input              [15:0] net_meta_in_bits_buf_ptr,
   input               [7:0] net_meta_in_bits_buf_size_class,
+  input              [15:0] net_meta_in_bits_pull_offset,
+  input                     net_meta_in_bits_genACK,
+  input                     net_meta_in_bits_genNACK,
+  input                     net_meta_in_bits_genPULL,
 
   // Packet Out
   output                    net_net_out_valid,
@@ -98,7 +102,11 @@ module SDNetEgressWrapper #(
                              net_meta_in_bits_src_context,
                              net_meta_in_bits_tx_msg_id,
                              net_meta_in_bits_buf_ptr,
-                             net_meta_in_bits_buf_size_class};
+                             net_meta_in_bits_buf_size_class,
+                             net_meta_in_bits_pull_offset,
+                             net_meta_in_bits_genACK,
+                             net_meta_in_bits_genNACK,
+                             net_meta_in_bits_genPULL};
 
   // SDNet module
   sdnet_egress sdnet_egress_inst (

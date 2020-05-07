@@ -31,29 +31,69 @@
 #include <xsa.p4>
 #include "lnic_common.p4"
 
-// Output metadata
-struct metadata {
-    IPv4Addr_t   src_ip;
-    ContextID_t  src_context;
-    bit<16>      msg_len;
-    bit<8>       pkt_offset;
-    ContextID_t  dst_context;
-    MsgID_t      rx_msg_id;
-}
-
-// Request metadata to extern call
+/* IO for get_rx_msg_info extern */
+// Input
 struct get_rx_msg_info_req_t {
     IPv4Addr_t  src_ip;
     ContextID_t src_context;
     MsgID_t     tx_msg_id;
     bit<16>     msg_len;
 }
-
-// Response metadata from extern call
+// Output
 struct get_rx_msg_info_resp_t {
-    bit<1> fail;
+    bool fail;
     MsgID_t rx_msg_id;
     // TODO(sibanez): add additional fields for transport processing
+    bool is_new_msg;
+}
+
+/* IO for delivered event */
+struct delivered_meta_t {
+  MsgID_t tx_msg_id;
+  bit<8> pkt_offset;
+  bit<16> msg_len;
+  bit<16> buf_ptr;
+  bit<8> buf_size_class;
+}
+
+/* IO for creditToBtx event */
+struct creditToBtx_meta_t {
+  MsgID_t tx_msg_id;
+  bool rtx;
+  bit<8> rtx_pkt_offset;
+  bool update_credit;
+  bit<16> new_credit;
+  // Additional fields for generating pkts
+  // NOTE: these could be stored in tables indexed by tx_msg_id, but this would require extra state ...
+  bit<16> buf_ptr;
+  bit<8> buf_size_class;
+  IPv4Addr_t dst_ip;
+  ContextID_t dst_context;
+  bit<16> msg_len;
+  ContextID_t src_context;
+}
+
+// dummy response for events
+struct dummy_t {
+  bit<1> unused;
+}
+
+/* IO for ifElseRaw extern */
+
+const bit<8> REG_READ  = 0;
+const bit<8> REG_WRITE = 1;
+const bit<8> REG_ADD   = 2;
+struct ifElseRaw_req_t {
+  MsgID_t index;
+  bit<16> data_1;
+  bit<8>  opCode_1;
+  bit<16> data_0;
+  bit<8>  opCode_0;
+  bool    predicate;
+}
+
+struct ifElseRaw_resp_t {
+  bit<16> new_val;
 }
 
 // ****************************************************************************** //
@@ -62,7 +102,7 @@ struct get_rx_msg_info_resp_t {
 
 parser MyParser(packet_in packet, 
                 out headers hdr, 
-                inout metadata meta, 
+                inout ingress_metadata meta, 
                 inout standard_metadata_t smeta) {
 
     state start {
@@ -97,38 +137,128 @@ parser MyParser(packet_in packet,
 // ****************************************************************************** //
 
 control MyProcessing(inout headers hdr, 
-                     inout metadata meta, 
+                     inout ingress_metadata meta, 
                      inout standard_metadata_t smeta) {
 
     UserExtern<get_rx_msg_info_req_t, get_rx_msg_info_resp_t>(2) get_rx_msg_info;
+    UserExtern<delivered_meta_t, dummy_t>(1) delivered_event;
+    UserExtern<creditToBtx_meta_t, dummy_t>(1) creditToBtx_event;
+    UserExtern<egress_metadata, dummy_t>(1) ctrlPkt_event;
+
+    // state used to compute pull offset
+    // TODO(sibanez): set latency here after implementing the extern
+    UserExtern<ifElseRaw_req_t, ifElseRaw_resp_t>(2) credit_ifElseRaw;
 
     apply {
-        // process pkts going from network to CPU
+        // Process all pkts arriving at the NIC
         if (hdr.lnic.isValid()) {
-            // get info about msg from message assembly module
-            get_rx_msg_info_req_t req;
-            req.src_ip = hdr.ipv4.srcAddr;
-            req.src_context = hdr.lnic.src_context;
-            req.tx_msg_id = hdr.lnic.tx_msg_id;
-            req.msg_len = hdr.lnic.msg_len;
-            get_rx_msg_info_resp_t resp;
-            get_rx_msg_info.apply(req, resp);
+            dummy_t dummy; // unused metadata for events
+            if (hdr.lnic.flags & DATA_MASK > 0) {
 
-            // Fill out metadata for packets going to CPU
-            meta.src_ip = hdr.ipv4.srcAddr;
-            meta.src_context = hdr.lnic.src_context;
-            meta.msg_len = hdr.lnic.msg_len;
-            meta.pkt_offset = hdr.lnic.pkt_offset;
-            meta.dst_context = hdr.lnic.dst_context;
-            meta.rx_msg_id = resp.rx_msg_id;
-            if (resp.fail == 1) {
-                // drop pkt if failed to allocate a receive buffer for the msg
+                // get info about msg from message assembly module
+                get_rx_msg_info_req_t req;
+                req.src_ip = hdr.ipv4.srcAddr;
+                req.src_context = hdr.lnic.src_context;
+                req.tx_msg_id = hdr.lnic.tx_msg_id;
+                req.msg_len = hdr.lnic.msg_len;
+                get_rx_msg_info_resp_t rx_msg_info;
+                get_rx_msg_info.apply(req, rx_msg_info);
+
+                bool genACK  = false; // default
+                bool genNACK = false; // default
+                bool genPULL = true;
+                bit<16> pull_offset_diff = 0;
+                if (hdr.lnic.flags & CHOP_MASK > 0) {
+                    // DATA pkt has been chopped ==> send NACK
+                    genNACK = true;
+                } else {
+                    // DATA pkt is intact ==> send ACK
+                    genACK = true;
+                    pull_offset_diff = 1; // increase pull offset
+
+                    // Fill out metadata for packets going to CPU
+                    meta.src_ip = hdr.ipv4.srcAddr;
+                    meta.src_context = hdr.lnic.src_context;
+                    meta.msg_len = hdr.lnic.msg_len;
+                    meta.pkt_offset = hdr.lnic.pkt_offset;
+                    meta.dst_context = hdr.lnic.dst_context;
+                    meta.rx_msg_id = rx_msg_info.rx_msg_id;
+                }
+
+                if (rx_msg_info.fail) {
+                    // failed to allocate rx buffer ==> drop pkt
+                    smeta.drop = 1;
+                } else {
+                    // compute PULL offset
+                    ifElseRaw_req_t credit_req;
+                    credit_req.index      = rx_msg_info.rx_msg_id;
+                    credit_req.data_1     = pull_offset_diff;
+                    credit_req.opCode_1   = REG_ADD;
+                    credit_req.data_0     = RTT_PKTS + pull_offset_diff;
+                    credit_req.opCode_0   = REG_WRITE;
+                    credit_req.predicate  = rx_msg_info.is_new_msg;
+                    ifElseRaw_resp_t credit_resp;
+                    credit_ifElseRaw.apply(credit_req, credit_resp);
+
+                    bit<16> pull_offset = credit_resp.new_val;
+
+                    // generate ctrl pkt(s)
+                    egress_metadata ctrlPkt_meta;
+                    ctrlPkt_meta.dst_ip         = hdr.ipv4.srcAddr;
+                    ctrlPkt_meta.dst_context    = hdr.lnic.src_context;
+                    ctrlPkt_meta.msg_len        = hdr.lnic.msg_len;
+                    ctrlPkt_meta.pkt_offset     = hdr.lnic.pkt_offset;
+                    ctrlPkt_meta.src_context    = hdr.lnic.dst_context;
+                    ctrlPkt_meta.tx_msg_id      = hdr.lnic.tx_msg_id;
+                    ctrlPkt_meta.buf_ptr        = hdr.lnic.buf_ptr;
+                    ctrlPkt_meta.buf_size_class = hdr.lnic.buf_size_class;
+                    ctrlPkt_meta.pull_offset    = pull_offset;
+                    ctrlPkt_meta.genACK         = genACK;
+                    ctrlPkt_meta.genNACK        = genNACK;
+                    ctrlPkt_meta.genPULL        = genPULL;
+
+                    ctrlPkt_event.apply(ctrlPkt_meta, dummy);
+                }
+
+                hdr.eth.setInvalid();
+                hdr.ipv4.setInvalid();
+                hdr.lnic.setInvalid();
+            } else {
+                // Processing control pkt (ACK / NACK / PULL)
+                if (hdr.lnic.flags & ACK_MASK > 0) {
+                    // fire delivered event
+                    delivered_meta_t delivered_meta;
+                    delivered_meta.tx_msg_id      = hdr.lnic.tx_msg_id;
+                    delivered_meta.pkt_offset     = hdr.lnic.pkt_offset;
+                    delivered_meta.msg_len        = hdr.lnic.msg_len;
+                    delivered_meta.buf_ptr        = hdr.lnic.buf_ptr;
+                    delivered_meta.buf_size_class = hdr.lnic.buf_size_class;
+
+                    delivered_event.apply(delivered_meta, dummy);
+                }
+                if (hdr.lnic.flags & NACK_MASK > 0 || hdr.lnic.flags & PULL_MASK > 0) {
+                    bool rtx = (hdr.lnic.flags & NACK_MASK > 0);
+                    bool update_credit = (hdr.lnic.flags & PULL_MASK > 0);
+
+                    // fire creditToBtx event
+                    creditToBtx_meta_t creditToBtx_meta;
+                    creditToBtx_meta.tx_msg_id       = hdr.lnic.tx_msg_id;
+                    creditToBtx_meta.rtx             = rtx;
+                    creditToBtx_meta.rtx_pkt_offset  = hdr.lnic.pkt_offset;
+                    creditToBtx_meta.update_credit   = update_credit;
+                    creditToBtx_meta.new_credit      = hdr.lnic.pull_offset;
+                    creditToBtx_meta.buf_ptr         = hdr.lnic.buf_ptr;
+                    creditToBtx_meta.buf_size_class  = hdr.lnic.buf_size_class;
+                    creditToBtx_meta.dst_ip          = hdr.ipv4.srcAddr;
+                    creditToBtx_meta.dst_context     = hdr.lnic.src_context;
+                    creditToBtx_meta.msg_len         = hdr.lnic.msg_len;
+                    creditToBtx_meta.src_context     = hdr.lnic.dst_context;
+
+                    creditToBtx_event.apply(creditToBtx_meta, dummy);
+                }
+                // do not pass ctrl pkts to assembly module
                 smeta.drop = 1;
             }
-
-            hdr.eth.setInvalid();
-            hdr.ipv4.setInvalid();
-            hdr.lnic.setInvalid();
         } else {
             // non-LNIC packet from network
             smeta.drop = 1;
@@ -142,7 +272,7 @@ control MyProcessing(inout headers hdr,
 
 control MyDeparser(packet_out packet, 
                    in headers hdr,
-                   inout metadata meta, 
+                   inout ingress_metadata meta, 
                    inout standard_metadata_t smeta) {
     apply { }
 }

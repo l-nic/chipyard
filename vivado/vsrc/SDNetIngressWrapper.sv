@@ -51,18 +51,6 @@ module SDNetIngressWrapper #(
   output  [(TDATA_W/8)-1:0] net_net_out_bits_keep,
   output                    net_net_out_bits_last,
 
-  // Extern call outputs
-  output                    net_get_rx_msg_info_req_valid,
-  output             [31:0] net_get_rx_msg_info_req_bits_src_ip,
-  output             [15:0] net_get_rx_msg_info_req_bits_src_context,
-  output             [15:0] net_get_rx_msg_info_req_bits_tx_msg_id,
-  output             [15:0] net_get_rx_msg_info_req_bits_msg_len,
-
-  // Extern call inputs
-  input                     net_get_rx_msg_info_resp_valid,
-  input                     net_get_rx_msg_info_resp_bits_fail,
-  input              [15:0] net_get_rx_msg_info_resp_bits_rx_msg_id,
-
   // Metadata Out
   output                    net_meta_out_valid,
   output             [31:0] net_meta_out_bits_src_ip,
@@ -71,6 +59,65 @@ module SDNetIngressWrapper #(
   output              [7:0] net_meta_out_bits_pkt_offset,
   output             [15:0] net_meta_out_bits_dst_context,
   output             [15:0] net_meta_out_bits_rx_msg_id,
+
+  /* IO for get_rx_msg_info */
+  output                    net_get_rx_msg_info_req_valid,
+  output             [31:0] net_get_rx_msg_info_req_bits_src_ip,
+  output             [15:0] net_get_rx_msg_info_req_bits_src_context,
+  output             [15:0] net_get_rx_msg_info_req_bits_tx_msg_id,
+  output             [15:0] net_get_rx_msg_info_req_bits_msg_len,
+  input                     net_get_rx_msg_info_resp_valid,
+  input                     net_get_rx_msg_info_resp_bits_fail,
+  input              [15:0] net_get_rx_msg_info_resp_bits_rx_msg_id,
+  input                     net_get_rx_msg_info_resp_bits_is_new_msg,
+
+  /* IO for delivered event */
+  output                    net_delivered_valid,
+  output             [15:0] net_delivered_bits_tx_msg_id,
+  output              [7:0] net_delivered_bits_pkt_offset,
+  output             [15:0] net_delivered_bits_msg_len,
+  output             [15:0] net_delivered_bits_buf_ptr,
+  output              [7:0] net_delivered_bits_buf_size_class,
+
+  /* IO for creditToBtx event */
+  output                    net_creditToBtx_valid,
+  output             [15:0] net_creditToBtx_bits_tx_msg_id,
+  output                    net_creditToBtx_bits_rtx,
+  output              [7:0] net_creditToBtx_bits_rtx_pkt_offset,
+  output                    net_creditToBtx_bits_update_credit,
+  output             [15:0] net_creditToBtx_bits_new_credit,
+  output             [15:0] net_creditToBtx_bits_buf_ptr,
+  output              [7:0] net_creditToBtx_bits_buf_size_class,
+  output             [31:0] net_creditToBtx_bits_dst_ip,
+  output             [15:0] net_creditToBtx_bits_dst_context,
+  output             [15:0] net_creditToBtx_bits_msg_len,
+  output             [15:0] net_creditToBtx_bits_src_context,
+
+  /* IO for ctrlPkt event */
+  output                    net_ctrlPkt_valid,
+  output             [31:0] net_ctrlPkt_bits_dst_ip,
+  output             [15:0] net_ctrlPkt_bits_dst_context,
+  output             [15:0] net_ctrlPkt_bits_msg_len,
+  output              [7:0] net_ctrlPkt_bits_pkt_offset,
+  output             [15:0] net_ctrlPkt_bits_src_context,
+  output             [15:0] net_ctrlPkt_bits_tx_msg_id,
+  output             [15:0] net_ctrlPkt_bits_buf_ptr,
+  output              [7:0] net_ctrlPkt_bits_buf_size_class,
+  output             [15:0] net_ctrlPkt_bits_pull_offset,
+  output                    net_ctrlPkt_bits_genACK,
+  output                    net_ctrlPkt_bits_genNACK,
+  output                    net_ctrlPkt_bits_genPULL,
+
+  /* IO for credit ifElseRaw extern */
+  output                    net_creditReg_req_valid,
+  output             [15:0] net_creditReg_req_bits_index,
+  output             [15:0] net_creditReg_req_bits_data_1,
+  output              [7:0] net_creditReg_req_bits_opCode_1,
+  output             [15:0] net_creditReg_req_bits_data_0,
+  output              [7:0] net_creditReg_req_bits_opCode_0,
+  output                    net_creditReg_req_bits_predicate,
+  input                     net_creditReg_resp_valid,
+  input              [15:0] net_creditReg_resp_bits_new_val,
 
   input                     reset,
   input                     clock
@@ -105,6 +152,7 @@ module SDNetIngressWrapper #(
   USER_EXTERN_VALID_T user_extern_in_valid;
   USER_EXTERN_IN_T    user_extern_in;
 
+  /* Output metadata */
   assign net_meta_out_valid = user_metadata_out_valid;
   assign {net_meta_out_bits_src_ip,
           net_meta_out_bits_src_context,
@@ -113,6 +161,7 @@ module SDNetIngressWrapper #(
           net_meta_out_bits_dst_context,
           net_meta_out_bits_rx_msg_id} = user_metadata_out;
 
+  /* get_rx_msg_info extern */
   assign net_get_rx_msg_info_req_valid = user_extern_out_valid.get_rx_msg_info;
   assign {net_get_rx_msg_info_req_bits_src_ip,
           net_get_rx_msg_info_req_bits_src_context,
@@ -121,7 +170,57 @@ module SDNetIngressWrapper #(
 
   assign user_extern_in_valid.get_rx_msg_info = net_get_rx_msg_info_resp_valid;
   assign user_extern_in.get_rx_msg_info = {net_get_rx_msg_info_resp_bits_fail,
-                                           net_get_rx_msg_info_resp_bits_rx_msg_id};
+                                           net_get_rx_msg_info_resp_bits_rx_msg_id,
+                                           net_get_rx_msg_info_resp_bits_is_new_msg};
+
+  /* delivered event */
+  assign net_delivered_valid = user_extern_out_valid.delivered_event;
+  assign {net_delivered_bits_tx_msg_id,
+          net_delivered_bits_pkt_offset,
+          net_delivered_bits_msg_len,
+          net_delivered_bits_buf_ptr,
+          net_delivered_bits_buf_size_class} = user_extern_out.delivered_event;
+
+  /* creditToBtx event */
+  assign net_creditToBtx_valid = user_extern_out_valid.creditToBtx_event;
+  assign {net_creditToBtx_bits_tx_msg_id,
+          net_creditToBtx_bits_rtx,
+          net_creditToBtx_bits_rtx_pkt_offset,
+          net_creditToBtx_bits_update_credit,
+          net_creditToBtx_bits_new_credit,
+          net_creditToBtx_bits_buf_ptr,
+          net_creditToBtx_bits_buf_size_class,
+          net_creditToBtx_bits_dst_ip,
+          net_creditToBtx_bits_dst_context,
+          net_creditToBtx_bits_msg_len,
+          net_creditToBtx_bits_src_context} = user_extern_out.creditToBtx_event;
+
+  /* ctrlPkt event */
+  assign net_ctrlPkt_valid = user_extern_out_valid.ctrlPkt_event;
+  assign {net_ctrlPkt_bits_dst_ip,
+          net_ctrlPkt_bits_dst_context,
+          net_ctrlPkt_bits_msg_len,
+          net_ctrlPkt_bits_pkt_offset,
+          net_ctrlPkt_bits_src_context,
+          net_ctrlPkt_bits_tx_msg_id,
+          net_ctrlPkt_bits_buf_ptr,
+          net_ctrlPkt_bits_buf_size_class,
+          net_ctrlPkt_bits_pull_offset,
+          net_ctrlPkt_bits_genACK,
+          net_ctrlPkt_bits_genNACK,
+          net_ctrlPkt_bits_genPULL} = user_extern_out.ctrlPkt_event;
+
+  /* creditReg ifElseRaw extern */
+  assign net_creditReg_req_valid = user_extern_out_valid.credit_ifElseRaw;
+  assign {net_creditReg_req_bits_index,
+          net_creditReg_req_bits_data_1,
+          net_creditReg_req_bits_opCode_1,
+          net_creditReg_req_bits_data_0,
+          net_creditReg_req_bits_opCode_0,
+          net_creditReg_req_bits_predicate} = user_extern_out.credit_ifElseRaw;
+
+  assign user_extern_in_valid.credit_ifElseRaw = net_creditReg_resp_valid;
+  assign user_extern_in.credit_ifElseRaw = {net_creditReg_resp_bits_new_val};
 
   // SDNet module
   sdnet_ingress sdnet_ingress_inst (
@@ -132,7 +231,7 @@ module SDNetIngressWrapper #(
     // and AXI-Lite. Usually, the AXI-Lite clock is much
     // slower, but since we'll run the clock @ ~100MHz, I
     // think this should be fine.
-    // TODO(sibanez): Should check if Firesim is even able to simulate designs
+    // TODO(sibanez): Should check if Firesim is able to simulate designs
     // with multiple clock domains.
     .s_axi_aclk              (clock),
     .s_axi_aresetn           (~reset),
@@ -215,5 +314,27 @@ module SDNetIngressWrapper #(
       state <= next_state;
     end
   end
+
+  /* Logic to drive dummy response logic for events */
+
+  reg delivered_event_resp_valid;
+  reg creditToBtx_event_resp_valid;
+  reg ctrlPkt_event_resp_valid;
+  reg dummy;
+
+  always @(posedge clock) begin
+    delivered_event_resp_valid   <= user_extern_out_valid.delivered_event;
+    creditToBtx_event_resp_valid <= user_extern_out_valid.creditToBtx_event;
+    ctrlPkt_event_resp_valid     <= user_extern_out_valid.ctrlPkt_event;
+    dummy <= 0;
+  end
+
+  assign user_extern_in_valid.delivered_event   = delivered_event_resp_valid;
+  assign user_extern_in_valid.creditToBtx_event = creditToBtx_event_resp_valid;
+  assign user_extern_in_valid.ctrlPkt_event     = ctrlPkt_event_resp_valid;
+
+  assign user_extern_in.delivered_event   = dummy;
+  assign user_extern_in.creditToBtx_event = dummy;
+  assign user_extern_in.ctrlPkt_event     = dummy;
 
 endmodule: SDNetIngressWrapper
