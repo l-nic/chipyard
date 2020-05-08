@@ -89,10 +89,10 @@ module SDNetEgressWrapper #(
   wire              [1:0] s_axil_rresp;
   wire                    s_axil_rready;
 
-  wire                user_metadata_in_valid;
-  USER_META_DATA_T    user_metadata_in;
-  wire                user_metadata_out_valid;
-  USER_META_DATA_T    user_metadata_out;
+  wire                               user_metadata_in_valid;
+  sdnet_egress_pkg::USER_META_DATA_T user_metadata_in;
+  wire                               user_metadata_out_valid;
+  sdnet_egress_pkg::USER_META_DATA_T user_metadata_out;
 
   assign user_metadata_in_valid = net_meta_in_valid;
   assign user_metadata_in = {net_meta_in_bits_dst_ip,

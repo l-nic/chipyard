@@ -142,15 +142,15 @@ module SDNetIngressWrapper #(
   wire              [1:0] s_axil_rresp;
   wire                    s_axil_rready;
 
-  reg                 user_metadata_in_valid;
-  USER_META_DATA_T    user_metadata_in;
-  wire                user_metadata_out_valid;
-  USER_META_DATA_T    user_metadata_out;
+  reg                                 user_metadata_in_valid;
+  sdnet_ingress_pkg::USER_META_DATA_T user_metadata_in;
+  wire                                user_metadata_out_valid;
+  sdnet_ingress_pkg::USER_META_DATA_T user_metadata_out;
 
-  USER_EXTERN_VALID_T user_extern_out_valid;
-  USER_EXTERN_OUT_T   user_extern_out;
-  USER_EXTERN_VALID_T user_extern_in_valid;
-  USER_EXTERN_IN_T    user_extern_in;
+  sdnet_ingress_pkg::USER_EXTERN_VALID_T user_extern_out_valid;
+  sdnet_ingress_pkg::USER_EXTERN_OUT_T   user_extern_out;
+  sdnet_ingress_pkg::USER_EXTERN_VALID_T user_extern_in_valid;
+  sdnet_ingress_pkg::USER_EXTERN_IN_T    user_extern_in;
 
   /* Output metadata */
   assign net_meta_out_valid = user_metadata_out_valid;
