@@ -10,6 +10,8 @@ IFACE = "tap0"
 SWITCH_MAC = "08:55:66:77:88:08"
 NIC_MAC = "08:11:22:33:44:08"
 
+TRIM_FREQ = 4 # pkts
+
 class NetworkPkt(object):
     """A small wrapper class around scapy pkts to add departure_time"""
     def __init__(self, pkt, departure_time):
@@ -28,6 +30,8 @@ class SimNetwork:
         # heap of pkts sorted by departure time
         self.scheduled_pkts = []
 
+        self.data_pkt_counter = 0
+
         # start receiving pkts
         filt = lambda x: x[Ether].dst == SWITCH_MAC # only sniff inbound pkts
         self.sniffer = AsyncSniffer(iface=IFACE, lfilter=filt, prn=self.schedule)
@@ -44,6 +48,14 @@ class SimNetwork:
         tmp = pkt[Ether].src
         pkt[Ether].src = pkt[Ether].dst
         pkt[Ether].dst = tmp
+
+        if pkt[LNIC].flags.DATA:
+            # trim data pkts with deterministic frequency
+            if self.data_pkt_counter == TRIM_FREQ-1:
+                pkt[LNIC].flags.CHOP = True
+                self.data_pkt_counter = 0
+            else:
+                self.data_pkt_counter += 1
 
         # schedule pkt
         now = time.time()
@@ -66,7 +78,7 @@ class SimNetwork:
             print 'All received pkts:'
             for p in self.sniffer.results:
                 assert LNIC in p, "LNIC header not in sniffed packet!"
-                print '{} / DATA ({} bytes)'.format(p.summary(), len(p[LNIC].payload))
+                print '{} -- DATA ({} bytes)'.format(p.summary(), len(p[LNIC].payload))
 
 def main():
     SimNetwork()

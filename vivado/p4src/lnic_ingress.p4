@@ -170,6 +170,7 @@ control MyProcessing(inout headers hdr,
                 if (hdr.lnic.flags & CHOP_MASK > 0) {
                     // DATA pkt has been chopped ==> send NACK
                     genNACK = true;
+                    smeta.drop = 1;
                 } else {
                     // DATA pkt is intact ==> send ACK
                     genACK = true;
