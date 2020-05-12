@@ -43,7 +43,6 @@ struct get_rx_msg_info_req_t {
 struct get_rx_msg_info_resp_t {
     bool fail;
     MsgID_t rx_msg_id;
-    // TODO(sibanez): add additional fields for transport processing
     bool is_new_msg;
 }
 

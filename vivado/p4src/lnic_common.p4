@@ -37,13 +37,16 @@ const EthAddr_t NIC_MAC_ADDR = 0x081122334408;
 const IPv4Addr_t NIC_IP_ADDR = 0x0A000001;
 
 const bit<16> IP_HDR_BYTES = 20;
-const bit<16> LNIC_HDR_BYTES = 12;
+
+// NOTE: these must be updated if the LNIC header format changes
+const bit<16> LNIC_HDR_BYTES = 15;
+const bit<16> LNIC_CTRL_PKT_BYTES = 79;
 
 const bit<16> IPV4_TYPE = 0x0800;
 const bit<8> LNIC_PROTO = 0x99;
 
 // NOTE: this must match up with LNIC.scala
-const bit<16> RTT_PKTS = 16;
+const bit<16> RTT_PKTS = 5;
 
 // ******************************************************************************* //
 // *************************** M E T A D A T A *********************************** //

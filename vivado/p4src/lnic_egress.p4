@@ -55,6 +55,8 @@ control MyProcessing(inout headers hdr,
                      inout standard_metadata_t smeta) {
 
     apply {
+        bool is_ctrl_pkt = meta.genACK || meta.genNACK || meta.genPULL;
+
         // packet from CPU
         hdr.eth.setValid();
         hdr.ipv4.setValid();
@@ -69,7 +71,11 @@ control MyProcessing(inout headers hdr,
         hdr.ipv4.version = 4;
         hdr.ipv4.ihl = 5;
         hdr.ipv4.tos = 0;
-        hdr.ipv4.totalLen = meta.msg_len + IP_HDR_BYTES + LNIC_HDR_BYTES;
+        if (is_ctrl_pkt) {
+            hdr.ipv4.totalLen = IP_HDR_BYTES + LNIC_CTRL_PKT_BYTES;
+        } else {
+            hdr.ipv4.totalLen = meta.msg_len + IP_HDR_BYTES + LNIC_HDR_BYTES;
+        }
         hdr.ipv4.identification = 1;
         hdr.ipv4.flags = 0;
         hdr.ipv4.fragOffset = 0;
@@ -90,7 +96,7 @@ control MyProcessing(inout headers hdr,
         if (meta.genPULL) {
             flags = flags | PULL_MASK;
         }
-        if (!( meta.genACK || meta.genNACK || meta.genPULL )) {
+        if (!is_ctrl_pkt) {
             flags = DATA_MASK;
         }
 

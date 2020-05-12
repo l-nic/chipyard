@@ -18,6 +18,8 @@ class LNIC(Packet):
         ShortField("buf_ptr", 0),
         ByteField("buf_size_class", 0)
     ]
+    def mysummary(self):
+        return self.sprintf("flags=%flags%, msg_len=%msg_len%, pkt_offset=%pkt_offset%, pull_offset=%pull_offset%")
 
 bind_layers(IP, LNIC, proto=LNIC_PROTO)
 

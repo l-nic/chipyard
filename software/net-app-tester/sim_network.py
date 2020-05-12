@@ -26,7 +26,7 @@ class SimNetwork:
     """
     def __init__(self):
         # heap of pkts sorted by departure time
-        self.pkts = []
+        self.scheduled_pkts = []
 
         # start receiving pkts
         filt = lambda x: x[Ether].dst == SWITCH_MAC # only sniff inbound pkts
@@ -47,23 +47,26 @@ class SimNetwork:
 
         # schedule pkt
         now = time.time()
-        departure_time = now + 0.5
-        heappush(self.pkts, NetworkPkt(pkt, departure_time))
+        departure_time = now + 1.0
+        heappush(self.scheduled_pkts, NetworkPkt(pkt, departure_time))
 
     def transmit(self):
         """Monitor the head of the scheduled pkts heap to see if it's time to send it.
         """
         try:
             while True:
-                if (len(self.pkts) > 0 and self.pkts[0].departure_time >= time.time()):
+                if (len(self.scheduled_pkts) > 0 and time.time() >= self.scheduled_pkts[0].departure_time):
                     print "Sending pkt ..."
-                    net_pkt = heappop(self.pkts)
+                    net_pkt = heappop(self.scheduled_pkts)
                     sendp(net_pkt.pkt, iface=IFACE)
                 else:
-                    time.sleep(0.2)
+                    time.sleep(1.0)
         except KeyboardInterrupt as e:
             self.sniffer.stop()
-            print "\nDone."
+            print 'All received pkts:'
+            for p in self.sniffer.results:
+                assert LNIC in p, "LNIC header not in sniffed packet!"
+                print '{} / DATA ({} bytes)'.format(p.summary(), len(p[LNIC].payload))
 
 def main():
     SimNetwork()
