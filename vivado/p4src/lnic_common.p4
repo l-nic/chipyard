@@ -59,6 +59,7 @@ struct ingress_metadata {
     bit<8>       pkt_offset;
     ContextID_t  dst_context;
     MsgID_t      rx_msg_id;
+    MsgID_t      tx_msg_id;
 }
 
 struct egress_metadata {

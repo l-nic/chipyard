@@ -31,6 +31,7 @@ class SimNetwork:
         self.scheduled_pkts = []
 
         self.data_pkt_counter = 0
+        self.pkt_log = []
 
         # start receiving pkts
         filt = lambda x: x[Ether].dst == SWITCH_MAC # only sniff inbound pkts
@@ -53,9 +54,13 @@ class SimNetwork:
             # trim data pkts with deterministic frequency
             if self.data_pkt_counter == TRIM_FREQ-1:
                 pkt[LNIC].flags.CHOP = True
+                if len(pkt) > 64:
+                    pkt = Ether(str(pkt)[0:64])
                 self.data_pkt_counter = 0
             else:
                 self.data_pkt_counter += 1
+
+        self.pkt_log.append(pkt)
 
         # schedule pkt
         now = time.time()
@@ -75,8 +80,8 @@ class SimNetwork:
                     time.sleep(1.0)
         except KeyboardInterrupt as e:
             self.sniffer.stop()
-            print 'All received pkts:'
-            for p in self.sniffer.results:
+            print 'All TX pkts:'
+            for p in self.pkt_log:
                 assert LNIC in p, "LNIC header not in sniffed packet!"
                 print '{} -- DATA ({} bytes)'.format(p.summary(), len(p[LNIC].payload))
 

@@ -183,6 +183,7 @@ control MyProcessing(inout headers hdr,
                     meta.pkt_offset = hdr.lnic.pkt_offset;
                     meta.dst_context = hdr.lnic.dst_context;
                     meta.rx_msg_id = rx_msg_info.rx_msg_id;
+                    meta.tx_msg_id = hdr.lnic.tx_msg_id;
                 }
 
                 if (rx_msg_info.fail) {
