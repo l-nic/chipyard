@@ -67,6 +67,9 @@
 [submodule "toolchains/esp-tools/riscv-tests"]
 	path = toolchains/esp-tools/riscv-tests
 	url = https://github.com/ucb-bar/esp-tests.git
+[submodule "toolchains/libgloss"]
+	path = toolchains/libgloss
+	url = https://github.com/ucb-bar/libgloss-htif.git
 [submodule "vlsi/hammer"]
 	path = vlsi/hammer
 	url = https://github.com/ucb-bar/hammer.git
@@ -101,3 +104,24 @@
 	path = toolchains/riscv-tools/riscv-opcodes
 	url = https://github.com/l-nic/riscv-opcodes.git
 	branch = lnic-dev
+[submodule "tools/axe"]
+	path = tools/axe
+	url = https://github.com/CTSRD-CHERI/axe.git
+[submodule "software/spec2017"]
+	path = software/spec2017
+	url = https://github.com/ucb-bar/spec2017-workload.git
+[submodule "software/coremark"]
+	path = software/coremark
+	url = https://github.com/ucb-bar/coremark-workload.git
+[submodule "generators/gemmini"]
+	path = generators/gemmini
+	url = https://github.com/ucb-bar/gemmini
+[submodule "software/firemarshal"]
+	path = software/firemarshal
+	url = https://github.com/firesim/FireMarshal.git
+[submodule "generators/ariane"]
+	path = generators/ariane
+	url = https://github.com/ucb-bar/ariane-wrapper.git
+[submodule "tools/DRAMSim2"]
+	path = tools/DRAMSim2
+	url = https://github.com/firesim/DRAMSim2.git

@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "icenic.h"
-#include "encoding.h"
+#include <riscv-pk/encoding.h>
 
 #define NPACKETS 10
 #define TEST_OFFSET 3

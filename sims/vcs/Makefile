@@ -55,18 +55,23 @@ VLOGAN_OPTS = \
 	+v2k \
 	+vcs+lic+wait \
 	+vc+list \
-	-f $(sim_common_files) \
+	-error=noZMMCM \
+	-assert svaext \
 	-sverilog \
+	+libext+.v \
 	+incdir+$(build_dir) \
+	-f $(sim_common_files) \
+	$(sim_vsrcs)
+
+VCS_DEFINES = \
+	+define+VCS \
 	+define+CLOCK_PERIOD=1.0 \
-	$(sim_vsrcs) \
 	+define+PRINTF_COND=$(TB).printf_cond \
 	+define+STOP_COND=!$(TB).reset \
 	+define+RANDOMIZE_MEM_INIT \
 	+define+RANDOMIZE_REG_INIT \
 	+define+RANDOMIZE_GARBAGE_ASSIGN \
-	+define+RANDOMIZE_INVALID_ASSIGN \
-	+libext+.v
+	+define+RANDOMIZE_INVALID_ASSIGN
 
 VCS_OPTS = -notice -line
 
@@ -74,15 +79,16 @@ VCS_OPTS = -notice -line
 # vcs simulator rules
 #########################################################################################
 $(sim): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
-	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) -work riscv_lib
+	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) $(VCS_DEFINES) -work riscv_lib
 	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ -debug_access+designer
 
 $(sim_debug): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
-	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) +define+DEBUG -work riscv_lib
+	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) $(VCS_DEFINES) +define+DEBUG -work riscv_lib
 	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ -debug_access+designer
 
+# TODO(sibanez): I think I need to add dramsim C files?
 riscv_dpi.so: $(sim_common_files)
-	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include\
+	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir)\
 		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/device.cc \
 		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/remote_bitbang.cc \
 		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimDTM.cc \
@@ -91,13 +97,12 @@ riscv_dpi.so: $(sim_common_files)
 		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimSerial.cc \
 		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
 
-
 #########################################################################################
 # create a vcs vpd rule
 #########################################################################################
 .PRECIOUS: $(output_dir)/%.vpd %.vpd
 $(output_dir)/%.vpd: $(output_dir)/% $(sim_debug)
-	(set -o pipefail && $(sim_debug) $(PERMISSIVE_ON) +max-cycles=$(timeout_cycles) $(SIM_FLAGS) $(VERBOSE_FLAGS) +vcdplusfile=$@ $(PERMISSIVE_OFF) $< 3>&1 1>&2 2>&3 | spike-dasm > $<.out)
+	(set -o pipefail && $(sim_debug) $(PERMISSIVE_ON) +max-cycles=$(timeout_cycles) $(SIM_FLAGS) $(VERBOSE_FLAGS) +vcdplusfile=$@ $(PERMISSIVE_OFF) $< </dev/null 2> >(spike-dasm > $<.out) | tee $<.log)
 
 #########################################################################################
 # general cleanup rule
