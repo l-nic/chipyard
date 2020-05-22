@@ -81,8 +81,8 @@ class WithLoopbackNIC extends OverrideIOBinder({
   (c, r, s, top: CanHavePeripheryIceNICModuleImp) => top.connectNicLoopback(); Nil
 })
 
-class WithSimNIC extends OverrideIOBinder({
-  (c, r, s, top: CanHavePeripheryIceNICModuleImp) => top.connectSimNetwork(c, r); Nil
+class WithSimNetwork extends OverrideIOBinder({
+  (c, r, s, top: CanHaveLNICModuleImp) => top.connectSimNetwork(c, r); Nil
 })
 
 class WithUARTAdapter extends OverrideIOBinder({

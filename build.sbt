@@ -125,7 +125,7 @@ lazy val testchipip = (project in file("generators/testchipip"))
 lazy val chipyard = conditionalDependsOn(project in file("generators/chipyard"))
   .dependsOn(boom, hwacha, sifive_blocks, sifive_cache, utilities,
     sha3, // On separate line to allow for cleaner tutorial-setup patches
-    gemmini, icenet, tracegen, ariane)
+    gemmini, icenet, lnic, tracegen, ariane)
   .settings(commonSettings)
 
 lazy val tracegen = conditionalDependsOn(project in file("generators/tracegen"))
@@ -137,6 +137,10 @@ lazy val utilities = conditionalDependsOn(project in file("generators/utilities"
 
 lazy val icenet = (project in file("generators/icenet"))
   .dependsOn(rocketchip, testchipip)
+  .settings(commonSettings)
+
+lazy val lnic = (project in file("generators/lnic"))
+  .dependsOn(rocketchip)
   .settings(commonSettings)
 
 lazy val hwacha = (project in file("generators/hwacha"))

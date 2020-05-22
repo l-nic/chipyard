@@ -125,3 +125,6 @@
 [submodule "tools/DRAMSim2"]
 	path = tools/DRAMSim2
 	url = https://github.com/firesim/DRAMSim2.git
+[submodule "generators/lnic"]
+	path = generators/lnic
+	url = https://github.com/l-nic/lnic.git
