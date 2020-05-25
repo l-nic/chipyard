@@ -14,6 +14,7 @@ import sifive.blocks.devices.uart._
 
 import testchipip._
 import icenet._
+import chipyard.CanHaveLNICModuleImp
 import tracegen.{HasTraceGenTilesModuleImp}
 
 import scala.reflect.{ClassTag}
