@@ -88,13 +88,18 @@ $(sim_debug): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
 
 # TODO(sibanez): I think I need to add dramsim C files?
 riscv_dpi.so: $(sim_common_files)
-	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir)\
-		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/device.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/remote_bitbang.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimDTM.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimJTAG.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimNetwork.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/example.TestHarness.SimNetworkLNICGPRConfig/SimSerial.cc \
+	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir) \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/mm.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/mm_dramsim2.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/remote_bitbang.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimDRAM.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimDTM.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimJTAG.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimSerial.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimUART.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/uart.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/LNIC_device.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/LNIC_SimNetwork.cc \
 		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
 
 #########################################################################################
