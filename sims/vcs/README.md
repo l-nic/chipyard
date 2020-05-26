@@ -1,5 +1,5 @@
 # Compile
-make CONFIG=LNICRocketConfig -j16 debug
+make debug CONFIG=LNICRocketConfig -j16
 
 # Run
-./simv-chipyard-LNICRocketConfig-debug +permissive -sv_lib riscv_dpi +vcdfile=SimNetworkLNICGPRConfig.vcd +permissive-off ../../tests/hello.riscv
+./simv-chipyard-LNICRocketConfig-debug +permissive -sv_lib riscv_dpi +vcdfile=LNICRocketConfig.vcd +permissive-off ../../tests/hello.riscv
