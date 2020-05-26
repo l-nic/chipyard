@@ -1,10 +1,7 @@
 GCC=riscv64-unknown-elf-gcc
 OBJDUMP=riscv64-unknown-elf-objdump
-CFLAGS= -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31
+CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
-
-# TODO(sibanez): do I need this here? What is it?
-include libgloss.mk
 
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
 PROGRAMS += lnic-nic-loopback-gpr
@@ -28,12 +25,8 @@ PROGRAMS += lnic-nbody-node-gpr
 PROGRAMS += icenic-nbody-node
 PROGRAMS += lnic-send-recv
 
-.DEFAULT_GOAL := default
-
-.PHONY: default
 default: $(addsuffix .riscv,$(PROGRAMS))
 
-.PHONY: dumps
 dumps: $(addsuffix .dump,$(PROGRAMS))
 
 %.o: %.S
@@ -42,14 +35,11 @@ dumps: $(addsuffix .dump,$(PROGRAMS))
 %.o: %.c mmio.h
 	$(GCC) $(CFLAGS) -c $< -o $@
 
-%.riscv: %.o $(libgloss)
-	$(GCC) $(LDFLAGS) $< -o $@
+%.riscv: %.o crt.o syscalls.o link.ld
+	$(GCC) -T link.ld $(LDFLAGS) $< crt.o syscalls.o -o $@
 
 %.dump: %.riscv
 	$(OBJDUMP) -D $< > $@
 
-
-.PHONY: clean
 clean:
 	rm -f *.riscv *.o *.dump
-	$(if $(libgloss),rm -rf $(libgloss_builddir)/)
