@@ -4,6 +4,7 @@ import chisel3._
 
 import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
+import icenet.NICIOvonly
 import lnic._
 
 /** Top-level mixins for including LNIC **/
@@ -22,7 +23,12 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
   val net = outer.lnicOpt.map { lnic =>
     // create and connect to top-level IO
     val nicio = IO(new NICIOvonly)
-    nicio <> NICIOvonly(lnic.module.io.net)
+    val vonly = NICIOvonly(lnic.module.io.net)
+    nicio.out <> vonly.out
+    vonly.in <> nicio.in
+    vonly.macAddr := nicio.macAddr
+    vonly.rlimit := nicio.rlimit
+    vonly.pauser := nicio.pauser
     // connect L-NIC to tiles
     require(outer.lnicTiles.size == 1, "For now, L-NIC only supports single tile systems.")
     outer.lnicTiles.foreach { tile =>
@@ -38,7 +44,11 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
     val sim = Module(new SimNetwork)
     sim.io.clock := clock
     sim.io.reset := reset
-    sim.io.net <> net.get
+    sim.io.net.out <> net.get.out
+    net.get.in <> sim.io.net.in
+    net.get.macAddr := sim.io.net.macAddr
+    net.get.rlimit := sim.io.net.rlimit
+    net.get.pauser := sim.io.net.pauser
   }
 
 }

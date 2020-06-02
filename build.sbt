@@ -140,7 +140,7 @@ lazy val icenet = (project in file("generators/icenet"))
   .settings(commonSettings)
 
 lazy val lnic = (project in file("generators/lnic"))
-  .dependsOn(rocketchip)
+  .dependsOn(rocketchip, icenet)
   .settings(commonSettings)
 
 lazy val hwacha = (project in file("generators/hwacha"))
