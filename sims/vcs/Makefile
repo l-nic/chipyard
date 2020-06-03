@@ -86,20 +86,20 @@ $(sim_debug): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
 	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) $(VCS_DEFINES) +define+DEBUG -work riscv_lib
 	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ -debug_access+designer
 
-# TODO(sibanez): I think I need to add dramsim C files?
+# TODO(sibanez): try using sdnet_*_sim_netlist.v files rather than this 3-step compilation approach
 riscv_dpi.so: $(sim_common_files)
 	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir) \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/mm.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/mm_dramsim2.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/remote_bitbang.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimDRAM.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimDTM.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimJTAG.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimSerial.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/SimUART.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/uart.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/LNIC_device.cc \
-		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICRocketConfig/LNIC_SimNetwork.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/mm.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/mm_dramsim2.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/remote_bitbang.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimDRAM.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimDTM.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimJTAG.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimSerial.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimUART.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/uart.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/LNIC_device.cc \
+		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/LNIC_SimNetwork.cc \
 		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
 
 #########################################################################################

@@ -349,7 +349,6 @@ class LNICRocketConfig extends Config(
   new chipyard.iobinders.WithBlackBoxSimMem ++
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
-  new chipyard.iobinders.WithSimNetwork ++    // connect to SimNetwork (overridden by Firesim config if needed)
   new testchipip.WithTSI ++
   new lnic.WithLNIC ++                        // add an LNIC
   new chipyard.config.WithNoGPIO ++
@@ -362,6 +361,10 @@ class LNICRocketConfig extends Config(
   new freechips.rocketchip.subsystem.WithNExtTopInterrupts(0) ++
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
   new freechips.rocketchip.system.BaseConfig)
+
+class LNICSimNetworkRocketConfig extends Config(
+  new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
+  new LNICRocketConfig)
 
 // DOC include start: scratchpadrocket
 class ScratchpadRocketConfig extends Config(
