@@ -26,14 +26,14 @@ import ariane.ArianeTile
 import boom.common.{BoomTile}
 
 import chipyard.iobinders.{IOBinders, OverrideIOBinder, ComposeIOBinder}
-import chipyard.HasChipyardTilesModuleImp
+import chipyard.{HasChipyardTilesModuleImp, CanHaveLNICModuleImp}
 
 class WithSerialBridge extends OverrideIOBinder({
   (c, r, s, target: CanHavePeripherySerialModuleImp) => target.serial.map(s => SerialBridge(s)(target.p)).toSeq
 })
 
 class WithNICBridge extends OverrideIOBinder({
-  (c, r, s, target: CanHavePeripheryIceNICModuleImp) => target.net.map(n => NICBridge(n)(target.p)).toSeq
+  (c, r, s, target: CanHaveLNICModuleImp) => target.net.map(n => NICBridge(n)(target.p)).toSeq
 })
 
 class WithUARTBridge extends OverrideIOBinder({
