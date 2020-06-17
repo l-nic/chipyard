@@ -86,7 +86,6 @@ $(sim_debug): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
 	rm -rf riscv_lib && $(VLOGAN) $(VLOGAN_OPTS) $(VCS_DEFINES) +define+DEBUG -work riscv_lib
 	rm -rf csrc && $(VCS) $(VCS_OPTS) riscv_lib.TestDriver -o $@ -debug_access+designer
 
-# TODO(sibanez): try using sdnet_*_sim_netlist.v files rather than this 3-step compilation approach
 riscv_dpi.so: $(sim_common_files)
 	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir) \
 		/home/vagrant/chipyard/sims/vcs/generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/mm.cc \

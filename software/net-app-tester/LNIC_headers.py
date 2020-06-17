@@ -16,7 +16,8 @@ class LNIC(Packet):
         ShortField("pull_offset", 0),
         ShortField("tx_msg_id", 0),
         ShortField("buf_ptr", 0),
-        ByteField("buf_size_class", 0)
+        ByteField("buf_size_class", 0),
+        BitField("padding", 0, 15*8) # add 15B of padding to make HDL parsing / deparsing easier ... don't need this if using SDNet ...
     ]
     def mysummary(self):
         return self.sprintf("flags=%flags%, msg_len=%msg_len%, pkt_offset=%pkt_offset%, pull_offset=%pull_offset%")

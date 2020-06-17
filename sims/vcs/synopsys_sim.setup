@@ -1,4 +1,2 @@
 riscv_lib: riscv_lib/
-sdnet_ingress_lib: /home/vagrant/chipyard/vivado/ip/ip_user_files/sim_scripts/sdnet_ingress/vcs/vcs_lib/sdnet_ingress_lib
-sdnet_egress_lib: /home/vagrant/chipyard/vivado/ip/ip_user_files/sim_scripts/sdnet_egress/vcs/vcs_lib/sdnet_egress_lib
 OTHERS=/home/vagrant/chipyard/vivado/ip/managed_ip_project/managed_ip_project.cache/compile_simlib/vcs/synopsys_sim.setup
