@@ -141,113 +141,79 @@ _start:
 trap_entry:
   addi sp, sp, -272
 
-  # Calculate the base and current thread struct addr
-  csrrw x2, mscratch, x2 # Store x2 so we have a scratch reg
-  SREG x1, 1*REGBYTES(x2) # Store x1 so we have a second scratch reg
-  csrr x1, 0x53 # Load current context id
-  addi x1, x1, 0x1 # Adjust for one-offset in threads
-  slli x1, x1, 0x8 # Account for thread struct size
-  add x1, x2, x1 # Current thread struct addr now in x1, base addr now in x2
+ SREG x1, 1*REGBYTES(sp)
+  SREG x2, 2*REGBYTES(sp)
+  SREG x3, 3*REGBYTES(sp)
+  SREG x4, 4*REGBYTES(sp)
+  SREG x5, 5*REGBYTES(sp)
+  SREG x6, 6*REGBYTES(sp)
+  SREG x7, 7*REGBYTES(sp)
+  SREG x8, 8*REGBYTES(sp)
+  SREG x9, 9*REGBYTES(sp)
+  SREG x10, 10*REGBYTES(sp)
+  SREG x11, 11*REGBYTES(sp)
+  SREG x12, 12*REGBYTES(sp)
+  SREG x13, 13*REGBYTES(sp)
+  SREG x14, 14*REGBYTES(sp)
+  SREG x15, 15*REGBYTES(sp)
+  SREG x16, 16*REGBYTES(sp)
+  SREG x17, 17*REGBYTES(sp)
+  SREG x18, 18*REGBYTES(sp)
+  SREG x19, 19*REGBYTES(sp)
+  SREG x20, 20*REGBYTES(sp)
+  SREG x21, 21*REGBYTES(sp)
+  SREG x22, 22*REGBYTES(sp)
+  SREG x23, 23*REGBYTES(sp)
+  SREG x24, 24*REGBYTES(sp)
+  SREG x25, 25*REGBYTES(sp)
+  SREG x26, 26*REGBYTES(sp)
+  SREG x27, 27*REGBYTES(sp)
+  SREG x28, 28*REGBYTES(sp)
+  SREG x29, 29*REGBYTES(sp)
+#  SREG x30, 30*REGBYTES(sp)
+#  SREG x31, 31*REGBYTES(sp)
 
-  # Save the registers that were moved around earlier
-  SREG x3, 3*REGBYTES(x1)
-  csrr x3, mscratch # Load the old x2 value
-  SREG x3, 2*REGBYTES(x1)
-  LREG x3, 1*REGBYTES(x2) # Load the old x1 value
-  SREG x3, 1*REGBYTES(x1)
-  csrw mscratch, x2 # Save the base addr back in mscratch
-  csrr x3, mepc
-  SREG x3, 30*REGBYTES(x1)
+  csrr a0, mcause
+  csrr a1, mepc
+  mv a2, sp
+  jal handle_trap
+  csrw mepc, a0
 
-  # All registers from x4 to x29 can now be stored normally
-  SREG x4, 4*REGBYTES(x1)
-  SREG x5, 5*REGBYTES(x1)
-  SREG x6, 6*REGBYTES(x1)
-  SREG x7, 7*REGBYTES(x1)
-  SREG x8, 8*REGBYTES(x1)
-  SREG x9, 9*REGBYTES(x1)
-  SREG x10, 10*REGBYTES(x1)
-  SREG x11, 11*REGBYTES(x1)
-  SREG x12, 12*REGBYTES(x1)
-  SREG x13, 13*REGBYTES(x1)
-  SREG x14, 14*REGBYTES(x1)
-  SREG x15, 15*REGBYTES(x1)
-  SREG x16, 16*REGBYTES(x1)
-  SREG x17, 17*REGBYTES(x1)
-  SREG x18, 18*REGBYTES(x1)
-  SREG x19, 19*REGBYTES(x1)
-  SREG x20, 20*REGBYTES(x1)
-  SREG x21, 21*REGBYTES(x1)
-  SREG x22, 22*REGBYTES(x1)
-  SREG x23, 23*REGBYTES(x1)
-  SREG x24, 24*REGBYTES(x1)
-  SREG x25, 25*REGBYTES(x1)
-  SREG x26, 26*REGBYTES(x1)
-  SREG x27, 27*REGBYTES(x1)
-  SREG x28, 28*REGBYTES(x1)
-  SREG x29, 29*REGBYTES(x1)
+  # Remain in M-mode after eret
+  li t0, MSTATUS_MPP
+  csrs mstatus, t0
 
-  # Handle exceptions other than scheduling interrupts
-  csrr x3, mcause
-  li x4, TIMER_INT_CAUSE
-  beq x3, x4, valid
-  li x4, LNIC_INT_CAUSE
-  beq x3, x4, valid
-  mv a0, x3
-  j exit
-
-valid:
-  # Switch x1 to target context
-  csrr x1, 0x58 # Target context id now in x1
-  csrw 0x53, x1
-  addi x1, x1, 0x1 # Adjust for one-offset in threads
-  slli x1, x1, 0x8 # Account for thread struct size
-  add x1, x2, x1 # Target context now in x1, base addr in x2
-
-  # Load target context x4 to x29
-  LREG x4, 4*REGBYTES(x1)
-  LREG x5, 5*REGBYTES(x1)
-  LREG x6, 6*REGBYTES(x1)
-  LREG x7, 7*REGBYTES(x1)
-  LREG x8, 8*REGBYTES(x1)
-  LREG x9, 9*REGBYTES(x1)
-  LREG x10, 10*REGBYTES(x1)
-  LREG x11, 11*REGBYTES(x1)
-  LREG x12, 12*REGBYTES(x1)
-  LREG x13, 13*REGBYTES(x1)
-  LREG x14, 14*REGBYTES(x1)
-  LREG x15, 15*REGBYTES(x1)
-  LREG x16, 16*REGBYTES(x1)
-  LREG x17, 17*REGBYTES(x1)
-  LREG x18, 18*REGBYTES(x1)
-  LREG x19, 19*REGBYTES(x1)
-  LREG x20, 20*REGBYTES(x1)
-  LREG x21, 21*REGBYTES(x1)
-  LREG x22, 22*REGBYTES(x1)
-  LREG x23, 23*REGBYTES(x1)
-  LREG x24, 24*REGBYTES(x1)
-  LREG x25, 25*REGBYTES(x1)
-  LREG x26, 26*REGBYTES(x1)
-  LREG x27, 27*REGBYTES(x1)
-  LREG x28, 28*REGBYTES(x1)
-  LREG x29, 29*REGBYTES(x1)
-
-  # Reset the timer interrupt
-  li x3, MTIME_PTR_LO
-  LREG x3, 0(x3)
-  addi x3, x3, TIME_SLICE_RTC_TICKS
-  li x2, MTIMECMP_PTR_LO
-  SREG x3, 0(x2)
-  
-
-  # Load target context remaining regs
-  LREG x3, 30*REGBYTES(x1)
-  csrw mepc, x3 # Load mepc
-  li x3, MSTATUS_MPP
-  csrs mstatus, x3 # Hold in M-mode
-  LREG x3, 3*REGBYTES(x1) # Load x3
-  LREG x2, 2*REGBYTES(x1)
-  LREG x1, 1*REGBYTES(x1)
+  LREG x1, 1*REGBYTES(sp)
+  LREG x3, 3*REGBYTES(sp)
+  LREG x4, 4*REGBYTES(sp)
+  LREG x5, 5*REGBYTES(sp)
+  LREG x6, 6*REGBYTES(sp)
+  LREG x7, 7*REGBYTES(sp)
+  LREG x8, 8*REGBYTES(sp)
+  LREG x9, 9*REGBYTES(sp)
+  LREG x10, 10*REGBYTES(sp)
+  LREG x11, 11*REGBYTES(sp)
+  LREG x12, 12*REGBYTES(sp)
+  LREG x13, 13*REGBYTES(sp)
+  LREG x14, 14*REGBYTES(sp)
+  LREG x15, 15*REGBYTES(sp)
+  LREG x16, 16*REGBYTES(sp)
+  LREG x17, 17*REGBYTES(sp)
+  LREG x18, 18*REGBYTES(sp)
+  LREG x19, 19*REGBYTES(sp)
+  LREG x20, 20*REGBYTES(sp)
+  LREG x21, 21*REGBYTES(sp)
+  LREG x22, 22*REGBYTES(sp)
+  LREG x23, 23*REGBYTES(sp)
+  LREG x24, 24*REGBYTES(sp)
+  LREG x25, 25*REGBYTES(sp)
+  LREG x26, 26*REGBYTES(sp)
+  LREG x27, 27*REGBYTES(sp)
+  LREG x28, 28*REGBYTES(sp)
+  LREG x29, 29*REGBYTES(sp)
+#  LREG x30, 30*REGBYTES(sp)
+#  LREG x31, 31*REGBYTES(sp)
+  LREG x2, 2*REGBYTES(sp)
 
   addi sp, sp, 272
   mret
