@@ -209,7 +209,7 @@ class SimNetworkLNICGPRConfig extends Config(
   new WithSimNetworkLNICGPR ++
   new WithBootROM ++
   new freechips.rocketchip.subsystem.WithInclusiveCache ++
-  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.subsystem.WithNBigCores(2) ++
   new freechips.rocketchip.system.BaseConfig)
 
 /**
