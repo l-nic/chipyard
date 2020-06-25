@@ -45,6 +45,8 @@ class SimNetwork:
         """Pick a departure time for the pkt and schedule it.
         """
         print "Scheduling pkt ..."
+        print "Src MAC is " + str(pkt[Ether].src)
+        print "Dst MAC is " + str(pkt[Ether].dst)
         # swap MAC addresses
         tmp = pkt[Ether].src
         pkt[Ether].src = pkt[Ether].dst

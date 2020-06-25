@@ -4,7 +4,7 @@
 
 #include "lnic.h"
 
-#define NUM_MSG_WORDS 704
+#define NUM_MSG_WORDS 10
 
 int main(void)
 {
@@ -21,14 +21,16 @@ int main(void)
     dst_ip = 0x0a000001;
     dst_context = 0;
     app_hdr = (dst_ip << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
+    printf("Sending message\n");
     lnic_write_r(app_hdr);
     for (i = 0; i < NUM_MSG_WORDS; i++) {
         lnic_write_r(i);
     }
-
+    printf("Receiving message\n");
     // Receive the msg
     lnic_wait();
     app_hdr = lnic_read();
+    printf("Past wait\n");
     // Check dst IP
     uint64_t rx_dst_ip = (app_hdr & IP_MASK) >> 32;
     if (rx_dst_ip != dst_ip) {
@@ -45,6 +47,7 @@ int main(void)
         printf("Expected: msg_len = %d, Received: msg_len = %d\n", NUM_MSG_WORDS*8, rx_msg_len);
         return -1;
     }
+    printf("Main receive loop\n");
     // Check msg data
     for (i = 0; i < NUM_MSG_WORDS; i++) {
         uint64_t data = lnic_read();
