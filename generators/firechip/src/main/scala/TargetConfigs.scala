@@ -181,7 +181,7 @@ class FireSimArianeConfig extends Config(
 // L-NIC Rocket configs
 //*****************************************************************
 class FireSimLNICRocketConfig extends Config(
-  new WithDefaultFireSimBridges ++
+  new WithLNICFireSimBridges ++
   new WithDefaultMemModel ++
   new WithFireSimConfigTweaks ++
   new chipyard.LNICRocketConfig)

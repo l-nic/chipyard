@@ -33,7 +33,11 @@ class WithSerialBridge extends OverrideIOBinder({
 })
 
 class WithNICBridge extends OverrideIOBinder({
-  (c, r, s, target: CanHaveLNICModuleImp) => target.net.map(n => NICBridge(n)(target.p)).toSeq
+  (c, r, s, target: CanHavePeripheryIceNICModuleImp) => target.net.map(n => NICBridge(n)(target.p)).toSeq
+})
+
+class WithLNICBridge extends OverrideIOBinder({
+  (c, r, s, target: CanHaveLNICModuleImp) => target.net.map(n => LNICBridge(n)(target.p)).toSeq
 })
 
 class WithUARTBridge extends OverrideIOBinder({
@@ -100,6 +104,19 @@ class WithDefaultFireSimBridges extends Config(
   new chipyard.iobinders.WithTieOffInterrupts ++
   new WithSerialBridge ++
   new WithNICBridge ++
+  new WithUARTBridge ++
+  new WithBlockDeviceBridge ++
+  new WithFASEDBridge ++
+  new WithFireSimMultiCycleRegfile ++
+  new WithTracerVBridge
+)
+
+class WithLNICFireSimBridges extends Config(
+  new chipyard.iobinders.WithGPIOTiedOff ++
+  new chipyard.iobinders.WithTiedOffDebug ++
+  new chipyard.iobinders.WithTieOffInterrupts ++
+  new WithSerialBridge ++
+  new WithLNICBridge ++
   new WithUARTBridge ++
   new WithBlockDeviceBridge ++
   new WithFASEDBridge ++
