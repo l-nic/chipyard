@@ -135,6 +135,9 @@ _start:
   sll sp, sp, STKSHIFT
   add sp, sp, tp
 
+  # start timer on NIC to track msg processing time
+  csrwi 0x54, 0x4
+
   j _init
 
   .align 2
@@ -197,9 +200,13 @@ trap_entry:
   j exit
 
 valid:
+  # restart timer on NIC to track msg processing time
+  csrwi 0x54, 0x4
   # Switch x1 to target context
-  csrr x1, 0x58 # Target context id now in x1
-  csrw 0x53, x1
+  csrr x1, 0x59 # Read target priority
+  csrw 0x55, x1 # Update current priority
+  csrr x1, 0x58 # Read target context id
+  csrw 0x53, x1 # Update current context id
   addi x1, x1, 0x1 # Adjust for one-offset in threads
   slli x1, x1, 0x8 # Account for thread struct size
   add x1, x2, x1 # Target context now in x1, base addr in x2

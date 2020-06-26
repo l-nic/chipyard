@@ -2,6 +2,7 @@
 import unittest
 from scapy.all import *
 from LNIC_headers import LNIC
+from LNIC_utils import *
 import Throughput_headers as Throughput
 import NN_headers as NN
 import Othello_headers as Othello
@@ -28,9 +29,6 @@ MY_IP = "10.1.2.3"
 
 DST_CONTEXT = 0
 MY_CONTEXT = 0x1234
-
-# max # of msg bytes within a pkt
-MAX_SEG_BYTES = 1024
 
 # Priorities
 LOW = 1
@@ -61,7 +59,7 @@ def print_pkts(pkts):
 def packetize(msg):
     """Generate LNIC pkts for the given msg
     """
-    num_pkts = len(msg)/MAX_SEG_BYTES if len(msg) % MAX_SEG_BYTES == 0 else (len(msg)/MAX_SEG_BYTES) + 1
+    num_pkts = compute_num_pkts(len(msg))
     pkts = []
     for i in range(num_pkts-1):
         p = lnic_pkt(len(msg), i) / Raw(msg[i*MAX_SEG_BYTES:(i+1)*MAX_SEG_BYTES])
@@ -75,22 +73,25 @@ class SchedulerTest(unittest.TestCase):
         bind_layers(LNIC, DummyApp.DummyApp)
 
     def app_msg(self, priority, service_time, pkt_len):
-        return lnic_req(lnic_dst=priority) / DummyApp.DummyApp(service_time=service_time) / Raw('\x00'*(pkt_len - len(lnic_req()) - len(DummyApp.DummyApp())))
+        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        return lnic_pkt(msg_len, 0, dst_context=priority) / DummyApp.DummyApp(service_time=service_time) / \
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
-        num_lp_msgs = 160
-        num_hp_msgs = 80
+        num_lp_msgs = 10
+        num_hp_msgs = 5
         service_time = 500
         inputs = []
         # add low priority msgs 
-        inputs += [self.app_msg(LOW, service_time, 64) for i in range(num_lp_msgs)]
+        inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs)]
         # add high priority msgs
-        inputs += [self.app_msg(HIGH, service_time, 64) for i in range(num_hp_msgs)]
+        inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs)]
         # shuffle pkts
         random.shuffle(inputs)
+        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, MY_CONTEXT)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=num_lp_msgs + num_hp_msgs, timeout=400)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == MY_CONTEXT,
+                    prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=30)
         sniffer.start()
         # send in pkts
         sendp(inputs, iface=TEST_IFACE, inter=0.4)
@@ -98,19 +99,19 @@ class SchedulerTest(unittest.TestCase):
         sniffer.join()
         # check responses
         self.assertEqual(len(sniffer.results), num_lp_msgs + num_hp_msgs)
-        hp_latency = []
-        lp_throughput = []
-        for p in sniffer.results:
-            self.assertTrue(p.haslayer(LNIC))
-            latency = struct.unpack('!Q', str(p)[-8:])[0]
-            self.assertTrue(p[LNIC].src in [LOW, HIGH])
-            if p[LNIC].src == LOW:
-                lp_throughput.append((len(lp_throughput) + 1)/float(latency)) # msgs/cycle
-            else:
-                hp_latency.append(latency)
-        # record latencies in a DataFrame
-        df = pd.DataFrame({'low_priority_throughput': pd.Series(lp_throughput), 'high_priority_latency': pd.Series(hp_latency)}, dtype=float)
-        write_csv('scheduler', 'stats.csv', df)
+#        hp_latency = []
+#        lp_throughput = []
+#        for p in sniffer.results:
+#            self.assertTrue(p.haslayer(LNIC))
+#            latency = struct.unpack('!Q', str(p)[-8:])[0]
+#            self.assertTrue(p[LNIC].src in [LOW, HIGH])
+#            if p[LNIC].src == LOW:
+#                lp_throughput.append((len(lp_throughput) + 1)/float(latency)) # msgs/cycle
+#            else:
+#                hp_latency.append(latency)
+#        # record latencies in a DataFrame
+#        df = pd.DataFrame({'low_priority_throughput': pd.Series(lp_throughput), 'high_priority_latency': pd.Series(hp_latency)}, dtype=float)
+#        write_csv('scheduler', 'stats.csv', df)
 
 class ParallelLoopback(unittest.TestCase):
     def test_range(self):

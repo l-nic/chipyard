@@ -43,6 +43,7 @@ int app1_main(void) {
     for (i = 1; i < num_words; i++) {
       lnic_copy();
     }
+    lnic_msg_done();
   }
   return 0;
 }
@@ -80,6 +81,7 @@ int app2_main(void) {
     // extract timestamp of first pkt
     start_time = lnic_read();
     lnic_write_r(start_time);
+    lnic_msg_done();
     // put start_time in all future msgs
     while (1) {
       lnic_wait();
@@ -102,6 +104,7 @@ int app2_main(void) {
       }
       lnic_read(); // discard timestamp
       lnic_write_r(start_time);
+      lnic_msg_done();
     }
   }
   return 0;
@@ -148,11 +151,12 @@ int main(void) {
 //  printf("Starting app 1\n");
   start_thread(app1_main, 0, 0);
 //  printf("Started app 1\n");
-  start_thread(app2_main, 1, 1);
+  start_thread(app2_main, 1, 0);
 //  printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start
   csr_write(0x53, num_threads - 1); // Set the main thread's id to an illegal value
+  csr_write(0x55, num_threads - 1); // Set the main thread's priority to a low value 
   // This will keep it from being re-scheduled.
   // As long as it doesn't use the lnic, this should be fine.
   csr_set(mie, LNIC_INT_ENABLE);

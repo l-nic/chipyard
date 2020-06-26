@@ -54,7 +54,7 @@ class SimNetwork:
             # trim data pkts with deterministic frequency
             if self.data_pkt_counter == TRIM_FREQ-1:
                 pkt[LNIC].flags.CHOP = True
-                if len(pkt) > 64:
+                if len(pkt) > 65:
                     pkt = Ether(str(pkt)[0:65])
                 self.data_pkt_counter = 0
             else:

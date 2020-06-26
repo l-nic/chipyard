@@ -5,6 +5,7 @@
 #include "lnic.h"
 
 #define NUM_MSG_WORDS 704
+//#define NUM_MSG_WORDS 10
 
 int main(void)
 {
@@ -53,6 +54,7 @@ int main(void)
             return -1;
         }
     }   
+    lnic_msg_done();
 
     return 0;
 }
