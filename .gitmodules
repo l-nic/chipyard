@@ -69,6 +69,7 @@
 [submodule "toolchains/libgloss"]
 	path = toolchains/libgloss
 	url = https://github.com/ucb-bar/libgloss-htif.git
+	ignore = dirty
 [submodule "vlsi/hammer"]
 	path = vlsi/hammer
 	url = https://github.com/ucb-bar/hammer.git
@@ -99,6 +100,7 @@
 [submodule "toolchains/qemu"]
 	path = toolchains/qemu
 	url = https://github.com/qemu/qemu.git
+	ignore = dirty
 [submodule "toolchains/riscv-tools/riscv-opcodes"]
 	path = toolchains/riscv-tools/riscv-opcodes
 	url = https://github.com/l-nic/riscv-opcodes.git
