@@ -78,40 +78,50 @@ class SchedulerTest(unittest.TestCase):
                Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
-        num_lp_msgs = 10
-        num_hp_msgs = 5
+        num_lp_msgs = 20
+        num_hp_msgs = 20
         service_time = 500
-        inputs = []
-        # add low priority msgs 
-        inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs)]
+        init_inputs = []
         # add high priority msgs
-        inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs)]
+        init_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
+        # add low priority msgs 
+        init_inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs/2)]
         # shuffle pkts
-        random.shuffle(inputs)
+        random.shuffle(init_inputs)
+
+        more_inputs = []
+        more_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
+        more_inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs/2 - 1)]
+        random.shuffle(more_inputs)
+        # add a pkt that is going to violate the processing time limit
+        inputs = init_inputs + [self.app_msg(LOW, 4000, 128)] + more_inputs
+
         receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, MY_CONTEXT)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == MY_CONTEXT,
-                    prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=30)
+                    prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=100)
         sniffer.start()
         # send in pkts
-        sendp(inputs, iface=TEST_IFACE, inter=0.4)
+        sendp(inputs, iface=TEST_IFACE, inter=1.1)
         # wait for all responses
         sniffer.join()
         # check responses
         self.assertEqual(len(sniffer.results), num_lp_msgs + num_hp_msgs)
-#        hp_latency = []
-#        lp_throughput = []
-#        for p in sniffer.results:
-#            self.assertTrue(p.haslayer(LNIC))
-#            latency = struct.unpack('!Q', str(p)[-8:])[0]
-#            self.assertTrue(p[LNIC].src in [LOW, HIGH])
-#            if p[LNIC].src == LOW:
-#                lp_throughput.append((len(lp_throughput) + 1)/float(latency)) # msgs/cycle
-#            else:
-#                hp_latency.append(latency)
-#        # record latencies in a DataFrame
-#        df = pd.DataFrame({'low_priority_throughput': pd.Series(lp_throughput), 'high_priority_latency': pd.Series(hp_latency)}, dtype=float)
-#        write_csv('scheduler', 'stats.csv', df)
+        time = []
+        context = []
+        latency = []
+        for p in sniffer.results:
+            self.assertTrue(p.haslayer(LNIC))
+            l = struct.unpack('!L', str(p)[-4:])[0]
+            t = struct.unpack('!L', str(p)[-8:-4])[0]
+            self.assertTrue(p[LNIC].src_context in [LOW, HIGH])
+            time.append(t)
+            context.append(p[LNIC].src_context)
+            latency.append(l)
+        # record latencies in a DataFrame
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency)}, dtype=float)
+        print df
+        write_csv('scheduler', 'stats.csv', df)
 
 class ParallelLoopback(unittest.TestCase):
     def test_range(self):

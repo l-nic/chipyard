@@ -42,10 +42,16 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
   // Connect L-NIC to simulated network.
   def connectSimNetwork(clock: Clock, reset: Bool) {
     val sim = Module(new SimNetwork)
+    val latency = Module(new LatencyModule)
     sim.io.clock := clock
     sim.io.reset := reset
-    sim.io.net.out <> net.get.out
-    net.get.in <> sim.io.net.in
+
+    sim.io.net.out <> latency.io.net.out
+    latency.io.net.in <> sim.io.net.in
+
+    latency.io.nic.in <> net.get.out
+    net.get.in <> latency.io.nic.out
+
     net.get.macAddr := sim.io.net.macAddr
     net.get.rlimit := sim.io.net.rlimit
     net.get.pauser := sim.io.net.pauser
