@@ -117,7 +117,7 @@
 	url = https://github.com/ucb-bar/gemmini
 [submodule "software/firemarshal"]
 	path = software/firemarshal
-	url = https://github.com/firesim/FireMarshal.git
+	url = https://github.com/l-nic/FireMarshal.git
 [submodule "generators/ariane"]
 	path = generators/ariane
 	url = https://github.com/ucb-bar/ariane-wrapper.git
