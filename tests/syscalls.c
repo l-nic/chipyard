@@ -8,6 +8,7 @@
 #include <sys/signal.h>
 #include "util.h"
 
+#define SYS_read  63
 #define SYS_write 64
 
 #undef strcmp
@@ -72,6 +73,14 @@ void exit(int code)
 void abort()
 {
   exit(128 + SIGABRT);
+}
+
+void getstr(char* buf, uint32_t buf_len) {
+  for (int i = 0; i < buf_len; i++) {
+    syscall(SYS_read, 0, buf + i, 1);
+    if (buf[i] == '\0') {
+      break;
+    }
 }
 
 void printstr(const char* s)

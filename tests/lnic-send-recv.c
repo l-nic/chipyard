@@ -4,6 +4,15 @@
 
 #include "lnic.h"
 
+// TODO: This number is just copied from icenic. Figure out where it actually came from.
+#define LNIC_BASE 0x10016000L
+#define SIMPLENIC_SEND_REQ (SIMPLENIC_BASE + 0)
+#define SIMPLENIC_RECV_REQ (SIMPLENIC_BASE + 8)
+#define SIMPLENIC_SEND_COMP (SIMPLENIC_BASE + 16)
+#define SIMPLENIC_RECV_COMP (SIMPLENIC_BASE + 18)
+#define SIMPLENIC_COUNTS (SIMPLENIC_BASE + 20)
+#define SIMPLENIC_MACADDR (SIMPLENIC_BASE + 24)
+
 #define NUM_MSG_WORDS 10
 
 int main(void)
@@ -14,11 +23,17 @@ int main(void)
     int num_words;
     int i; 
 
+    printf("Starting program\n");
+    uint8_t recv_buf[100];
+    getstr(&recv_buf[0], 100);
+    printf("Received data\n");
+    printf("Char 0: %c\n", recv_buf[0]);
+
     // register context ID with L-NIC
     lnic_add_context(0, 0);
 
     // Send the msg
-    dst_ip = 0x0a000001;
+    dst_ip = 0x0a000002;
     dst_context = 0;
     app_hdr = (dst_ip << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
     printf("Sending message\n");
@@ -26,6 +41,7 @@ int main(void)
     for (i = 0; i < NUM_MSG_WORDS; i++) {
         lnic_write_r(i);
     }
+    printf("Finished sending message\n");
     printf("Receiving message\n");
     // Receive the msg
     lnic_wait();
