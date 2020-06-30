@@ -32,9 +32,12 @@ int main(void)
     // }
     uint8_t mainvars[1000];
     getmainvars(&mainvars[0], 1000);
-    for (int i = 0; i < 100; i++) {
-        printf("Mainvars %d is %c\n", i, mainvars[i]);
-    }
+    // for (int i = 0; i < 100; i++) {
+    //     printf("Mainvars %d is %c\n", i, mainvars[i]);
+    // }
+    uint64_t mainvars_argc = ((uint64_t*)mainvars)[0];
+    uint64_t arg0_ptr = ((uint64_t*)mainvars)[1];
+    printf("argc %d prog_name %s\n", mainvars_argc, (char*)arg0_ptr);
 
     // register context ID with L-NIC
     lnic_add_context(0, 0);
