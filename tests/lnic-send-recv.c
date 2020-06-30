@@ -6,12 +6,11 @@
 
 
 #define NUM_MSG_WORDS 10
-uint32_t own_id = 0;
 
-uint32_t get_dst_ip() {
-    if (own_id == 0) {
+uint32_t get_dst_ip(uint32_t nic_ip_addr) {
+    if (nic_ip_addr == 0x0a000002) {
         return 0x0a000003;
-    } else if (own_id == 1) {
+    } else if (nic_ip_addr == 0x0a000003) {
         return 0x0a000002;
     } else {
         return 0;
@@ -26,14 +25,22 @@ int main(int argc, char** argv)
     int num_words;
     int i; 
 
-    if (argc != 2) {
-        printf("This program requires one argument to specify its id\n");
+    if (argc != 3) {
+        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
         return -1;
     }
-    char* own_id_str = argv[1];
-    char* end;
-    own_id = atol(own_id_str);
-    dst_ip = get_dst_ip();
+    char* nic_mac_str = argv[1];
+    char* nic_ip_str = argv[2];
+    uint32_t nic_ip_addr_lendian = 0;
+    int retval = inet_pton4(nic_ip_str, nic_ip_str + strlen(nic_ip_str), &nic_ip_addr_lendian);
+
+    // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
+    uint32_t nic_ip_addr = swap32(nic_ip_addr_lendian);
+    if (retval != 1 || nic_ip_addr == 0) {
+        printf("Supplied NIC IP address is invalid.\n");
+        return -1;
+    }
+    dst_ip = get_dst_ip(nic_ip_addr);
     if (dst_ip == 0) {
         printf("Could not find valid destination ip\n");
         return -1;

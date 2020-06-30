@@ -13,6 +13,7 @@
 #define SYS_getmainvars 2011
 
 #define MAX_ARGS_BYTES 1024
+uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
 
 #undef strcmp
 
@@ -138,7 +139,6 @@ void _init(int cid, int nc)
   init_tls();
   thread_entry(cid, nc);
 
-  uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
   getmainvars(&mainvars[0], MAX_ARGS_BYTES);
   uint64_t argc = mainvars[0];
 
@@ -500,4 +500,51 @@ long atol(const char* str)
   }
 
   return sign ? -res : res;
+}
+
+// TODO: Reference linux source, borrowed from elsewhere to avoid having to link in the whole library.
+int inet_pton4 (const char *src, const char *end, unsigned char *dst)
+{
+  int saw_digit, octets, ch;
+  unsigned char tmp[4], *tp;
+  saw_digit = 0;
+  octets = 0;
+  *(tp = tmp) = 0;
+  while (src < end)
+    {
+      ch = *src++;
+      if (ch >= '0' && ch <= '9')
+        {
+          unsigned int new = *tp * 10 + (ch - '0');
+          if (saw_digit && *tp == 0)
+            return 0;
+          if (new > 255)
+            return 0;
+          *tp = new;
+          if (! saw_digit)
+            {
+              if (++octets > 4)
+                return 0;
+              saw_digit = 1;
+            }
+        }
+      else if (ch == '.' && saw_digit)
+        {
+          if (octets == 4)
+            return 0;
+          *++tp = 0;
+          saw_digit = 0;
+        }
+      else
+        return 0;
+    }
+  if (octets < 4)
+    return 0;
+  memcpy (dst, tmp, 4);
+  return 1;
+}
+
+uint32_t swap32(uint32_t in) {
+  // TODO: Did we add an instruction to do this?
+  return ((in >> 24) & 0x000000FF) | ((in << 24) & 0xFF000000) | ((in >> 8) & 0x0000FF00) | ((in << 8) & 0x00FF0000);
 }
