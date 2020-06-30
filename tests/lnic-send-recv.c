@@ -11,7 +11,25 @@ uint32_t get_dst_ip(uint32_t nic_ip_addr) {
     if (nic_ip_addr == 0x0a000002) {
         return 0x0a000003;
     } else if (nic_ip_addr == 0x0a000003) {
+        return 0x0a000004;
+    } else if (nic_ip_addr == 0x0a000004) {
+        return 0x0a000005;
+    } else if (nic_ip_addr == 0x0a000005) {
         return 0x0a000002;
+    } else {
+        return 0;
+    }
+}
+
+uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
+    if (nic_ip_addr == 0x0a000002) {
+        return 0x0a000005;
+    } else if (nic_ip_addr == 0x0a000003) {
+        return 0x0a000002;
+    } else if (nic_ip_addr == 0x0a000004) {
+        return 0x0a000003;
+    } else if (nic_ip_addr == 0x0a000005) {
+        return 0x0a000004;
     } else {
         return 0;
     }
@@ -44,7 +62,12 @@ int main(int argc, char** argv)
     if (dst_ip == 0) {
         printf("Could not find valid destination ip\n");
         return -1;
-    }    
+    }
+    uint32_t correct_sender_ip = get_correct_sender_ip(nic_ip_addr);
+    if (correct_sender_ip == 0) {
+        printf("Could not find valid correct sender ip\n");
+        return -1;
+    }
 
     // register context ID with L-NIC
     lnic_add_context(0, 0);
@@ -64,8 +87,8 @@ int main(int argc, char** argv)
     printf("Past wait\n");
     // Check dst IP
     uint64_t rx_dst_ip = (app_hdr & IP_MASK) >> 32;
-    if (rx_dst_ip != dst_ip) {
-        printf("Expected: dst_ip = %lx, Received: dst_ip = %lx\n", dst_ip, rx_dst_ip);
+    if (rx_dst_ip != correct_sender_ip) {
+        printf("Expected: correct_sender_ip = %lx, Received: dst_ip = %lx\n", correct_sender_ip, rx_dst_ip);
         return -1;
     }
     // Check dst context
