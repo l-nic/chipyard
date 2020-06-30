@@ -76,11 +76,28 @@ void abort()
 }
 
 void getstr(char* buf, uint32_t buf_len) {
-  for (int i = 0; i < buf_len; i++) {
-    syscall(SYS_read, 0, buf + i, 1);
-    if (buf[i] == '\0') {
-      break;
-    }
+  // for (int i = 0; i < buf_len; i++) {
+  //   syscall(SYS_read, 0, buf + i, 1);
+  //   if (buf[i] == '\0') {
+  //     break;
+  //   }
+  // }
+  char ch;
+  do {
+    syscall(SYS_read, 0, &ch, 1);
+  } while (ch == 0);
+  if (ch != '~') return;
+  do {
+    syscall(SYS_read, 0, &ch, 1);
+  } while (ch == '~');
+  buf[0] = ch;
+  int i = 1;
+  while (ch != '\n' && i < buf_len - 1) {
+    syscall(SYS_read, 0, &ch, 1);
+    buf[i] = ch;
+    i++;
+  }
+  buf[i] = '\0';
 }
 
 void printstr(const char* s)

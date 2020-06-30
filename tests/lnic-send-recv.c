@@ -27,7 +27,9 @@ int main(void)
     uint8_t recv_buf[100];
     getstr(&recv_buf[0], 100);
     printf("Received data\n");
-    printf("Char 0: %c\n", recv_buf[0]);
+    for (int i = 0; i < 100; i++) {
+        printf("Char %d: %c\n", i, recv_buf[i]);
+    }
 
     // register context ID with L-NIC
     lnic_add_context(0, 0);
