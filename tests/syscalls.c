@@ -10,8 +10,9 @@
 
 #define SYS_read  63
 #define SYS_write 64
-
 #define SYS_getmainvars 2011
+
+#define MAX_ARGS_BYTES 1024
 
 #undef strcmp
 
@@ -78,12 +79,8 @@ void abort()
 }
 
 void getstr(char* buf, uint32_t buf_len) {
-  // for (int i = 0; i < buf_len; i++) {
-  //   syscall(SYS_read, 0, buf + i, 1);
-  //   if (buf[i] == '\0') {
-  //     break;
-  //   }
-  // }
+  // TODO: fixme. Can read from serial but no character debouncing
+  // and lots of trouble at start of program.
   char ch;
   do {
     syscall(SYS_read, 0, &ch, 1);
@@ -141,8 +138,12 @@ void _init(int cid, int nc)
   init_tls();
   thread_entry(cid, nc);
 
+  uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
+  getmainvars(&mainvars[0], MAX_ARGS_BYTES);
+  uint64_t argc = mainvars[0];
+
   // only single-threaded programs should ever get here.
-  int ret = main(0, 0);
+  int ret = main(argc, mainvars + 1);
 
   char buf[NUM_COUNTERS * 32] __attribute__((aligned(64)));
   char* pbuf = buf;
