@@ -24,11 +24,16 @@ int main(void)
     int i; 
 
     printf("Starting program\n");
-    uint8_t recv_buf[100];
-    getstr(&recv_buf[0], 100);
-    printf("Received data\n");
+    // uint8_t recv_buf[100];
+    // getstr(&recv_buf[0], 100);
+    // printf("Received data\n");
+    // for (int i = 0; i < 100; i++) {
+    //     printf("Char %d: %c\n", i, recv_buf[i]);
+    // }
+    uint8_t mainvars[1000];
+    getmainvars(&mainvars[0], 1000);
     for (int i = 0; i < 100; i++) {
-        printf("Char %d: %c\n", i, recv_buf[i]);
+        printf("Mainvars %d is %c\n", i, mainvars[i]);
     }
 
     // register context ID with L-NIC

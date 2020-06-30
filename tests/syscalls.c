@@ -11,6 +11,8 @@
 #define SYS_read  63
 #define SYS_write 64
 
+#define SYS_getmainvars 2011
+
 #undef strcmp
 
 extern volatile uint64_t tohost;
@@ -98,6 +100,10 @@ void getstr(char* buf, uint32_t buf_len) {
     i++;
   }
   buf[i] = '\0';
+}
+
+void getmainvars(char* buf, uint32_t limit) {
+  syscall(SYS_getmainvars, buf, limit, 0);
 }
 
 void printstr(const char* s)
