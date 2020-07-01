@@ -15,6 +15,30 @@ uint32_t get_dst_ip(uint32_t nic_ip_addr) {
     } else if (nic_ip_addr == 0x0a000004) {
         return 0x0a000005;
     } else if (nic_ip_addr == 0x0a000005) {
+        return 0x0a000006;
+    } else if (nic_ip_addr == 0x0a000006) {
+        return 0x0a000007;
+    } else if (nic_ip_addr == 0x0a000007) {
+        return 0x0a000008;
+    } else if (nic_ip_addr == 0x0a000008) {
+        return 0x0a000009;
+    } else if (nic_ip_addr == 0x0a000009) {
+        return 0x0a00000a;
+    } else if (nic_ip_addr == 0x0a00000a) {
+        return 0x0a00000b;
+    } else if (nic_ip_addr == 0x0a00000b) {
+        return 0x0a00000c;
+    } else if (nic_ip_addr == 0x0a00000c) {
+        return 0x0a00000d;
+    } else if (nic_ip_addr == 0x0a00000d) {
+        return 0x0a00000e;
+    } else if (nic_ip_addr == 0x0a00000e) {
+        return 0x0a00000f;
+    } else if (nic_ip_addr == 0x0a00000f) {
+        return 0x0a000010;
+    } else if (nic_ip_addr == 0x0a000010) {
+        return 0x0a000011;
+    } else if (nic_ip_addr == 0x0a000011) {
         return 0x0a000002;
     } else {
         return 0;
@@ -23,13 +47,37 @@ uint32_t get_dst_ip(uint32_t nic_ip_addr) {
 
 uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
     if (nic_ip_addr == 0x0a000002) {
-        return 0x0a000005;
+        return 0x0a000011;
     } else if (nic_ip_addr == 0x0a000003) {
         return 0x0a000002;
     } else if (nic_ip_addr == 0x0a000004) {
         return 0x0a000003;
     } else if (nic_ip_addr == 0x0a000005) {
         return 0x0a000004;
+    } else if (nic_ip_addr == 0x0a000006) {
+        return 0x0a000005;
+    } else if (nic_ip_addr == 0x0a000007) {
+        return 0x0a000006;
+    } else if (nic_ip_addr == 0x0a000008) {
+        return 0x0a000007;
+    } else if (nic_ip_addr == 0x0a000009) {
+        return 0x0a000008;
+    } else if (nic_ip_addr == 0x0a00000a) {
+        return 0x0a000009;
+    } else if (nic_ip_addr == 0x0a00000b) {
+        return 0x0a00000a;
+    } else if (nic_ip_addr == 0x0a00000c) {
+        return 0x0a00000b;
+    } else if (nic_ip_addr == 0x0a00000d) {
+        return 0x0a00000c;
+    } else if (nic_ip_addr == 0x0a00000e) {
+        return 0x0a00000d;
+    } else if (nic_ip_addr == 0x0a00000f) {
+        return 0x0a00000e;
+    } else if (nic_ip_addr == 0x0a000010) {
+        return 0x0a00000f;
+    } else if (nic_ip_addr == 0x0a000011) {
+        return 0x0a000010;
     } else {
         return 0;
     }
