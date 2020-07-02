@@ -7,10 +7,32 @@
 #include <limits.h>
 #include <sys/signal.h>
 #include "util.h"
+#include "mmio.h"
 
 #define SYS_read  63
 #define SYS_write 64
 #define SYS_getmainvars 2011
+
+// Base address for uart. Can view in chisel synthesis output
+#define UART_BASE_ADDR 0x54000000
+
+// UART registers. Defined in sifive documentation and in scala source.
+#define UART_TX_FIFO   0x00
+#define UART_TX_CTRL   0x08
+#define UART_RX_CTRL   0x0c
+#define UART_DIV       0x18
+
+// Rocket-chip peripheral clock frequency.
+#define PERIPHERAL_CLOCK_FREQ 100000000 // 100 MHz
+
+// Baud rate expected by firesim uart bridge
+#define UART_BRIDGE_BAUDRATE  115200
+
+// Frequency/baudrate, used to set uart divisor
+#define UART_DIVISOR          868
+
+// Enable uart tx with one stop bit and dump buffer at one byte
+#define UART_TX_EN            0b10000000000000011
 
 #define MAX_ARGS_BYTES 1024
 uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
@@ -19,6 +41,22 @@ uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
 
 extern volatile uint64_t tohost;
 extern volatile uint64_t fromhost;
+
+uint32_t use_uart = 0;
+
+void uart_init() {
+  reg_write32(UART_BASE_ADDR + UART_TX_CTRL, UART_TX_EN);    
+  reg_write32(UART_BASE_ADDR + UART_DIV, UART_DIVISOR);
+}
+
+void uart_write_char(char ch) {
+  while ((int32_t)reg_read32(UART_BASE_ADDR + UART_TX_FIFO) < 0);
+  reg_write8(UART_BASE_ADDR + UART_TX_FIFO, ch); 
+}
+
+void enable_uart_print(uint32_t uart_print) {
+  use_uart = uart_print;
+}
 
 static uintptr_t syscall(uintptr_t which, uint64_t arg0, uint64_t arg1, uint64_t arg2)
 {
@@ -139,6 +177,7 @@ void _init(int cid, int nc)
   init_tls();
   thread_entry(cid, nc);
 
+  uart_init();
   getmainvars(&mainvars[0], MAX_ARGS_BYTES);
   uint64_t argc = mainvars[0];
 
@@ -159,6 +198,10 @@ void _init(int cid, int nc)
 #undef putchar
 int putchar(int ch)
 {
+  if (use_uart) {
+    uart_write_char(ch);
+    return 0;
+  }
   static __thread char buf[64] __attribute__((aligned(64)));
   static __thread int buflen = 0;
 

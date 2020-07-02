@@ -3,15 +3,6 @@
 #include <string.h>
 
 #include "lnic.h"
-#include "mmio.h"
-
-#define UART_BASE_ADDR 0x54000000
-#define UART_TX_FIFO   0x00
-#define UART_TX_CTRL   0x08
-#define UART_TX_EN     0x01
-#define UART_RX_CTRL   0x0c
-#define UART_DIV       0x18
-
 
 #define NUM_MSG_WORDS 10
 
@@ -100,47 +91,7 @@ int main(int argc, char** argv)
     int i; 
 
     printf("Attempting to use uart\n");
-    printf("Uart tx enabled is %#lx at %#lx\n", reg_read32(UART_BASE_ADDR + UART_TX_CTRL), UART_BASE_ADDR + UART_TX_CTRL);
-    reg_write32(UART_BASE_ADDR + UART_TX_CTRL, 0b10000000000000011);
-    reg_write32(UART_BASE_ADDR + UART_RX_CTRL, UART_TX_EN);
-    printf("Uart tx enabled is %#lx at %#lx\n", reg_read32(UART_BASE_ADDR + UART_TX_CTRL), UART_BASE_ADDR + UART_TX_CTRL);
-    
-    reg_write32(UART_BASE_ADDR + UART_DIV, 868);
-    printf("Uart div is %#lx\n", reg_read32(UART_BASE_ADDR + UART_DIV));
-
-for (int i = 0; i < 128; i++) {
-    while ((int32_t)reg_read32(UART_BASE_ADDR + UART_TX_FIFO) < 0);
-    reg_write8(UART_BASE_ADDR + UART_TX_FIFO, 'a');
-    while ((int32_t)reg_read32(UART_BASE_ADDR + UART_TX_FIFO) < 0);
-    reg_write8(UART_BASE_ADDR + UART_TX_FIFO, 'b');
-    while ((int32_t)reg_read32(UART_BASE_ADDR + UART_TX_FIFO) < 0);
-    reg_write8(UART_BASE_ADDR + UART_TX_FIFO, 'c');
-    while ((int32_t)reg_read32(UART_BASE_ADDR + UART_TX_FIFO) < 0);
-    reg_write8(UART_BASE_ADDR + UART_TX_FIFO, '\n');
-    while ((int32_t)reg_read32(UART_BASE_ADDR + UART_TX_FIFO) < 0);
-    reg_write8(UART_BASE_ADDR + UART_TX_FIFO, '\0');
-}
-
-    //volatile uint64_t uart_base = UART_BASE_ADDR;
-    //volatile uint64_t uart_tx_ctrl = UART_TX_CTRL;
-    //*(uint32_t*)(uart_base + uart_tx_ctrl) = UART_TX_EN;
-    //*(uint32_t*)(uart_base + UART_RX_CTRL) = UART_TX_EN;
-    //printf("Uart enabled\n");
-    //volatile uint64_t uart_tx = uart_base + UART_TX_FIFO;
-
-    //for (int i = 0; i < 100; i++) {
-        //printf("Writing uart\n");
-    //    while (*(int32_t*)uart_tx < 0);
-    //    *(uint32_t*)uart_tx = 0xDEADBEEF;
-    //}
-    // while (*(int32_t*)uart_tx < 0);
-    // *(uint32_t*)uart_tx = '\n';
-    // while (*(int32_t*)uart_tx < 0);
-    // *(uint32_t*)uart_tx = '\0';
-
-
-    printf("Uart written\n");
-
+    enable_uart_print(1);
 
     if (argc != 3) {
         printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
