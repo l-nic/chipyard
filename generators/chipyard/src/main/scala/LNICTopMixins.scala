@@ -30,11 +30,14 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
     vonly.rlimit := nicio.rlimit
     vonly.pauser := nicio.pauser
     // connect L-NIC to tiles
-    require(outer.lnicTiles.size == 1, "For now, L-NIC only supports single tile systems.")
-    outer.lnicTiles.foreach { tile =>
-      lnic.module.io.core.net_in <> tile.module.net.get.net_out
-      tile.module.net.get.net_in <> lnic.module.io.core.net_out
-      tile.module.net.get.meta_in := lnic.module.io.core.meta_out
+    val num_cores = outer.lnicTiles.size
+    for (i <- 0 until num_cores) {
+      val tile = outer.lnicTiles(i)
+      lnic.module.io.core(i).net_in <> tile.module.net.get.net_out
+      lnic.module.io.core(i).add_context := tile.module.net.get.add_context
+      lnic.module.io.core(i).get_next_msg := tile.module.net.get.get_next_msg
+      tile.module.net.get.net_in <> lnic.module.io.core(i).net_out
+      tile.module.net.get.meta_in := lnic.module.io.core(i).meta_out
     }
     nicio
   }

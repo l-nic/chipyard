@@ -17,7 +17,7 @@
 #define lnic_msg_done() write_csr(0x056, 1)
 
 // poll CSR lmsgsrdy until non-zero
-#define lnic_wait() while (read_csr(0x052) == 0) { write_csr(0x056, 1); }
+#define lnic_wait() while (read_csr(0x052) == 0) { write_csr(0x056, 2); }
 
 #define lnic_read() ({ uint64_t __tmp; \
   asm volatile ("mv %0, "LREAD  : "=r"(__tmp)); \
