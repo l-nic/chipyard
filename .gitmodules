@@ -36,6 +36,7 @@
 [submodule "generators/block-inclusivecache-sifive"]
 	path = generators/sifive-cache
 	url = https://github.com/sifive/block-inclusivecache-sifive.git
+	ignore = dirty
 [submodule "toolchains/riscv-tools/riscv-gnu-toolchain"]
 	path = toolchains/riscv-tools/riscv-gnu-toolchain
 	url = https://github.com/riscv/riscv-gnu-toolchain.git
@@ -58,6 +59,7 @@
 [submodule "toolchains/esp-tools/riscv-gnu-toolchain"]
 	path = toolchains/esp-tools/riscv-gnu-toolchain
 	url = https://github.com/ucb-bar/esp-gnu-toolchain.git
+	ignore = dirty
 [submodule "toolchains/esp-tools/riscv-isa-sim"]
 	path = toolchains/esp-tools/riscv-isa-sim
 	url = https://github.com/ucb-bar/esp-isa-sim.git
@@ -67,6 +69,7 @@
 [submodule "toolchains/esp-tools/riscv-tests"]
 	path = toolchains/esp-tools/riscv-tests
 	url = https://github.com/ucb-bar/esp-tests.git
+	ignore = dirty
 [submodule "vlsi/hammer"]
 	path = vlsi/hammer
 	url = https://github.com/ucb-bar/hammer.git
@@ -97,6 +100,7 @@
 [submodule "toolchains/qemu"]
 	path = toolchains/qemu
 	url = https://github.com/qemu/qemu.git
+	ignore = dirty
 [submodule "toolchains/riscv-tools/riscv-opcodes"]
 	path = toolchains/riscv-tools/riscv-opcodes
 	url = https://github.com/l-nic/riscv-opcodes.git
