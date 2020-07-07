@@ -24,6 +24,8 @@ PROGRAMS += lnic-multi-thread-basic
 PROGRAMS += lnic-nbody-node-gpr
 PROGRAMS += icenic-nbody-node
 PROGRAMS += lnic-send-recv
+PROGRAMS += multiple_cores
+PROGRAMS += lnic-multi-core
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

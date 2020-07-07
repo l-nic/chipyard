@@ -123,8 +123,8 @@ _start:
 
   # get core id
   csrr a0, mhartid
-  # for now, assume only 1 core
-  li a1, 1
+  # for now, assume only 2 cores
+  li a1, 2
 1:bgeu a0, a1, 1b
 
   # give each core 128KB of stack + TLS
@@ -134,6 +134,9 @@ _start:
   add sp, a0, 1
   sll sp, sp, STKSHIFT
   add sp, sp, tp
+
+  # start timer on NIC to track msg processing time
+  csrwi 0x54, 0x4
 
   j _init
 
@@ -197,9 +200,13 @@ trap_entry:
   j exit
 
 valid:
+  # restart timer on NIC to track msg processing time
+  csrwi 0x54, 0x4
   # Switch x1 to target context
-  csrr x1, 0x58 # Target context id now in x1
-  csrw 0x53, x1
+  csrr x1, 0x59 # Read target priority
+  csrw 0x55, x1 # Update current priority
+  csrr x1, 0x58 # Read target context id
+  csrw 0x53, x1 # Update current context id
   addi x1, x1, 0x1 # Adjust for one-offset in threads
   slli x1, x1, 0x8 # Account for thread struct size
   add x1, x2, x1 # Target context now in x1, base addr in x2

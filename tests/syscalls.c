@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <sys/signal.h>
 #include "util.h"
 #include "mmio.h"
@@ -36,6 +37,11 @@
 
 #define MAX_ARGS_BYTES 1024
 uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
+uint64_t argc;
+char ** argv;
+
+#define NCORES 2
+int core_complete[NCORES];
 
 #undef strcmp
 
@@ -147,11 +153,72 @@ void printstr(const char* s)
   syscall(SYS_write, 1, (uintptr_t)s, strlen(s));
 }
 
-void __attribute__((weak)) thread_entry(int cid, int nc)
-{
-  // multi-threaded programs override this function.
-  // for the case of single-threaded programs, only let core 0 proceed.
-  while (cid != 0);
+void notify_core_complete(int cid) {
+    core_complete[cid] = true;
+}
+
+void wait_for_all_cores() {
+    bool all_cores_complete = true;
+    do {
+        all_cores_complete = true;
+        for (int i = 0; i < NCORES; i++) {
+            if (!core_complete[i]) {
+                all_cores_complete = false;
+            }
+        }
+     } while (!all_cores_complete);
+}
+
+void __attribute__((weak)) thread_entry(int cid, int nc) {
+    if (nc != 2 || NCORES != 2) {
+        if (cid == 0) {
+            printf("This program requires 2 cores but was given %d\n", nc);
+        }
+        return;
+    }
+
+    int core0_ret = 0;
+    int core1_ret = 0;
+    if (cid == 0) {
+        core0_ret = core0_main(argc, argv);
+        notify_core_complete(0);
+        wait_for_all_cores();
+        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
+        exit(ret);
+    } else if (cid == 1) {
+        // cid == 1
+        core1_ret = core1_main(argc, argv);
+        notify_core_complete(1);
+        wait_for_all_cores();
+        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
+        exit(ret);
+    } else {
+        while (1);
+    }
+}
+
+int __attribute__((weak)) core0_main(uint64_t argc, char** argv) {
+    // Default implementation of core0_main, allows running regular single-core
+    // programs as before.
+    int ret = main(argc, argv);
+    print_counters();
+    return ret;
+}
+
+int __attribute__((weak)) core1_main(uint64_t argc, char** argv) {
+    return 0;
+}
+
+
+
+void print_counters() {
+  char buf[NUM_COUNTERS * 32] __attribute__((aligned(64)));
+  char* pbuf = buf;
+  for (int i = 0; i < NUM_COUNTERS; i++)
+    if (counters[i])
+      pbuf += sprintf(pbuf, "%s = %d\n", counter_names[i], counters[i]);
+  if (pbuf != buf)
+    printstr(buf);
 }
 
 int __attribute__((weak)) main(int argc, char** argv)
@@ -175,24 +242,16 @@ static void init_tls()
 void _init(int cid, int nc)
 {
   init_tls();
-  thread_entry(cid, nc);
-
   uart_init();
   getmainvars(&mainvars[0], MAX_ARGS_BYTES);
-  uint64_t argc = mainvars[0];
-
-  // only single-threaded programs should ever get here.
-  int ret = main(argc, mainvars + 1);
-
-  char buf[NUM_COUNTERS * 32] __attribute__((aligned(64)));
-  char* pbuf = buf;
-  for (int i = 0; i < NUM_COUNTERS; i++)
-    if (counters[i])
-      pbuf += sprintf(pbuf, "%s = %d\n", counter_names[i], counters[i]);
-  if (pbuf != buf)
-    printstr(buf);
-
-  exit(ret);
+  argc = mainvars[0];
+  argv = mainvars + 1;
+  if (argc == 0 || argv == 0) {
+    printf("Unable to parse program arguments.\n");
+    return -1;
+  }
+  thread_entry(cid, nc);
+  while (1);
 }
 
 #undef putchar

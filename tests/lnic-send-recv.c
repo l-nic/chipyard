@@ -26,16 +26,22 @@ uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
     }
 }
 
-void prepare_printing(int argc, char** argv) {
-    if (argc == 0) {
-        printf("This program requires argument passing.\n");
+int prepare_printing(int argc, char** argv) {
+    if (argc != 3) {
+        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+        return -1;
     }
-    printf("Program %s switching to UART printing...\n", argv[0]);
-    enable_uart_print(1);
+    char* nic_mac_str = argv[1];
+    if (strcmp(nic_mac_str, "0") != 0) {
+        // Pass a zero for the MAC in simulation to disable this
+        printf("Program %s switching to UART printing...\n", argv[0]);
+        enable_uart_print(1);
+    }
     printf("Total of %d arguments, which are (line-by-line):\n", argc);
     for (int i = 0; i < argc; i++) {
         printf("%s\n", argv[i]);
     }
+    return 0;
 }
 
 int main(int argc, char** argv)
@@ -45,11 +51,10 @@ int main(int argc, char** argv)
     uint64_t dst_context;
     int num_words;
     int i;
-    
-    prepare_printing(argc, argv);
 
-    if (argc != 3) {
-        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+    printf("Program starting...\n");
+    
+    if (prepare_printing(argc, argv) < 0) {
         return -1;
     }
     char* nic_mac_str = argv[1];
@@ -116,9 +121,8 @@ int main(int argc, char** argv)
             return -1;
         }
     }
-
-    printf("Send recv program complete\n");
-
+    printf("Send recv program complete\n");  
+    lnic_msg_done();
     return 0;
 }
 
