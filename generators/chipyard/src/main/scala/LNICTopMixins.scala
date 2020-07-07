@@ -29,11 +29,14 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
     vonly.switch_mac_addr := nicio.switch_mac_addr
     vonly.nic_ip_addr := nicio.nic_ip_addr
     // connect L-NIC to tiles
-    require(outer.lnicTiles.size == 1, "For now, L-NIC only supports single tile systems.")
-    outer.lnicTiles.foreach { tile =>
-      lnic.module.io.core.net_in <> tile.module.net.get.net_out
-      tile.module.net.get.net_in <> lnic.module.io.core.net_out
-      tile.module.net.get.meta_in := lnic.module.io.core.meta_out
+    val num_cores = outer.lnicTiles.size
+    for (i <- 0 until num_cores) {
+      val tile = outer.lnicTiles(i)
+      lnic.module.io.core(i).net_in <> tile.module.net.get.net_out
+      lnic.module.io.core(i).add_context := tile.module.net.get.add_context
+      lnic.module.io.core(i).get_next_msg := tile.module.net.get.get_next_msg
+      tile.module.net.get.net_in <> lnic.module.io.core(i).net_out
+      tile.module.net.get.meta_in := lnic.module.io.core(i).meta_out
     }
     nicio
   }
@@ -41,10 +44,16 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
   // Connect L-NIC to simulated network.
   def connectSimNetwork(clock: Clock, reset: Bool) {
     val sim = Module(new SimNetwork)
+    val latency = Module(new LatencyModule)
     sim.io.clock := clock
     sim.io.reset := reset
-    sim.io.net.out <> net.get.out
-    net.get.in <> sim.io.net.in
+
+    sim.io.net.out <> latency.io.net.out
+    latency.io.net.in <> sim.io.net.in
+
+    latency.io.nic.in <> net.get.out
+    net.get.in <> latency.io.nic.out
+
     net.get.nic_mac_addr := sim.io.net.nic_mac_addr
     net.get.switch_mac_addr := sim.io.net.switch_mac_addr
     net.get.nic_ip_addr := sim.io.net.nic_ip_addr

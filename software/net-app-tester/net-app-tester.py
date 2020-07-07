@@ -2,6 +2,7 @@
 import unittest
 from scapy.all import *
 from LNIC_headers import LNIC
+from LNIC_utils import *
 import Throughput_headers as Throughput
 import NN_headers as NN
 import Othello_headers as Othello
@@ -28,9 +29,6 @@ MY_IP = "10.1.2.3"
 
 DST_CONTEXT = 0
 MY_CONTEXT = 0x1234
-
-# max # of msg bytes within a pkt
-MAX_SEG_BYTES = 1024
 
 # Priorities
 LOW = 1
@@ -61,7 +59,7 @@ def print_pkts(pkts):
 def packetize(msg):
     """Generate LNIC pkts for the given msg
     """
-    num_pkts = len(msg)/MAX_SEG_BYTES if len(msg) % MAX_SEG_BYTES == 0 else (len(msg)/MAX_SEG_BYTES) + 1
+    num_pkts = compute_num_pkts(len(msg))
     pkts = []
     for i in range(num_pkts-1):
         p = lnic_pkt(len(msg), i) / Raw(msg[i*MAX_SEG_BYTES:(i+1)*MAX_SEG_BYTES])
@@ -75,42 +73,103 @@ class SchedulerTest(unittest.TestCase):
         bind_layers(LNIC, DummyApp.DummyApp)
 
     def app_msg(self, priority, service_time, pkt_len):
-        return lnic_req(lnic_dst=priority) / DummyApp.DummyApp(service_time=service_time) / Raw('\x00'*(pkt_len - len(lnic_req()) - len(DummyApp.DummyApp())))
+        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        return lnic_pkt(msg_len, 0, dst_context=priority) / DummyApp.DummyApp(service_time=service_time) / \
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
-        num_lp_msgs = 160
-        num_hp_msgs = 80
+        num_lp_msgs = 20
+        num_hp_msgs = 20
         service_time = 500
-        inputs = []
-        # add low priority msgs 
-        inputs += [self.app_msg(LOW, service_time, 64) for i in range(num_lp_msgs)]
+        init_inputs = []
         # add high priority msgs
-        inputs += [self.app_msg(HIGH, service_time, 64) for i in range(num_hp_msgs)]
+        init_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
+        # add low priority msgs 
+        init_inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs/2)]
         # shuffle pkts
-        random.shuffle(inputs)
+        random.shuffle(init_inputs)
+
+        more_inputs = []
+        more_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
+        more_inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs/2 - 1)]
+        random.shuffle(more_inputs)
+        # add a pkt that is going to violate the processing time limit
+        inputs = init_inputs + [self.app_msg(LOW, 4000, 128)] + more_inputs
+
+        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, MY_CONTEXT)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=num_lp_msgs + num_hp_msgs, timeout=400)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == MY_CONTEXT,
+                    prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=100)
         sniffer.start()
         # send in pkts
-        sendp(inputs, iface=TEST_IFACE, inter=0.4)
+        sendp(inputs, iface=TEST_IFACE, inter=1.1)
         # wait for all responses
         sniffer.join()
         # check responses
         self.assertEqual(len(sniffer.results), num_lp_msgs + num_hp_msgs)
-        hp_latency = []
-        lp_throughput = []
+        time = []
+        context = []
+        latency = []
         for p in sniffer.results:
             self.assertTrue(p.haslayer(LNIC))
-            latency = struct.unpack('!Q', str(p)[-8:])[0]
-            self.assertTrue(p[LNIC].src in [LOW, HIGH])
-            if p[LNIC].src == LOW:
-                lp_throughput.append((len(lp_throughput) + 1)/float(latency)) # msgs/cycle
-            else:
-                hp_latency.append(latency)
+            l = struct.unpack('!L', str(p)[-4:])[0]
+            t = struct.unpack('!L', str(p)[-8:-4])[0]
+            self.assertTrue(p[LNIC].src_context in [LOW, HIGH])
+            time.append(t)
+            context.append(p[LNIC].src_context)
+            latency.append(l)
         # record latencies in a DataFrame
-        df = pd.DataFrame({'low_priority_throughput': pd.Series(lp_throughput), 'high_priority_latency': pd.Series(hp_latency)}, dtype=float)
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency)}, dtype=float)
+        print df
         write_csv('scheduler', 'stats.csv', df)
+
+class LoadBalanceTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, DummyApp.DummyApp)
+
+    def app_msg(self, dst_context, service_time, pkt_len):
+        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        return lnic_pkt(msg_len, 0, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
+
+    def test_load_balance(self):
+        ctx0_msgs = 8
+        ctx1_msgs = 0
+        service_time = 500
+        inputs = []
+        # add context 0 msgs
+        inputs += [self.app_msg(0, service_time, 128) for i in range(ctx0_msgs)]
+        # add context 1 msgs 
+        inputs += [self.app_msg(1, service_time, 128) for i in range(ctx1_msgs)]
+        # shuffle pkts
+        random.shuffle(inputs)
+
+        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, MY_CONTEXT)
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == MY_CONTEXT,
+                    prn=receiver.process_pkt, count=ctx0_msgs + ctx1_msgs, timeout=100)
+        sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE, inter=0.3)
+        # wait for all responses
+        sniffer.join()
+        # check responses
+        self.assertEqual(len(sniffer.results), ctx0_msgs + ctx1_msgs)
+        time = []
+        context = []
+        latency = []
+        for p in sniffer.results:
+            self.assertTrue(p.haslayer(LNIC))
+            l = struct.unpack('!L', str(p)[-4:])[0]
+            t = struct.unpack('!L', str(p)[-8:-4])[0]
+            self.assertTrue(p[LNIC].src_context in [0, 1])
+            time.append(t)
+            context.append(p[LNIC].src_context)
+            latency.append(l)
+        # record latencies in a DataFrame
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency)}, dtype=float)
+        print df
+        write_csv('load-balance', 'stats.csv', df)
 
 class ParallelLoopback(unittest.TestCase):
     def test_range(self):

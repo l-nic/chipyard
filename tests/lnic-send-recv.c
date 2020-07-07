@@ -4,7 +4,7 @@
 
 #include "lnic.h"
 
-#define NUM_MSG_WORDS 10
+#define NUM_MSG_WORDS 704
 
 uint32_t get_dst_ip(uint32_t nic_ip_addr) {
     if (nic_ip_addr == 0x0a000021) {
@@ -116,9 +116,8 @@ int main(int argc, char** argv)
             return -1;
         }
     }
-
-    printf("Send recv program complete\n");
-
+    printf("Send recv program complete\n");  
+    lnic_msg_done();
     return 0;
 }
 

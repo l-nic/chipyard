@@ -45,8 +45,6 @@ class SimNetwork:
         """Pick a departure time for the pkt and schedule it.
         """
         print "Scheduling pkt ..."
-        print "Src MAC is " + str(pkt[Ether].src)
-        print "Dst MAC is " + str(pkt[Ether].dst)
         # swap MAC addresses
         tmp = pkt[Ether].src
         pkt[Ether].src = pkt[Ether].dst
@@ -56,7 +54,7 @@ class SimNetwork:
             # trim data pkts with deterministic frequency
             if self.data_pkt_counter == TRIM_FREQ-1:
                 pkt[LNIC].flags.CHOP = True
-                if len(pkt) > 64:
+                if len(pkt) > 65:
                     pkt = Ether(str(pkt)[0:65])
                 self.data_pkt_counter = 0
             else:
