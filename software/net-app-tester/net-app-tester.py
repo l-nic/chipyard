@@ -123,6 +123,54 @@ class SchedulerTest(unittest.TestCase):
         print df
         write_csv('scheduler', 'stats.csv', df)
 
+class LoadBalanceTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, DummyApp.DummyApp)
+
+    def app_msg(self, dst_context, service_time, pkt_len):
+        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        return lnic_pkt(msg_len, 0, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
+
+    def test_load_balance(self):
+        ctx0_msgs = 8
+        ctx1_msgs = 0
+        service_time = 500
+        inputs = []
+        # add context 0 msgs
+        inputs += [self.app_msg(0, service_time, 128) for i in range(ctx0_msgs)]
+        # add context 1 msgs 
+        inputs += [self.app_msg(1, service_time, 128) for i in range(ctx1_msgs)]
+        # shuffle pkts
+        random.shuffle(inputs)
+
+        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, MY_CONTEXT)
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == MY_CONTEXT,
+                    prn=receiver.process_pkt, count=ctx0_msgs + ctx1_msgs, timeout=100)
+        sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE, inter=0.3)
+        # wait for all responses
+        sniffer.join()
+        # check responses
+        self.assertEqual(len(sniffer.results), ctx0_msgs + ctx1_msgs)
+        time = []
+        context = []
+        latency = []
+        for p in sniffer.results:
+            self.assertTrue(p.haslayer(LNIC))
+            l = struct.unpack('!L', str(p)[-4:])[0]
+            t = struct.unpack('!L', str(p)[-8:-4])[0]
+            self.assertTrue(p[LNIC].src_context in [0, 1])
+            time.append(t)
+            context.append(p[LNIC].src_context)
+            latency.append(l)
+        # record latencies in a DataFrame
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency)}, dtype=float)
+        print df
+        write_csv('load-balance', 'stats.csv', df)
+
 class ParallelLoopback(unittest.TestCase):
     def test_range(self):
         # packet_lengths = range(64, 64*20, 64)
