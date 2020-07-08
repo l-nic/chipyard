@@ -36,6 +36,7 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
       lnic.module.io.core(i).net_in <> tile.module.net.get.net_out
       lnic.module.io.core(i).add_context := tile.module.net.get.add_context
       lnic.module.io.core(i).get_next_msg := tile.module.net.get.get_next_msg
+      tile.module.net.get.reset_done := lnic.module.io.core(i).reset_done
       tile.module.net.get.net_in <> lnic.module.io.core(i).net_out
       tile.module.net.get.meta_in := lnic.module.io.core(i).meta_out
     }
