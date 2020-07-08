@@ -34,8 +34,8 @@ int prepare_printing(int argc, char** argv) {
     char* nic_mac_str = argv[1];
     if (strcmp(nic_mac_str, "0") != 0) {
         // Pass a zero for the MAC in simulation to disable this
-        //printf("Program %s switching to UART printing...\n", argv[0]);
-        //enable_uart_print(1);
+        // printf("Program %s switching to UART printing...\n", argv[0]);
+        // enable_uart_print(1);
     }
     printf("Total of %d arguments, which are (line-by-line):\n", argc);
     for (int i = 0; i < argc; i++) {
