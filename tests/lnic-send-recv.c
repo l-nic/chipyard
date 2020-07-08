@@ -4,7 +4,7 @@
 
 #include "lnic.h"
 
-#define NUM_MSG_WORDS 10
+#define NUM_MSG_WORDS 100
 
 uint32_t get_dst_ip(uint32_t nic_ip_addr) {
     if (nic_ip_addr == 0x0a000005) {
