@@ -82,14 +82,18 @@ int main(int argc, char** argv)
     // register context ID with L-NIC
     lnic_add_context(0, 0);
 
+for (int j = 0; j < 3; j++) {
     // Send the msg
     dst_context = 0;
     app_hdr = (dst_ip << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
-    printf("Sending message\n");
+    //printf("Sending message\n");
     lnic_write_r(app_hdr);
     for (i = 0; i < NUM_MSG_WORDS; i++) {
         lnic_write_r(i);
     }
+}
+
+for (int k = 0; k < 3; k++) {
     printf("Receiving message\n");
     // Receive the msg
     lnic_wait();
@@ -121,8 +125,12 @@ int main(int argc, char** argv)
             return -1;
         }
     }
-    printf("Send recv program complete\n");  
     lnic_msg_done();
+}
+    for (int i = 0; i < 100000; i++) {
+        asm volatile("nop");
+    }
+    printf("Send recv program complete\n");  
     return 0;
 }
 
