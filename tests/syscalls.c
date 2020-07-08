@@ -41,7 +41,13 @@ uint64_t argc;
 char ** argv;
 
 #define NCORES 2
-int core_complete[NCORES];
+
+struct barrier_t {
+  int core_complete[NCORES];
+};
+
+struct barrier_t exit_barrier;
+struct barrier_t init_barrier;
 
 #undef strcmp
 
@@ -153,20 +159,20 @@ void printstr(const char* s)
   syscall(SYS_write, 1, (uintptr_t)s, strlen(s));
 }
 
-void notify_core_complete(int cid) {
-    core_complete[cid] = true;
-}
-
-void wait_for_all_cores() {
-    bool all_cores_complete = true;
-    do {
-        all_cores_complete = true;
-        for (int i = 0; i < NCORES; i++) {
-            if (!core_complete[i]) {
-                all_cores_complete = false;
-            }
+void barrier_wait_core(struct barrier_t* barrier, int core) {
+  // Primitive spin barrier to force cores into synch.
+  // Don't call this from a nanoservice -- it's way too slow.
+  // This should really only be used for initial setup and teardown.
+  barrier->core_complete[core] = true;
+  bool all_cores_complete = true;
+  do {
+    all_cores_complete = true;
+    for (int i = 0; i < NCORES; i++) {
+        if (!barrier->core_complete[i]) {
+            all_cores_complete = false;
         }
-     } while (!all_cores_complete);
+    }
+  } while (!all_cores_complete);
 }
 
 void __attribute__((weak)) thread_entry(int cid, int nc) {
@@ -181,18 +187,17 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
     int core1_ret = 0;
     if (cid == 0) {
         core0_ret = core0_main(argc, argv);
-        notify_core_complete(0);
-        wait_for_all_cores();
+        barrier_wait_core(&exit_barrier, 0);
         int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
         exit(ret);
     } else if (cid == 1) {
         // cid == 1
         core1_ret = core1_main(argc, argv);
-        notify_core_complete(1);
-        wait_for_all_cores();
+        barrier_wait_core(&exit_barrier, 1);
         int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
         exit(ret);
     } else {
+        // Keep any other cores from continuing for now.
         while (1);
     }
 }
@@ -241,15 +246,26 @@ static void init_tls()
 
 void _init(int cid, int nc)
 {
-  init_tls();
-  uart_init();
-  getmainvars(&mainvars[0], MAX_ARGS_BYTES);
-  argc = mainvars[0];
-  argv = mainvars + 1;
-  if (argc == 0 || argv == 0) {
-    printf("Unable to parse program arguments.\n");
-    return -1;
+  if (cid == 0) {
+    init_tls();
+    uart_init();
+    getmainvars(&mainvars[0], MAX_ARGS_BYTES);
+    argc = mainvars[0];
+    argv = mainvars + 1;
+    if (argc == 0 || argv == 0) {
+      printf("Unable to parse program arguments.\n");
+      return -1;
+    }
+
+    // Wait for rx_msg_id_table to complete reset
+    for (int i = 0; i < 5000; i++) {
+      asm volatile("nop");
+    }
   }
+
+  // Force other cores to wait for core 0 to initialize everything
+  barrier_wait_core(&init_barrier, cid);
+
   thread_entry(cid, nc);
   while (1);
 }

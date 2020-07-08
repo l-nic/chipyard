@@ -7,9 +7,9 @@
 #define NUM_MSG_WORDS 10
 
 uint32_t get_dst_ip(uint32_t nic_ip_addr) {
-    if (nic_ip_addr == 0x0a000021) {
+    if (nic_ip_addr == 0x0a000005) {
         return 0x0a000002;
-    } else if (nic_ip_addr < 0x0a000021 && nic_ip_addr >= 0x0a000002) {
+    } else if (nic_ip_addr < 0x0a000005 && nic_ip_addr >= 0x0a000002) {
         return nic_ip_addr + 1;
     } else {
         return 0;
@@ -18,8 +18,8 @@ uint32_t get_dst_ip(uint32_t nic_ip_addr) {
 
 uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
     if (nic_ip_addr == 0x0a000002) {
-        return 0x0a000021;
-    } else if (nic_ip_addr > 0x0a000002 && nic_ip_addr <= 0x0a000021) {
+        return 0x0a000005;
+    } else if (nic_ip_addr > 0x0a000002 && nic_ip_addr <= 0x0a000005) {
         return nic_ip_addr - 1;
     } else {
         return 0;
@@ -34,8 +34,8 @@ int prepare_printing(int argc, char** argv) {
     char* nic_mac_str = argv[1];
     if (strcmp(nic_mac_str, "0") != 0) {
         // Pass a zero for the MAC in simulation to disable this
-        printf("Program %s switching to UART printing...\n", argv[0]);
-        enable_uart_print(1);
+        //printf("Program %s switching to UART printing...\n", argv[0]);
+        //enable_uart_print(1);
     }
     printf("Total of %d arguments, which are (line-by-line):\n", argc);
     for (int i = 0; i < argc; i++) {
