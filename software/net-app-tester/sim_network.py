@@ -10,7 +10,9 @@ IFACE = "tap0"
 SWITCH_MAC = "08:55:66:77:88:08"
 NIC_MAC = "08:11:22:33:44:08"
 
-TRIM_FREQ = 4 # pkts
+TRIM_FREQ = 4 # DATA pkts
+DATA_DROP_FREQ = 0 # DATA pkts
+CTRL_DROP_FREQ = 0 # Control pkts (not including trimmed pkts, just ACK, NACK, and PULL pkts)
 
 class NetworkPkt(object):
     """A small wrapper class around scapy pkts to add departure_time"""
@@ -31,6 +33,7 @@ class SimNetwork:
         self.scheduled_pkts = []
 
         self.data_pkt_counter = 0
+        self.ctrl_pkt_counter = 0
         self.pkt_log = []
 
         # start receiving pkts
@@ -50,22 +53,35 @@ class SimNetwork:
         pkt[Ether].src = pkt[Ether].dst
         pkt[Ether].dst = tmp
 
+        drop = False
+
         if pkt[LNIC].flags.DATA:
+            self.data_pkt_counter += 1
+
             # trim data pkts with deterministic frequency
-            if self.data_pkt_counter == TRIM_FREQ-1:
+            if TRIM_FREQ > 0 and self.data_pkt_counter % TRIM_FREQ == 0:
                 pkt[LNIC].flags.CHOP = True
                 if len(pkt) > 65:
                     pkt = Ether(str(pkt)[0:65])
-                self.data_pkt_counter = 0
-            else:
-                self.data_pkt_counter += 1
 
-        self.pkt_log.append(pkt)
+            if DATA_DROP_FREQ > 0 and self.data_pkt_counter % DATA_DROP_FREQ == 0:
+                drop = True
 
-        # schedule pkt
-        now = time.time()
-        departure_time = now + 1.0
-        heappush(self.scheduled_pkts, NetworkPkt(pkt, departure_time))
+        if not pkt[LNIC].flags.DATA:
+            self.ctrl_pkt_counter += 1
+
+            if CTRL_DROP_FREQ > 0 and self.ctrl_pkt_counter % CTRL_DROP_FREQ == 0:
+                drop = True
+
+        if not drop:
+            self.pkt_log.append(pkt)
+    
+            # schedule pkt
+            now = time.time()
+            departure_time = now + 1.0
+            heappush(self.scheduled_pkts, NetworkPkt(pkt, departure_time))
+        else:
+            print "Dropping pkt: {}".format(pkt.summary())
 
     def transmit(self):
         """Monitor the head of the scheduled pkts heap to see if it's time to send it.
