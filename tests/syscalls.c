@@ -241,6 +241,9 @@ static void init_tls()
 
 void _init(int cid, int nc)
 {
+  // wait for lnicrdy CSR to be set
+  while (read_csr(0x057) == 0);
+
   init_tls();
   if (cid == 0) {
     uart_init();
