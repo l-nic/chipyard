@@ -152,8 +152,8 @@ for (int k = 0; k < 3; k++) {
         if (i != data) {
             printf("Expected: data = %x, Received: data = %lx\n", i, data);
             //return -1;
-        } else {
-            //printf("got data %#lx\n", data);
+        } else if (i >= 0x1fe) {
+            printf("got data %#lx\n", data);
         }
     }
     lnic_msg_done();
