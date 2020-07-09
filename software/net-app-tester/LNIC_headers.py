@@ -20,7 +20,7 @@ class LNIC(Packet):
         BitField("padding", 0, 15*8) # add 15B of padding to make HDL parsing / deparsing easier ... don't need this if using SDNet ...
     ]
     def mysummary(self):
-        return self.sprintf("flags=%flags%, msg_len=%msg_len%, pkt_offset=%pkt_offset%, pull_offset=%pull_offset%")
+        return self.sprintf("flags=%flags%, src=%src_context%, dst=%dst_context%, msg_len=%msg_len%, pkt_offset=%pkt_offset%, pull_offset=%pull_offset%, tx_msg_id=%tx_msg_id%")
 
 bind_layers(IP, LNIC, proto=LNIC_PROTO)
 

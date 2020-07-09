@@ -180,7 +180,7 @@ class Loopback(unittest.TestCase):
         receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].src_context == DST_CONTEXT,
-                    prn=receiver.process_pkt, count=len(pkts), timeout=10)
+                    prn=receiver.process_pkt, count=len(pkts), timeout=100)
         sniffer.start()
         # send in pkts
         sendp(pkts, iface=TEST_IFACE)
@@ -194,11 +194,11 @@ class Loopback(unittest.TestCase):
             self.assertEqual(p[LNIC].src_context, DST_CONTEXT)
         return receiver.msgs
     def test_multi_host(self):
-        src_ips = ['10.0.0.2', '10.0.0.3']
+        src_ips = ['10.0.0.{}'.format(i) for i in range(2, 10)]
         tx_msgs = {}
         pkts = []
         for i in range(len(src_ips)):
-            msg_len = 1024
+            msg_len = random.randint(1, 8192)
             msg = ''.join([chr(random.randint(97, 122)) for x in range(msg_len)])
             tx_msgs[src_ips[i]] = msg
             pkts += packetize(msg, DEFAULT_CONTEXT, src_ips[i])
