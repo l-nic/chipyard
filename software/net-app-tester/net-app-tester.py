@@ -25,10 +25,11 @@ NIC_MAC = "08:11:22:33:44:08"
 MY_MAC = "08:55:66:77:88:08"
 
 NIC_IP = "10.0.0.1"
-MY_IP = "10.1.2.3"
+MY_IP = "10.0.0.2"
 
 DST_CONTEXT = 0
-MY_CONTEXT = 0x1234
+LATENCY_CONTEXT = 0x1234 # use this when we want the HW to insert timestamps into DATA pkts
+DEFAULT_CONTEXT = 0x5678
 
 # Priorities
 LOW = 1
@@ -38,9 +39,9 @@ LOG_DIR = '/vagrant/logs'
 
 NUM_SAMPLES = 1
 
-def lnic_pkt(msg_len, pkt_offset, src_context=MY_CONTEXT, dst_context=DST_CONTEXT):
+def lnic_pkt(msg_len, pkt_offset, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=MY_IP):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
-            IP(src=MY_IP, dst=NIC_IP) / \
+            IP(src=src_ip, dst=NIC_IP) / \
             LNIC(flags='DATA', src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset)
 
 def write_csv(dname, fname, df):
@@ -56,15 +57,15 @@ def print_pkts(pkts):
       pkts[i].show2()
       hexdump(pkts[i])
 
-def packetize(msg):
+def packetize(msg, src_context=DEFAULT_CONTEXT, src_ip=MY_IP):
     """Generate LNIC pkts for the given msg
     """
     num_pkts = compute_num_pkts(len(msg))
     pkts = []
     for i in range(num_pkts-1):
-        p = lnic_pkt(len(msg), i) / Raw(msg[i*MAX_SEG_BYTES:(i+1)*MAX_SEG_BYTES])
+        p = lnic_pkt(len(msg), i, src_context, src_ip=src_ip) / Raw(msg[i*MAX_SEG_LEN_BYTES:(i+1)*MAX_SEG_LEN_BYTES])
         pkts.append(p)
-    p = lnic_pkt(len(msg), num_pkts-1) / Raw(msg[(num_pkts-1)*MAX_SEG_BYTES:])
+    p = lnic_pkt(len(msg), num_pkts-1, src_context, src_ip=src_ip) / Raw(msg[(num_pkts-1)*MAX_SEG_LEN_BYTES:])
     pkts.append(p)
     return pkts
 
@@ -74,7 +75,7 @@ class SchedulerTest(unittest.TestCase):
 
     def app_msg(self, priority, service_time, pkt_len):
         msg_len = pkt_len - len(Ether()/IP()/LNIC())
-        return lnic_pkt(msg_len, 0, dst_context=priority) / DummyApp.DummyApp(service_time=service_time) / \
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=priority) / DummyApp.DummyApp(service_time=service_time) / \
                Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
@@ -96,9 +97,9 @@ class SchedulerTest(unittest.TestCase):
         # add a pkt that is going to violate the processing time limit
         inputs = init_inputs + [self.app_msg(LOW, 4000, 128)] + more_inputs
 
-        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, MY_CONTEXT)
+        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, LATENCY_CONTEXT)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == MY_CONTEXT,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
                     prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=100)
         sniffer.start()
         # send in pkts
@@ -129,7 +130,7 @@ class LoadBalanceTest(unittest.TestCase):
 
     def app_msg(self, dst_context, service_time, pkt_len):
         msg_len = pkt_len - len(Ether()/IP()/LNIC())
-        return lnic_pkt(msg_len, 0, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
                Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_load_balance(self):
@@ -144,9 +145,9 @@ class LoadBalanceTest(unittest.TestCase):
         # shuffle pkts
         random.shuffle(inputs)
 
-        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, MY_CONTEXT)
+        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, LATENCY_CONTEXT)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == MY_CONTEXT,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
                     prn=receiver.process_pkt, count=ctx0_msgs + ctx1_msgs, timeout=100)
         sniffer.start()
         # send in pkts
@@ -171,192 +172,48 @@ class LoadBalanceTest(unittest.TestCase):
         print df
         write_csv('load-balance', 'stats.csv', df)
 
-class ParallelLoopback(unittest.TestCase):
-    def test_range(self):
-        # packet_lengths = range(64, 64*20, 64)
-        packet_lengths = [64] * 32
-        contexts = [(0x1235, 0), (0x1236, 1)]
-        print str(len(contexts)*len(packet_lengths))
-        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=20)# count=len(contexts)*len(packet_lengths))
-        sniffer.start()
-        for pkt_len in packet_lengths:
-            for my_context, dst_context in contexts:
-                msg_len = pkt_len - len(lnic_req()) # bytes
-                payload = Raw('\x00'*msg_len)
-                req = lnic_req(my_context=my_context, lnic_dst=dst_context) / payload
-                sendp(req, iface=TEST_IFACE)
-                time.sleep(.1)
-        sniffer.join()
-        print sniffer.results
-        real_packets = 0
-        for resp in sniffer.results:
-            self.assertIsNotNone(resp)
-            if resp[LNIC].dst == 0x1235 or resp[LNIC].dst == 0x1236:
-                resp_data = resp[LNIC].payload
-                resp_value = struct.unpack('!Q', str(resp_data)[:8])[0]
-                print "Packet from context id " + str(resp[LNIC].src) + " contains value " + str(resp_value)
-                real_packets += 1
-        print "Total packets received: " + str(real_packets)
-
-class PriorityVaryDuration(unittest.TestCase):
-    def do_loopback(self, pkt_len, priority, stall_duration):
-        msg_len = pkt_len - len(lnic_req()) # bytes
-        stall_packed = struct.pack('!Q',  stall_duration)
-        padding = '\x00'*(msg_len - len(stall_packed))
-        payload = Raw(stall_packed + padding)
-        req = lnic_req(lnic_dst=priority) / payload
-        sendp(req, iface=TEST_IFACE)
-    def test_range(self):
-        durations = range(0, 210, 10)
-        for d in durations:
-            self.iter_range(stall_duration=d)
-    def iter_range(self, stall_duration=0):
-        high_priority_target_fraction = 0.8
-        latency_low = []
-        latency_high = []
-        packet_lengths = [64] * 64
-        priorities = [LOW] * len(packet_lengths)
-        for i in range(int(high_priority_target_fraction*len(packet_lengths))):
-            priorities[i] = HIGH
-        random.shuffle(priorities)
-        print packet_lengths
-        print priorities
-        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=30)
-        sniffer.start()
-        for i in range(len(packet_lengths)):
-            self.do_loopback(packet_lengths[i], priorities[i], stall_duration)
-            time.sleep(0.1)
-        sniffer.join()
-        print sniffer.results
-        app_packets = 0
-        for resp in sniffer.results:
-            self.assertIsNotNone(resp)
-            try:
-                _ = resp[LNIC].dst
-            except IndexError:
-                continue
-            if resp[LNIC].dst == MY_CONTEXT:
-                resp_data = resp[LNIC].payload
-                latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
-                self.assertTrue(resp[LNIC].src == LOW or resp[LNIC].src == HIGH)
-                if resp[LNIC].src == LOW:
-                    latency_low.append(latency)
-                else:
-                    latency_high.append(latency)
-                app_packets += 1
-        print "High priority target fraction is " + str(high_priority_target_fraction)
-        print "Stall duration is " + str(stall_duration)
-        print "Low priority latencies: " + str(latency_low)
-        print "Low count {}, avg {}".format(len(latency_low), sum(latency_low)/float(len(latency_low)))
-        print "\nHigh priority latencies: " + str(latency_high)
-        print "High count {}, avg {}".format(len(latency_high), sum(latency_high)/float(len(latency_high)))
-
-class PriorityMix(unittest.TestCase):
-    def do_loopback(self, pkt_len, priority):
-        msg_len = pkt_len - len(lnic_req()) # bytes
-        payload = Raw('\x00'*msg_len)
-        req = lnic_req(lnic_dst=priority) / payload
-        sendp(req, iface=TEST_IFACE)
-    def test_single(self):
-        pkt_len = 64
-        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=5)
-        sniffer.start()
-        self.do_loopback(pkt_len, LOW)
-        self.do_loopback(pkt_len, HIGH)
-        sniffer.join()
-        app_packets = 0
-        for resp in sniffer.results:
-            self.assertIsNotNone(resp)
-            try:
-                _ = resp[LNIC].dst
-            except IndexError:
-                continue
-            if resp[LNIC].dst == MY_CONTEXT:
-                resp_data = resp[LNIC].payload
-                latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
-                self.assertTrue(resp[LNIC].src == LOW or resp[LNIC].src == HIGH)
-                if resp[LNIC].src == LOW:
-                    print 'Low Priority Latency = {} cycles'.format(latency)
-                else:
-                    print 'High Priority Latency = {} cycles'.format(latency)
-                app_packets += 1
-        self.assertEqual(app_packets, len([LOW, HIGH]))
-
-    def test_range(self):
-        fractions = [.2, .3, .4, .5, .6, .7, .8]
-        repetitions = [0, 1, 2]
-        for frac in fractions:
-            for rep in repetitions:
-                self.iter_range(high_priority_target_fraction=frac)
-    def iter_range(self, high_priority_target_fraction=0.5):
-        num_copies = 2
-        latency_low = []
-        latency_high = []
-        packet_lengths = list(range(64, 64*20, 64))
-        packet_lengths = [64] * 32
-        packet_lengths = [elem for elem in packet_lengths for i in range(num_copies)]
-        priorities = [LOW] * len(packet_lengths)
-        for i in range(int(high_priority_target_fraction*len(packet_lengths))):
-            priorities[i] = HIGH
-        random.shuffle(packet_lengths)
-        random.shuffle(priorities)
-        print packet_lengths
-        print priorities
-        sniffer = AsyncSniffer(iface=TEST_IFACE, timeout=30)
-        sniffer.start()
-        for i in range(len(packet_lengths)):
-            self.do_loopback(packet_lengths[i], priorities[i])
-            time.sleep(0.1)
-        sniffer.join()
-        print sniffer.results
-        app_packets = 0
-        for resp in sniffer.results:
-            self.assertIsNotNone(resp)
-            try:
-                _ = resp[LNIC].dst
-            except IndexError:
-                continue
-            if resp[LNIC].dst == MY_CONTEXT:
-                resp_data = resp[LNIC].payload
-                latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
-                self.assertTrue(resp[LNIC].src == LOW or resp[LNIC].src == HIGH)
-                if resp[LNIC].src == LOW:
-                    latency_low.append(latency)
-                else:
-                    latency_high.append(latency)
-                app_packets += 1
-        print "High priority target fraction is " + str(high_priority_target_fraction)
-        print "Low priority latencies: " + str(latency_low)
-        print "Low count {}, avg {}".format(len(latency_low), sum(latency_low)/float(len(latency_low)))
-        print "\nHigh priority latencies: " + str(latency_high)
-        print "High count {}, avg {}".format(len(latency_high), sum(latency_high)/float(len(latency_high)))
-        # self.assertEqual(app_packets, len(packet_lengths))
-
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkts):
-        print "Request Pkts:"
-        print_pkts(pkts)
+#        print "Request Pkts:"
+#        print_pkts(pkts)
         # send request pkts / receive response pkts
-#        filt = lambda x: x.haslayer(LNIC) and x[LNIC].dst_context == MY_CONTEXT
-        filt = lambda x: x.haslayer(LNIC)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=filt, count=3*len(pkts), timeout=TIMEOUT_SEC)
+        receiver = LNICReceiver(TEST_IFACE)
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].src_context == DST_CONTEXT,
+                    prn=receiver.process_pkt, count=len(pkts), timeout=10)
         sniffer.start()
         # send in pkts
         sendp(pkts, iface=TEST_IFACE)
         # wait for all response pkts
         sniffer.join()
-        self.assertEqual(3*len(pkts), len(sniffer.results))
-        print "Response Pkts:"
-        print_pkts(sniffer.results)
-        # TODO(sibanez): check that ACK and PULL and DATA pkts are all here ...
+        self.assertEqual(len(pkts), len(sniffer.results))
+#        print "Response Pkts:"
+#        print_pkts(sniffer.results)
         for i in range(len(sniffer.results)):
-          p = sniffer.results[i]
-          self.assertEqual(p[LNIC].src_context, DST_CONTEXT)
-    def test_single(self):
-        msg_len = 80 # bytes
-        msg = '\x00'*msg_len
-        pkts = packetize(msg) 
-        self.do_loopback(pkts)
+            p = sniffer.results[i]
+            self.assertEqual(p[LNIC].src_context, DST_CONTEXT)
+        return receiver.msgs
+    def test_multi_host(self):
+        src_ips = ['10.0.0.2', '10.0.0.3']
+        tx_msgs = {}
+        pkts = []
+        for i in range(len(src_ips)):
+            msg_len = 1024
+            msg = ''.join([chr(random.randint(97, 122)) for x in range(msg_len)])
+            tx_msgs[src_ips[i]] = msg
+            pkts += packetize(msg, DEFAULT_CONTEXT, src_ips[i])
+        random.shuffle(pkts)
+        rx_msgs = self.do_loopback(pkts)
+        self.assertEqual(len(src_ips), len(rx_msgs))
+        for ip in src_ips:
+            self.check_msg(rx_msgs, ip, DEFAULT_CONTEXT, NIC_IP, DST_CONTEXT, tx_msgs[ip])
+    def check_msg(self, rx_msgs, dst_ip, dst_context, src_ip, src_context, msg):
+        for m in rx_msgs:
+            if m[0][0] == dst_ip and m[0][1] == dst_context and m[0][2] == src_ip and m[0][3] == src_context:
+                self.assertEqual(msg, m[1])
+                return
+        self.assertTrue(False, "Could not find expected msg!")
+
 #    def test_pkt_length(self):
 #        pkt_len = range(64, 64*20, 64)
 #        length = []
