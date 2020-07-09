@@ -5,15 +5,64 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <sys/signal.h>
 #include "util.h"
+#include "mmio.h"
 
+#define SYS_read  63
 #define SYS_write 64
+#define SYS_getmainvars 2011
+
+// Base address for uart. Can view in chisel synthesis output
+#define UART_BASE_ADDR 0x54000000
+
+// UART registers. Defined in sifive documentation and in scala source.
+#define UART_TX_FIFO   0x00
+#define UART_TX_CTRL   0x08
+#define UART_RX_CTRL   0x0c
+#define UART_DIV       0x18
+
+// Rocket-chip peripheral clock frequency.
+#define PERIPHERAL_CLOCK_FREQ 100000000 // 100 MHz
+
+// Baud rate expected by firesim uart bridge
+#define UART_BRIDGE_BAUDRATE  115200
+
+// Frequency/baudrate, used to set uart divisor
+#define UART_DIVISOR          868
+
+// Enable uart tx with one stop bit and dump buffer at one byte
+#define UART_TX_EN            0b10000000000000011
+
+#define MAX_ARGS_BYTES 1024
+uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
+uint64_t argc;
+char ** argv;
+
+#define NCORES 2
+int core_complete[NCORES];
 
 #undef strcmp
 
 extern volatile uint64_t tohost;
 extern volatile uint64_t fromhost;
+
+uint32_t use_uart = 0;
+
+void uart_init() {
+  reg_write32(UART_BASE_ADDR + UART_TX_CTRL, UART_TX_EN);    
+  reg_write32(UART_BASE_ADDR + UART_DIV, UART_DIVISOR);
+}
+
+void uart_write_char(char ch) {
+  while ((int32_t)reg_read32(UART_BASE_ADDR + UART_TX_FIFO) < 0);
+  reg_write8(UART_BASE_ADDR + UART_TX_FIFO, ch); 
+}
+
+void enable_uart_print(uint32_t uart_print) {
+  use_uart = uart_print;
+}
 
 static uintptr_t syscall(uintptr_t which, uint64_t arg0, uint64_t arg1, uint64_t arg2)
 {
@@ -74,16 +123,102 @@ void abort()
   exit(128 + SIGABRT);
 }
 
+void getstr(char* buf, uint32_t buf_len) {
+  // TODO: fixme. Can read from serial but no character debouncing
+  // and lots of trouble at start of program.
+  char ch;
+  do {
+    syscall(SYS_read, 0, &ch, 1);
+  } while (ch == 0);
+  if (ch != '~') return;
+  do {
+    syscall(SYS_read, 0, &ch, 1);
+  } while (ch == '~');
+  buf[0] = ch;
+  int i = 1;
+  while (ch != '\n' && i < buf_len - 1) {
+    syscall(SYS_read, 0, &ch, 1);
+    buf[i] = ch;
+    i++;
+  }
+  buf[i] = '\0';
+}
+
+void getmainvars(char* buf, uint32_t limit) {
+  syscall(SYS_getmainvars, buf, limit, 0);
+}
+
 void printstr(const char* s)
 {
   syscall(SYS_write, 1, (uintptr_t)s, strlen(s));
 }
 
-void __attribute__((weak)) thread_entry(int cid, int nc)
-{
-  // multi-threaded programs override this function.
-  // for the case of single-threaded programs, only let core 0 proceed.
-  while (cid != 0);
+void notify_core_complete(int cid) {
+    core_complete[cid] = true;
+}
+
+void wait_for_all_cores() {
+    bool all_cores_complete = true;
+    do {
+        all_cores_complete = true;
+        for (int i = 0; i < NCORES; i++) {
+            if (!core_complete[i]) {
+                all_cores_complete = false;
+            }
+        }
+     } while (!all_cores_complete);
+}
+
+void __attribute__((weak)) thread_entry(int cid, int nc) {
+    if (nc != 2 || NCORES != 2) {
+        if (cid == 0) {
+            printf("This program requires 2 cores but was given %d\n", nc);
+        }
+        return;
+    }
+
+    int core0_ret = 0;
+    int core1_ret = 0;
+    if (cid == 0) {
+        core0_ret = core0_main(argc, argv);
+        notify_core_complete(0);
+        wait_for_all_cores();
+        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
+        exit(ret);
+    } else if (cid == 1) {
+        // cid == 1
+        core1_ret = core1_main(argc, argv);
+        notify_core_complete(1);
+        wait_for_all_cores();
+        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
+        exit(ret);
+    } else {
+        while (1);
+    }
+}
+
+int __attribute__((weak)) core0_main(uint64_t argc, char** argv) {
+    // Default implementation of core0_main, allows running regular single-core
+    // programs as before.
+    int ret = main(argc, argv);
+    print_counters();
+    return ret;
+}
+
+int __attribute__((weak)) core1_main(uint64_t argc, char** argv) {
+    return 0;
+}
+
+
+
+void print_counters() {
+  char buf[NUM_COUNTERS * 32] __attribute__((aligned(64)));
+  char* pbuf = buf;
+  for (int i = 0; i < NUM_COUNTERS; i++)
+    if (counters[i])
+      pbuf += sprintf(pbuf, "%s = %d\n", counter_names[i], counters[i]);
+  if (pbuf != buf)
+    printstr(buf);
 }
 
 int __attribute__((weak)) main(int argc, char** argv)
@@ -110,27 +245,33 @@ void _init(int cid, int nc)
   while (read_csr(0x057) == 0);
 
   init_tls();
+  if (cid == 0) {
+    uart_init();
+    getmainvars(&mainvars[0], MAX_ARGS_BYTES);
+    argc = mainvars[0];
+    argv = mainvars + 1;
+    if (argc == 0 || argv == 0) {
+      printf("Unable to parse program arguments.\n");
+      return -1;
+    }
+
+  } else {
+    // Wait for core 0 to set everything up
+    for (int i = 0; i < 15000; i++) {
+      asm volatile("nop");
+    }
+  }
   thread_entry(cid, nc);
-
   while (1);
-
-  // only single-threaded programs should ever get here.
-  // int ret = main(0, 0);
-
-  // char buf[NUM_COUNTERS * 32] __attribute__((aligned(64)));
-  // char* pbuf = buf;
-  // for (int i = 0; i < NUM_COUNTERS; i++)
-  //   if (counters[i])
-  //     pbuf += sprintf(pbuf, "%s = %d\n", counter_names[i], counters[i]);
-  // if (pbuf != buf)
-  //   printstr(buf);
-
-  // exit(ret);
 }
 
 #undef putchar
 int putchar(int ch)
 {
+  if (use_uart) {
+    uart_write_char(ch);
+    return 0;
+  }
   static __thread char buf[64] __attribute__((aligned(64)));
   static __thread int buflen = 0;
 
@@ -472,4 +613,51 @@ long atol(const char* str)
   }
 
   return sign ? -res : res;
+}
+
+// TODO: Reference linux source, borrowed from elsewhere to avoid having to link in the whole library.
+int inet_pton4 (const char *src, const char *end, unsigned char *dst)
+{
+  int saw_digit, octets, ch;
+  unsigned char tmp[4], *tp;
+  saw_digit = 0;
+  octets = 0;
+  *(tp = tmp) = 0;
+  while (src < end)
+    {
+      ch = *src++;
+      if (ch >= '0' && ch <= '9')
+        {
+          unsigned int new = *tp * 10 + (ch - '0');
+          if (saw_digit && *tp == 0)
+            return 0;
+          if (new > 255)
+            return 0;
+          *tp = new;
+          if (! saw_digit)
+            {
+              if (++octets > 4)
+                return 0;
+              saw_digit = 1;
+            }
+        }
+      else if (ch == '.' && saw_digit)
+        {
+          if (octets == 4)
+            return 0;
+          *++tp = 0;
+          saw_digit = 0;
+        }
+      else
+        return 0;
+    }
+  if (octets < 4)
+    return 0;
+  memcpy (dst, tmp, 4);
+  return 1;
+}
+
+uint32_t swap32(uint32_t in) {
+  // TODO: Did we add an instruction to do this?
+  return ((in >> 24) & 0x000000FF) | ((in << 24) & 0xFF000000) | ((in >> 8) & 0x0000FF00) | ((in << 8) & 0x00FF0000);
 }

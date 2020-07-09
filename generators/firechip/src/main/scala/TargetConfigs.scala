@@ -181,8 +181,13 @@ class FireSimArianeConfig extends Config(
 // L-NIC Rocket configs
 //*****************************************************************
 class FireSimLNICRocketConfig extends Config(
-  new WithDefaultFireSimBridges ++
+  new WithLNICFireSimBridges ++
   new WithDefaultMemModel ++
   new WithFireSimConfigTweaks ++
   new chipyard.LNICRocketConfig)
 
+class SupernodeFireSimLNICRocketConfig extends Config(
+  new WithNumNodes(4) ++
+  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 8L) ++ // 8 GB
+  new FireSimLNICRocketConfig
+)
