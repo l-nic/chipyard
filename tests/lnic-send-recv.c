@@ -6,6 +6,7 @@
 
 #define NUM_MSG_WORDS 600
 
+// Ring test
 uint32_t get_dst_ip(uint32_t nic_ip_addr) {
     if (nic_ip_addr == 0x0a000005) {
         return 0x0a000002;
@@ -26,6 +27,7 @@ uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
     }
 }
 
+// Pairwise loopback
 // uint32_t get_dst_ip(uint32_t nic_ip_addr) {
 //     if (nic_ip_addr == 0x0a000005) {
 //         return 0x0a000003;
@@ -153,7 +155,7 @@ for (int k = 0; k < 3; k++) {
             printf("Expected: data = %x, Received: data = %lx\n", i, data);
             //return -1;
         } else if (i >= 0x1fe) {
-            printf("got data %#lx\n", data);
+            // printf("got data %#lx\n", data);
         }
     }
     lnic_msg_done();
