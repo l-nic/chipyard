@@ -241,6 +241,9 @@ static void init_tls()
 
 void _init(int cid, int nc)
 {
+  // wait for lnicrdy CSR to be set
+  while (read_csr(0x057) == 0);
+
   init_tls();
   if (cid == 0) {
     uart_init();
@@ -252,10 +255,6 @@ void _init(int cid, int nc)
       return -1;
     }
 
-    // Wait for rx_msg_id_table to complete reset
-    for (int i = 0; i < 5000; i++) {
-      asm volatile("nop");
-    }
   } else {
     // Wait for core 0 to set everything up
     for (int i = 0; i < 15000; i++) {
