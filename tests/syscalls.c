@@ -241,9 +241,6 @@ static void init_tls()
 
 void _init(int cid, int nc)
 {
-  // wait for lnicrdy CSR to be set
-  while (read_csr(0x057) == 0);
-
   init_tls();
   if (cid == 0) {
     uart_init();
@@ -254,13 +251,14 @@ void _init(int cid, int nc)
       printf("Unable to parse program arguments.\n");
       return -1;
     }
-
   } else {
-    // Wait for core 0 to set everything up
-    for (int i = 0; i < 15000; i++) {
-      asm volatile("nop");
-    }
+    // TODO: do we need to wait for core 0 to set everything up?
+    asm volatile("nop");
   }
+
+  // wait for lnicrdy CSR to be set
+  while (read_csr(0x057) == 0);
+
   thread_entry(cid, nc);
   while (1);
 }

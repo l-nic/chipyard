@@ -11,25 +11,21 @@ class LNICReceiver(object):
     """
     Receive pkts and send ACK+PULL pkts.
     """
-    def __init__(self, iface, mac, ip, context):
+    def __init__(self, iface):
         # iface to send packets on
         self.iface = iface
 
-        self.mac = mac
-        self.ip = ip
-        self.context = context
-
-        # map {src_ip, src_port, tx_msg_id => ["pkt_0_data", ..., "pkt_N_data"]}
+        # map {dst_ip, dst_port, src_ip, src_port, tx_msg_id => ["pkt_0_data", ..., "pkt_N_data"]}
         self.buffers = {}
-        # bitmap to determine when all pkts have arrived, {src_ip, src_port, tx_msg_id => bitmap}
+        # bitmap to determine when all pkts have arrived, {dst_ip, dst_port, src_ip, src_port, tx_msg_id => bitmap}
         self.received = {}
 
-        # store list of all received msgs: [((src_ip, src_port, tx_msg_id), msg), ...]
+        # store list of all received msgs: [((dst_ip, dst_port, src_ip, src_port, tx_msg_id), msg), ...]
         self.msgs = []
 
     def process_pkt(self, p):
-        if p.haslayer(LNIC) and p[LNIC].flags.DATA and p[LNIC].dst_context == self.context:
-            msg_key = (p[IP].src, p[LNIC].src_context, p[LNIC].tx_msg_id)
+        if p.haslayer(LNIC) and p[LNIC].flags.DATA:
+            msg_key = (p[IP].dst, p[LNIC].dst_context, p[IP].src, p[LNIC].src_context, p[LNIC].tx_msg_id)
             offset = p[LNIC].pkt_offset
             num_pkts = compute_num_pkts(p[LNIC].msg_len)
             # assemble msgs
@@ -47,10 +43,10 @@ class LNICReceiver(object):
                 del self.received[msg_key]
             # send ACK+PULL
             pull_offset = p[LNIC].pkt_offset + RTT_PKTS
-            ack_pull = Ether(dst=p[Ether].src, src=self.mac) / \
-                       IP(dst=p[IP].src, src=self.ip) / \
+            ack_pull = Ether(dst=p[Ether].src, src=p[Ether].dst) / \
+                       IP(dst=p[IP].src, src=p[IP].dst) / \
                        LNIC(flags="ACK+PULL",
-                            src_context=self.context,
+                            src_context=p[LNIC].dst_context,
                             dst_context=p[LNIC].src_context,
                             msg_len=p[LNIC].msg_len,
                             pkt_offset=p[LNIC].pkt_offset,
@@ -59,6 +55,6 @@ class LNICReceiver(object):
                             buf_ptr=p[LNIC].buf_ptr,
                             buf_size_class=p[LNIC].buf_size_class) / \
                        Raw("\x00"*64)
-            print "Sending ACK+PULL: tx_msg_id={}, pkt_offset={}, pull_offset={}".format(ack_pull[LNIC].tx_msg_id, ack_pull[LNIC].pkt_offset, ack_pull[LNIC].pull_offset)
+            print "Sending ACK+PULL: {}".format(ack_pull.summary())
             sendp(ack_pull, iface=self.iface)
 
