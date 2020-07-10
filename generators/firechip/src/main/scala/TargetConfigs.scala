@@ -191,3 +191,34 @@ class SupernodeFireSimLNICRocketConfig extends Config(
   new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 8L) ++ // 8 GB
   new FireSimLNICRocketConfig
 )
+
+class FireSimLNICQuadRocketConfig extends Config(
+  new WithLNICFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.LNICQuadRocketConfig)
+
+class SupernodeFireSimLNICQuadRocketConfig extends Config(
+  new WithNumNodes(4) ++
+  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 8L) ++ // 8 GB
+  new FireSimLNICQuadRocketConfig
+)
+
+class FireSimLNICOctaRocketConfig extends Config(
+  new WithLNICFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.LNICOctaRocketConfig)
+
+class FireSimLNICSixteenCoreRocketConfig extends Config(
+  new WithLNICFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.LNICSixteenCoreRocketConfig)
+
+class FireSimLNICThirtyTwoCoreRocketConfig extends Config(
+  new WithLNICFireSimBridges ++
+  new WithDefaultMemModel ++
+  new WithFireSimConfigTweaks ++
+  new chipyard.LNICThirtyTwoCoreRocketConfig)
+
