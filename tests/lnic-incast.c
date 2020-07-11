@@ -5,7 +5,7 @@
 
 #include "lnic.h"
 
-#define NUM_MSG_WORDS 100
+#define NUM_MSG_WORDS 600
 #define NUM_SENT_MESSAGES_PER_LEAF 3
 #define FINISH_STALL_CYCLES 10000
 
