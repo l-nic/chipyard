@@ -5,13 +5,13 @@
 
 #include "lnic.h"
 
-#define NUM_MSG_WORDS 600
+#define NUM_MSG_WORDS 100
 #define NUM_SENT_MESSAGES_PER_LEAF 3
 #define FINISH_STALL_CYCLES 10000
 
 #define NUM_LEAVES 3
-uint32_t root_addr = 0x0a000002;
-uint32_t leaf_addrs[NUM_LEAVES] = {0x0a000003, 0x0a000004, 0x0a000005};
+uint64_t root_addr = 0x0a000002;
+uint64_t leaf_addrs[NUM_LEAVES] = {0x0a000003, 0x0a000004, 0x0a000005};
 
 bool valid_leaf_addr(uint32_t nic_ip_addr) {
     for (int i = 0; i < NUM_LEAVES; i++) {
@@ -80,8 +80,8 @@ int main(int argc, char** argv)
         // This is the root node
         // Receive inbound messages from all leaves
         printf("Starting root node %#lx\n", nic_ip_addr);
-        for (int i = 0; i < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF; i++) {
-            printf("Receiving message %d of %d\n", i, NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF);
+        for (int j = 0; j < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF; j++) {
+            printf("Receiving message %d of %d\n", j, NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF);
             lnic_wait();
             app_hdr = lnic_read();
             printf("Past wait with header %#lx\n", app_hdr);
@@ -118,17 +118,20 @@ int main(int argc, char** argv)
         }
 
         // Send one outbound message to each leaf node
-        for (int i = 0; i < NUM_LEAVES; i++) {
-            printf("Sending message\n");
+        for (int j = 0; j < NUM_LEAVES; j++) {
+            //printf("Sending message\n");
             dst_context = 0;
-            app_hdr = (leaf_addrs[i] << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
+            app_hdr = ((uint64_t)leaf_addrs[j] << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
             lnic_write_r(app_hdr);
             for (i = 0; i < NUM_MSG_WORDS; i++) {
                 lnic_write_r(i);
             }
         }
         printf("Root program finished.\n");
-        stall_cycles(FINISH_STALL_CYCLES);
+        for (int i = 0; i < 10; i++) {
+            printf("Stalling...\n");
+        }
+        stall_cycles(100000);
         return 0;
     } else {
         if (!valid_leaf_addr(nic_ip_addr)) {
@@ -139,7 +142,7 @@ int main(int argc, char** argv)
         // Send outbound messages
         printf("Starting leaf node %#lx\n", nic_ip_addr);
         for (int j = 0; j < NUM_SENT_MESSAGES_PER_LEAF; j++) {
-            printf("Sending message\n");
+            //printf("Sending message\n");
             // Send the msg
             dst_context = 0;
             app_hdr = (root_addr << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
