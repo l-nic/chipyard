@@ -27,6 +27,7 @@ PROGRAMS += lnic-send-recv
 PROGRAMS += multiple_cores
 PROGRAMS += lnic-multi-core
 PROGRAMS += lnic-multi-core-different-services
+PROGRAMS += lnic-incast
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
