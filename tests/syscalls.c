@@ -50,6 +50,13 @@ extern volatile uint64_t fromhost;
 
 uint32_t use_uart = 0;
 
+uint64_t init_lock = 0;
+uint64_t print_lock = 0;
+bool did_init = false;
+int core_global_ret = 0;
+uint64_t exit_lock = 0;
+uint64_t num_exited = 0;
+
 void uart_init() {
   reg_write32(UART_BASE_ADDR + UART_TX_CTRL, UART_TX_EN);    
   reg_write32(UART_BASE_ADDR + UART_DIV, UART_DIVISOR);
@@ -169,47 +176,58 @@ void wait_for_all_cores() {
      } while (!all_cores_complete);
 }
 
+bool __attribute__((weak)) is_single_core()
+{
+  return true;
+}
+
 void __attribute__((weak)) thread_entry(int cid, int nc) {
-    if (nc != 2 || NCORES != 2) {
-        if (cid == 0) {
-            printf("This program requires 2 cores but was given %d\n", nc);
-        }
-        return;
-    }
+  if (nc != 4 || NCORES != 4) {
+      if (cid == 0) {
+          printf("This program requires 4 cores but was given %d\n", nc);
+      }
+      return;
+  }
 
-    int core0_ret = 0;
-    int core1_ret = 0;
+  int core_local_ret = 0;
+
+  if (is_single_core()) {
+    // Support programs that just define a regular main()
     if (cid == 0) {
-        core0_ret = core0_main(argc, argv);
-        notify_core_complete(0);
-        wait_for_all_cores();
-        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
-        exit(ret);
-    } else if (cid == 1) {
-        // cid == 1
-        core1_ret = core1_main(argc, argv);
-        notify_core_complete(1);
-        wait_for_all_cores();
-        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
-        exit(ret);
+      core_local_ret = main(argc, argv);
+      print_counters();
+      exit(core_local_ret);
     } else {
-        while (1);
+      while (1);
     }
+  } else {
+    // Support multicore programs
+    core_local_ret = core_main(cid, nc, argc, argv);
+    lock_acquire(&exit_lock);
+    core_global_ret |= (core_local_ret & 0xFF) << (8*cid);
+    num_exited++;
+    lock_release(&exit_lock);
+
+    while (1) {
+      lock_acquire(&exit_lock);
+      if (num_exited == NCORES) {
+        exit(core_global_ret);
+      } else {
+        lock_release(&exit_lock);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
+  }
+
+  // Should never get here
+  exit(-1);
 }
 
-int __attribute__((weak)) core0_main(uint64_t argc, char** argv) {
-    // Default implementation of core0_main, allows running regular single-core
-    // programs as before.
-    int ret = main(argc, argv);
-    print_counters();
-    return ret;
-}
-
-int __attribute__((weak)) core1_main(uint64_t argc, char** argv) {
+int __attribute__((weak)) core_main(int cid, int nc, uint64_t argc, char** argv) {
     return 0;
 }
-
-
 
 void print_counters() {
   char buf[NUM_COUNTERS * 32] __attribute__((aligned(64)));
@@ -239,28 +257,58 @@ static void init_tls()
   memset(thread_pointer + tdata_size, 0, tbss_size);
 }
 
+
+// Basic spinlock implementation
+// Don't use this in any nanoservices -- this is just for setup and teardown.
+void lock_acquire(uint64_t* lock) {
+  asm volatile("li t0, 1 \n \
+                label%=: \n\t \
+                amoswap.w.aq t0, t0, (a0) \n\t \
+                bnez t0, label%=" : "=r"(lock));
+}
+
+void lock_release(uint64_t* lock) {
+  asm volatile("amoswap.w.rl x0, x0, (a0)");
+}
+
 void _init(int cid, int nc)
 {
   init_tls();
   if (cid == 0) {
+    lock_acquire(&init_lock);
     uart_init();
     getmainvars(&mainvars[0], MAX_ARGS_BYTES);
     argc = mainvars[0];
     argv = mainvars + 1;
     if (argc == 0 || argv == 0) {
       printf("Unable to parse program arguments.\n");
-      return -1;
+      exit(-1);
     }
+    did_init = true;
+    lock_release(&init_lock);
   } else {
-    // TODO: do we need to wait for core 0 to set everything up?
-    asm volatile("nop");
+    // A really bad fake condition variable wait
+    while (1) {
+      lock_acquire(&init_lock);
+      if (did_init) {
+        lock_release(&init_lock);
+        break;
+      } else {
+        lock_release(&init_lock);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
   }
 
   // wait for lnicrdy CSR to be set
   while (read_csr(0x057) == 0);
 
   thread_entry(cid, nc);
-  while (1);
+
+  // We should never get here
+  exit(-1);
 }
 
 #undef putchar
@@ -492,12 +540,14 @@ static void vprintfmt(void (*putch)(int, void**), void **putdat, const char *fmt
 
 int printf(const char* fmt, ...)
 {
+  //lock_acquire(&print_lock);
   va_list ap;
   va_start(ap, fmt);
 
   vprintfmt((void*)putchar, 0, fmt, ap);
 
   va_end(ap);
+  //lock_release(&print_lock);
   return 0; // incorrect return value, but who cares, anyway?
 }
 
