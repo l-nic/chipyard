@@ -25,7 +25,6 @@ int core_main(int cid, int nc, uint64_t argc, char** argv) {
 
 }
 
-
 // #define NUM_MSG_WORDS 400
 
 // uint32_t get_dst_ip(uint32_t nic_ip_addr) {

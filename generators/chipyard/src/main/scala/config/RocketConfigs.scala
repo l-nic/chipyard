@@ -442,6 +442,10 @@ class LNICSimNetworkRocketConfig extends Config(
   new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
   new LNICRocketConfig)
 
+class LNICSimNetworkQuadRocketConfig extends Config(
+  new chipyard.iobinders.WithSimNetwork ++
+  new LNICQuadRocketConfig)
+
 // DOC include start: scratchpadrocket
 class ScratchpadRocketConfig extends Config(
   new chipyard.iobinders.WithUARTAdapter ++

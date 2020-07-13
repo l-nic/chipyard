@@ -40,7 +40,7 @@ uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
 uint64_t argc;
 char ** argv;
 
-#define NCORES 2
+#define NCORES 4
 int core_complete[NCORES];
 
 #undef strcmp
@@ -50,12 +50,47 @@ extern volatile uint64_t fromhost;
 
 uint32_t use_uart = 0;
 
-uint64_t init_lock = 0;
-uint64_t print_lock = 0;
 bool did_init = false;
 int core_global_ret = 0;
-uint64_t exit_lock = 0;
 uint64_t num_exited = 0;
+
+typedef struct {
+  volatile unsigned int lock;
+} arch_spinlock_t;
+
+#define arch_spin_is_locked(x) ((x)->lock != 0)
+
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+  asm volatile (
+    "amoswap.w.rl x0, x0, %0"
+    : "=A" (lock->lock)
+    :: "memory"
+    );
+}
+
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
+  int tmp = 1, busy;
+  asm volatile (
+    "amoswap.w.aq %0, %2, %1"
+    : "=r"(busy), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return !busy;
+}
+
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
+  while (1) {
+    if (arch_spin_is_locked(lock)) {
+      continue;
+    }
+    if (arch_spin_trylock(lock)) {
+      break;
+    }
+  }
+}
+
+arch_spinlock_t init_lock, exit_lock, print_lock;
 
 void uart_init() {
   reg_write32(UART_BASE_ADDR + UART_TX_CTRL, UART_TX_EN);    
@@ -194,26 +229,29 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
   if (is_single_core()) {
     // Support programs that just define a regular main()
     if (cid == 0) {
+      //printf("Starting normal main with argc at %#lx\n", &argc);
       core_local_ret = main(argc, argv);
       print_counters();
       exit(core_local_ret);
     } else {
+      //printf("Halting thread %d\n", cid);
       while (1);
     }
   } else {
     // Support multicore programs
     core_local_ret = core_main(cid, nc, argc, argv);
-    lock_acquire(&exit_lock);
+    arch_spin_lock(&exit_lock);
     core_global_ret |= (core_local_ret & 0xFF) << (8*cid);
     num_exited++;
-    lock_release(&exit_lock);
+    arch_spin_unlock(&exit_lock);
 
     while (1) {
-      lock_acquire(&exit_lock);
+      arch_spin_lock(&exit_lock);
+      //printf("num exited is %d\n", num_exited);
       if (num_exited == NCORES) {
         exit(core_global_ret);
       } else {
-        lock_release(&exit_lock);
+        arch_spin_unlock(&exit_lock);
         for (int i = 0; i < 1000; i++) {
           asm volatile("nop");
         }
@@ -258,24 +296,39 @@ static void init_tls()
 }
 
 
+// int trylock(uint64_t* lock) {
+//   uint64_t tmp = 1;
+//   asm volatile (
+//     "amoswap.w.aq "
+//     )
+// }
 // Basic spinlock implementation
 // Don't use this in any nanoservices -- this is just for setup and teardown.
-void lock_acquire(uint64_t* lock) {
-  asm volatile("li t0, 1 \n \
-                label%=: \n\t \
-                amoswap.w.aq t0, t0, (a0) \n\t \
-                bnez t0, label%=" : "=r"(lock));
-}
+// void __attribute__ ((noinline)) lock_acquire(uint64_t* lock) {
+//   asm volatile("li t0, 1 \n \
+//                 .align 3 \n \
+//                 label%=: \n\t \
+//                 amoswap.w.aq t0, t0, (a0) \n\t \
+//                 bnez t0, label%=" : "=r"(lock));
+//   // while (1) {
+//   //   if (*lock != 0) {
+//   //     continue;
+//   //   }
+//   //   if (trylock(lock)) {
+//   //     break;
+//   //   }
+//   // }
+// }
 
-void lock_release(uint64_t* lock) {
-  asm volatile("amoswap.w.rl x0, x0, (a0)");
-}
+// void __attribute__ ((noinline)) lock_release(uint64_t* lock) {
+//   asm volatile("amoswap.w.rl x0, x0, (a0)" :"=r"(lock));
+// }
+
 
 void _init(int cid, int nc)
 {
   init_tls();
   if (cid == 0) {
-    lock_acquire(&init_lock);
     uart_init();
     getmainvars(&mainvars[0], MAX_ARGS_BYTES);
     argc = mainvars[0];
@@ -284,22 +337,27 @@ void _init(int cid, int nc)
       printf("Unable to parse program arguments.\n");
       exit(-1);
     }
+    //printf("Getting lock\n");
+    arch_spin_lock(&init_lock);
+    //printf("got lock\n");
     did_init = true;
-    lock_release(&init_lock);
+    arch_spin_unlock(&init_lock);
   } else {
-    // A really bad fake condition variable wait
+    // // A really bad fake condition variable wait
     while (1) {
-      lock_acquire(&init_lock);
+      //printf("in loop acquiring lock\n");
+      arch_spin_lock(&init_lock);
       if (did_init) {
-        lock_release(&init_lock);
+        arch_spin_unlock(&init_lock);
         break;
       } else {
-        lock_release(&init_lock);
+        arch_spin_unlock(&init_lock);
         for (int i = 0; i < 1000; i++) {
           asm volatile("nop");
         }
       }
     }
+    //printf("thread %d continuing\n", cid);
   }
 
   // wait for lnicrdy CSR to be set
