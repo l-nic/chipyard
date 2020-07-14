@@ -62,12 +62,7 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
     int num_words;
     int i;
 
-    printf("Program starting...\n");
-
-    if (context_id == 1) {
-        printf("Context id 1 exiting\n");
-        return 0;
-    }
+    printf("Core %d, context %d, program starting...\n", cid, context_id);
     
     if (prepare_printing(argc, argv) < 0) {
         return -1;
@@ -93,9 +88,6 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
         printf("Could not find valid correct sender ip\n");
         return -1;
     }
-
-    printf("Core id is %d\n", cid);
-    printf("Context id is %d\n", context_id);
 
     for (int j = 0; j < 1; j++) {
         // Send the msg
@@ -154,14 +146,11 @@ int core_main(int argc, char** argv, int cid, int nc) {
         return 0;
     }
     scheduler_init();
-    printf("Core %d starting thread 0\n", cid);
     start_thread(app_main, 0, 0);
-    printf("Core %d starting thread 1\n", cid);
     start_thread(app_main, 1, 0);
-    printf("Core %d running scheduler\n", cid);
     scheduler_run();
-    printf("Core %d falling through again\n", cid);
     // Should never reach here, since the scheduler isn't aware that this thread exists.
     // User threads should exit by returning.
+    printf("Invalid control return to main function.\n");
     return -1;
 }

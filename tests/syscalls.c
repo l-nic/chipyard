@@ -166,7 +166,6 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
       thread_failed[hart_id] = -1;
     }
     arch_spin_unlock(&thread_lock[hart_id]);
-    printf("core %d app %d entering join\n", cid, context_id);
     // Join all threads on this core
     while (1) {
       arch_spin_lock(&thread_lock[hart_id]);
@@ -180,7 +179,6 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
         }
       }
     }
-    printf("core %d app %d entering stall\n", cid, context_id);
 
     // Stall all threads but one
     if (context_id != 0) {
@@ -188,7 +186,6 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
     }
 
     // Join all other cores
-    printf("Core %d exiting with old num %d\n", cid, num_exited);
     arch_spin_lock(&exit_lock);
     core_global_ret |= (thread_failed[hart_id] & 0xFF) << (8*cid);
     num_exited++;
@@ -236,7 +233,6 @@ void scheduler_init() {
 }
 
 void scheduler_run() {
-  printf("Hart %d beginning run\n", read_csr(mhartid));
   // Turn on the timer interrupts and wait for the scheduler to start
   csr_write(0x53, MAX_THREADS); // Set the main thread's id to an illegal value
 
@@ -246,7 +242,6 @@ void scheduler_run() {
   uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
   uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO + (read_csr(mhartid) << 3); // One eight-byte word offset per hart id
   *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
-  printf("starting wait hart %d\n", read_csr(mhartid));
   csr_set(mie, LNIC_INT_ENABLE);
   csr_set(mie, TIMER_INT_ENABLE);
   asm volatile ("wfi");
