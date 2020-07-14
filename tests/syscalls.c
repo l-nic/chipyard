@@ -598,14 +598,14 @@ static void vprintfmt(void (*putch)(int, void**), void **putdat, const char *fmt
 
 int printf(const char* fmt, ...)
 {
-  //lock_acquire(&print_lock);
+  arch_spin_lock(&print_lock);
   va_list ap;
   va_start(ap, fmt);
 
   vprintfmt((void*)putchar, 0, fmt, ap);
 
   va_end(ap);
-  //lock_release(&print_lock);
+  arch_spin_unlock(&print_lock);
   return 0; // incorrect return value, but who cares, anyway?
 }
 
