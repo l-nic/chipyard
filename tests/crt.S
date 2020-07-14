@@ -206,6 +206,11 @@ valid:
   csrr x1, 0x59 # Read target priority
   csrw 0x55, x1 # Update current priority
   csrr x1, 0x58 # Read target context id
+  li x3, MAX_THREADS # Check to see if this is the main thread
+  bne x1, x3, adjusted_context
+  mv x1, zero
+
+adjusted_context:
   csrw 0x53, x1 # Update current context id
   addi x1, x1, 0x1 # Adjust for one-offset in threads
   slli x1, x1, 0x8 # Account for thread struct size

@@ -63,6 +63,11 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
     int i;
 
     printf("Program starting...\n");
+
+    if (context_id == 1) {
+        printf("Context id 1 exiting\n");
+        return 1;
+    }
     
     if (prepare_printing(argc, argv) < 0) {
         return -1;
@@ -141,7 +146,6 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
         asm volatile("nop");
     }
     printf("Send recv program complete\n");
-    while (1);
     return 0;
 }
 
@@ -151,6 +155,6 @@ int main(int argc, char** argv) {
     start_thread(app_main, 1, 0);
     scheduler_run(); 
     // Should never reach here, since the scheduler isn't aware that this thread exists.
-    // Actual exit needs to be handled by the user threads.
+    // User threads should exit by returning.
     return -1;
 }

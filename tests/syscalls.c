@@ -56,6 +56,13 @@ bool did_init = false;
 int core_global_ret = 0;
 uint64_t num_exited = 0;
 
+uint64_t num_threads_exited = 0;
+
+bool __attribute__((weak)) is_single_core()
+{
+  return true;
+}
+
 typedef struct {
   volatile unsigned int lock;
 } arch_spinlock_t;
@@ -95,6 +102,7 @@ static inline void arch_spin_lock(arch_spinlock_t* lock) {
 }
 
 arch_spinlock_t init_lock, exit_lock, print_lock;
+arch_spinlock_t thread_lock;
 
 // Kernel thread structure
 struct thread_t {
@@ -119,9 +127,32 @@ struct thread_t* new_thread() {
   return next_thread;
 }
 
+void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority, int (*target)(uint64_t, char**, int, int, uint64_t, uint64_t)) {
+  if (is_single_core()) {
+    int retval = target(argc, argv, cid, nc, context_id, priority);
+    printf("Core %d application %d exited with code %d\n", cid, context_id, retval);
+    arch_spin_lock(&thread_lock);
+    num_threads_exited++;
+    arch_spin_unlock(&thread_lock);
+    while (1) {
+      arch_spin_lock(&thread_lock);
+      if (num_threads_exited == num_threads - 1) {
+        exit(0);
+      } else {
+        arch_spin_unlock(&thread_lock);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
+  } else {
+    exit(-1);
+  }
+}
+
 void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   struct thread_t* thread = new_thread();
-  thread->epc = target;
+  thread->epc = app_wrapper;
   lnic_add_context(id, priority);
   volatile uint64_t sp, gp, tp;
   asm volatile("mv %0, sp" : "=r"(sp));
@@ -136,6 +167,7 @@ void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   thread->regs[REG_A3] = NCORES;
   thread->regs[REG_A4] = id;
   thread->regs[REG_A5] = priority;
+  thread->regs[REG_A6] = target;
 }
 
 void scheduler_init() {
@@ -147,11 +179,11 @@ void scheduler_init() {
 
 void scheduler_run() {
   // Turn on the timer interrupts and wait for the scheduler to start
-  csr_write(0x53, num_threads - 1); // Set the main thread's id to an illegal value
-  csr_write(0x55, num_threads - 1); // Set the main thread's priority to a low value 
+  csr_write(0x53, MAX_THREADS); // Set the main thread's id to an illegal value
+  csr_write(0x55, MAX_THREADS); // Set the main thread's priority to a low value 
   // This will keep it from being re-scheduled.
   csr_set(mie, LNIC_INT_ENABLE);
-  csr_clear(mie, TIMER_INT_ENABLE);
+  csr_set(mie, TIMER_INT_ENABLE);
   asm volatile ("wfi");
 }
 
@@ -258,11 +290,6 @@ void printstr(const char* s)
   syscall(SYS_write, 1, (uintptr_t)s, strlen(s));
 }
 
-bool __attribute__((weak)) is_single_core()
-{
-  return true;
-}
-
 void __attribute__((weak)) thread_entry(int cid, int nc) {
   if (nc != 4 || NCORES != 4) {
       if (cid == 0) {
@@ -285,6 +312,7 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
   } else {
     // Support multicore programs
     core_local_ret = core_main(argc, argv, cid, nc);
+    printf("Core %d exited with code %d\n", cid, core_local_ret);
     arch_spin_lock(&exit_lock);
     core_global_ret |= (core_local_ret & 0xFF) << (8*cid);
     num_exited++;

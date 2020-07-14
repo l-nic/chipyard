@@ -28,6 +28,7 @@
 #define REG_A3 13
 #define REG_A4 14
 #define REG_A5 15
+#define REG_A6 16
 #define STACK_SIZE_BYTES 1024
 
 // CSR modification macros
