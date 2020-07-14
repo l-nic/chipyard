@@ -65,12 +65,16 @@ int prepare_printing(int argc, char** argv) {
     return 0;
 }
 
-void core_main(int cid, int nc, int argc, char** argv) {
+int core_main(int cid, int nc, int argc, char** argv) {
     uint64_t app_hdr;
     uint64_t dst_ip;
     uint64_t dst_context;
     int num_words;
     int i;
+
+    if (cid >= 2) {
+        return 0;
+    }
 
     printf("Program starting...\n");
     
@@ -102,7 +106,7 @@ void core_main(int cid, int nc, int argc, char** argv) {
     printf("Core id is %d\n", cid);
 
     uint64_t context_id = cid;
-    uint64_t priority = cid;
+    uint64_t priority = 0;
     lnic_add_context(context_id, priority);
 
     for (int j = 0; j < 1; j++) {
