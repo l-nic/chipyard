@@ -56,7 +56,7 @@ bool did_init = false;
 int core_global_ret = 0;
 uint64_t num_exited = 0;
 
-uint64_t num_threads_exited = 0;
+uint64_t num_threads_exited[NCORES];
 
 bool __attribute__((weak)) is_single_core()
 {
@@ -102,7 +102,7 @@ static inline void arch_spin_lock(arch_spinlock_t* lock) {
 }
 
 arch_spinlock_t init_lock, exit_lock, print_lock;
-arch_spinlock_t thread_lock;
+arch_spinlock_t thread_lock[NCORES];
 
 // Kernel thread structure
 struct thread_t {
@@ -112,17 +112,18 @@ struct thread_t {
 } __attribute__((packed));
 
 // Thread metadata storage in global state
-struct thread_t threads[MAX_THREADS + 2]; // Extra one for dummy main thread, and another because index 0 is reserved for asm scratch space
-uint64_t num_threads = 1;
+struct thread_t threads[NCORES][MAX_THREADS + 2]; // Extra one for dummy main thread, and another because index 0 is reserved for asm scratch space
+uint64_t num_threads[NCORES];
 
 struct thread_t* new_thread() {
+  uint64_t hart_id = csr_read(mhartid);
   csr_clear(mie, TIMER_INT_ENABLE);
-  if (num_threads == MAX_THREADS) {
+  if (num_threads[hart_id] == MAX_THREADS) {
     exit(ERR_THREADS_EXHAUSTED);
   }
-  struct thread_t* next_thread = &threads[num_threads];
+  struct thread_t* next_thread = &threads[hart_id][num_threads[hart_id]];
   next_thread->epc = 0;
-  num_threads++;
+  num_threads[hart_id]++;
   csr_set(mie, TIMER_INT_ENABLE);
   return next_thread;
 }
@@ -131,15 +132,16 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
   if (is_single_core()) {
     int retval = target(argc, argv, cid, nc, context_id, priority);
     printf("Core %d application %d exited with code %d\n", cid, context_id, retval);
-    arch_spin_lock(&thread_lock);
-    num_threads_exited++;
-    arch_spin_unlock(&thread_lock);
+    uint64_t hart_id = csr_read(mhartid);
+    arch_spin_lock(&thread_lock[hart_id]);
+    num_threads_exited[hart_id]++;
+    arch_spin_unlock(&thread_lock[hart_id]);
     while (1) {
-      arch_spin_lock(&thread_lock);
-      if (num_threads_exited == num_threads - 1) {
+      arch_spin_lock(&thread_lock[hart_id]);
+      if (num_threads_exited[hart_id] == num_threads[hart_id] - 1) {
         exit(0);
       } else {
-        arch_spin_unlock(&thread_lock);
+        arch_spin_unlock(&thread_lock[hart_id]);
         for (int i = 0; i < 1000; i++) {
           asm volatile("nop");
         }
@@ -171,10 +173,12 @@ void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
 }
 
 void scheduler_init() {
+  printf("Starting scheduler for hart %d\n", read_csr(mhartid));
   uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
-  uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
+  uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO + read_csr(mhartid); // One eight-byte word offset per hart id
   *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
-  csr_write(mscratch, &threads[0]); // mscratch now holds thread base addr
+  num_threads[read_csr(mhartid)] = 1;
+  csr_write(mscratch, &threads[read_csr(mhartid)][0]); // mscratch now holds thread base addr
 }
 
 void scheduler_run() {
@@ -184,6 +188,7 @@ void scheduler_run() {
   // This will keep it from being re-scheduled.
   csr_set(mie, LNIC_INT_ENABLE);
   csr_set(mie, TIMER_INT_ENABLE);
+  printf("starting wait\n");
   asm volatile ("wfi");
 }
 
@@ -305,6 +310,7 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
     if (cid == 0) {
       core_local_ret = main(argc, argv);
       print_counters();
+      printf("Core %d (only core) exited with code %d\n", cid, core_local_ret);
       exit(core_local_ret);
     } else {
       while (1);

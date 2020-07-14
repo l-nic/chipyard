@@ -245,10 +245,13 @@ adjusted_context:
   LREG x29, 29*REGBYTES(x1)
 
   # Reset the timer interrupt
+  li x2, MTIMECMP_PTR_LO
+  csrr x3, mhartid # Account for timer offset due to hartid
+  slli x3, x3, 3
+  add x2, x2, x3
   li x3, MTIME_PTR_LO
   LREG x3, 0(x3)
   addi x3, x3, TIME_SLICE_RTC_TICKS
-  li x2, MTIMECMP_PTR_LO
   SREG x3, 0(x2)
   
 
