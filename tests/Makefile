@@ -28,6 +28,7 @@ PROGRAMS += multiple_cores
 PROGRAMS += lnic-multi-core
 PROGRAMS += lnic-multi-core-different-services
 PROGRAMS += lnic-incast
+PROGRAMS += lnic-single-core-multi-thread
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

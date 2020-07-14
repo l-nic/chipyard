@@ -22,6 +22,12 @@
 #define REG_SP 2
 #define REG_GP 3
 #define REG_TP 4
+#define REG_A0 10
+#define REG_A1 11
+#define REG_A2 12
+#define REG_A3 13
+#define REG_A4 14
+#define REG_A5 15
 #define STACK_SIZE_BYTES 1024
 
 // CSR modification macros

@@ -9,6 +9,8 @@
 #include <sys/signal.h>
 #include "util.h"
 #include "mmio.h"
+#include "lnic-scheduler.h"
+#include "lnic.h"
 
 #define SYS_read  63
 #define SYS_write 64
@@ -81,6 +83,8 @@ static inline int arch_spin_trylock(arch_spinlock_t* lock) {
 
 static inline void arch_spin_lock(arch_spinlock_t* lock) {
   while (1) {
+    // Thread is idle if locked
+    write_csr(0x056, 2);
     if (arch_spin_is_locked(lock)) {
       continue;
     }
@@ -91,6 +95,65 @@ static inline void arch_spin_lock(arch_spinlock_t* lock) {
 }
 
 arch_spinlock_t init_lock, exit_lock, print_lock;
+
+// Kernel thread structure
+struct thread_t {
+  uintptr_t regs[NUM_REGS];
+  uintptr_t epc;
+  uintptr_t padding;
+} __attribute__((packed));
+
+// Thread metadata storage in global state
+struct thread_t threads[MAX_THREADS + 2]; // Extra one for dummy main thread, and another because index 0 is reserved for asm scratch space
+uint64_t num_threads = 1;
+
+struct thread_t* new_thread() {
+  csr_clear(mie, TIMER_INT_ENABLE);
+  if (num_threads == MAX_THREADS) {
+    exit(ERR_THREADS_EXHAUSTED);
+  }
+  struct thread_t* next_thread = &threads[num_threads];
+  next_thread->epc = 0;
+  num_threads++;
+  csr_set(mie, TIMER_INT_ENABLE);
+  return next_thread;
+}
+
+void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
+  struct thread_t* thread = new_thread();
+  thread->epc = target;
+  lnic_add_context(id, priority);
+  volatile uint64_t sp, gp, tp;
+  asm volatile("mv %0, sp" : "=r"(sp));
+  asm volatile("mv %0, gp" : "=r"(gp));
+  asm volatile("mv %0, tp" : "=r"(tp));
+  thread->regs[REG_SP] = sp - STACK_SIZE_BYTES * (1 + id);
+  thread->regs[REG_GP] = gp;
+  thread->regs[REG_TP] = tp;
+  thread->regs[REG_A0] = argc;
+  thread->regs[REG_A1] = argv;
+  thread->regs[REG_A2] = csr_read(mhartid);
+  thread->regs[REG_A3] = NCORES;
+  thread->regs[REG_A4] = id;
+  thread->regs[REG_A5] = priority;
+}
+
+void scheduler_init() {
+  uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
+  uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO;
+  *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
+  csr_write(mscratch, &threads[0]); // mscratch now holds thread base addr
+}
+
+void scheduler_run() {
+  // Turn on the timer interrupts and wait for the scheduler to start
+  csr_write(0x53, num_threads - 1); // Set the main thread's id to an illegal value
+  csr_write(0x55, num_threads - 1); // Set the main thread's priority to a low value 
+  // This will keep it from being re-scheduled.
+  csr_set(mie, LNIC_INT_ENABLE);
+  csr_clear(mie, TIMER_INT_ENABLE);
+  asm volatile ("wfi");
+}
 
 void uart_init() {
   reg_write32(UART_BASE_ADDR + UART_TX_CTRL, UART_TX_EN);    
@@ -195,22 +258,6 @@ void printstr(const char* s)
   syscall(SYS_write, 1, (uintptr_t)s, strlen(s));
 }
 
-void notify_core_complete(int cid) {
-    core_complete[cid] = true;
-}
-
-void wait_for_all_cores() {
-    bool all_cores_complete = true;
-    do {
-        all_cores_complete = true;
-        for (int i = 0; i < NCORES; i++) {
-            if (!core_complete[i]) {
-                all_cores_complete = false;
-            }
-        }
-     } while (!all_cores_complete);
-}
-
 bool __attribute__((weak)) is_single_core()
 {
   return true;
@@ -229,17 +276,15 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
   if (is_single_core()) {
     // Support programs that just define a regular main()
     if (cid == 0) {
-      //printf("Starting normal main with argc at %#lx\n", &argc);
       core_local_ret = main(argc, argv);
       print_counters();
       exit(core_local_ret);
     } else {
-      //printf("Halting thread %d\n", cid);
       while (1);
     }
   } else {
     // Support multicore programs
-    core_local_ret = core_main(cid, nc, argc, argv);
+    core_local_ret = core_main(argc, argv, cid, nc);
     arch_spin_lock(&exit_lock);
     core_global_ret |= (core_local_ret & 0xFF) << (8*cid);
     num_exited++;
@@ -247,7 +292,6 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
 
     while (1) {
       arch_spin_lock(&exit_lock);
-      //printf("num exited is %d\n", num_exited);
       if (num_exited == NCORES) {
         exit(core_global_ret);
       } else {
@@ -263,7 +307,7 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
   exit(-1);
 }
 
-int __attribute__((weak)) core_main(int cid, int nc, uint64_t argc, char** argv) {
+int __attribute__((weak)) core_main(uint64_t argc, char** argv, int cid, int nc) {
     return 0;
 }
 
@@ -295,36 +339,6 @@ static void init_tls()
   memset(thread_pointer + tdata_size, 0, tbss_size);
 }
 
-
-// int trylock(uint64_t* lock) {
-//   uint64_t tmp = 1;
-//   asm volatile (
-//     "amoswap.w.aq "
-//     )
-// }
-// Basic spinlock implementation
-// Don't use this in any nanoservices -- this is just for setup and teardown.
-// void __attribute__ ((noinline)) lock_acquire(uint64_t* lock) {
-//   asm volatile("li t0, 1 \n \
-//                 .align 3 \n \
-//                 label%=: \n\t \
-//                 amoswap.w.aq t0, t0, (a0) \n\t \
-//                 bnez t0, label%=" : "=r"(lock));
-//   // while (1) {
-//   //   if (*lock != 0) {
-//   //     continue;
-//   //   }
-//   //   if (trylock(lock)) {
-//   //     break;
-//   //   }
-//   // }
-// }
-
-// void __attribute__ ((noinline)) lock_release(uint64_t* lock) {
-//   asm volatile("amoswap.w.rl x0, x0, (a0)" :"=r"(lock));
-// }
-
-
 void _init(int cid, int nc)
 {
   init_tls();
@@ -337,15 +351,12 @@ void _init(int cid, int nc)
       printf("Unable to parse program arguments.\n");
       exit(-1);
     }
-    //printf("Getting lock\n");
     arch_spin_lock(&init_lock);
-    //printf("got lock\n");
     did_init = true;
     arch_spin_unlock(&init_lock);
   } else {
     // // A really bad fake condition variable wait
     while (1) {
-      //printf("in loop acquiring lock\n");
       arch_spin_lock(&init_lock);
       if (did_init) {
         arch_spin_unlock(&init_lock);
@@ -357,7 +368,6 @@ void _init(int cid, int nc)
         }
       }
     }
-    //printf("thread %d continuing\n", cid);
   }
 
   // wait for lnicrdy CSR to be set

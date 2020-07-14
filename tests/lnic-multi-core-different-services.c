@@ -65,7 +65,7 @@ int prepare_printing(int argc, char** argv) {
     return 0;
 }
 
-int core_main(int cid, int nc, int argc, char** argv) {
+int core_main(int argc, char** argv, int cid, int nc) {
     uint64_t app_hdr;
     uint64_t dst_ip;
     uint64_t dst_context;

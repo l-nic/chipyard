@@ -5,13 +5,6 @@
 #include "lnic.h"
 #include "lnic-scheduler.h"
 
-// Kernel thread structure
-struct thread_t {
-  uintptr_t regs[NUM_REGS];
-  uintptr_t epc;
-  uintptr_t padding;
-} __attribute__((packed));
-
 /**
  * High priority app - measure latency
  */
@@ -84,34 +77,14 @@ int app2_main(void) {
   return 0;
 }
 
-// Thread metadata storage in global state
-struct thread_t threads[MAX_THREADS + 2]; // Extra one for dummy main thread, and another because index 0 is reserved for asm scratch space
-uint64_t num_threads = 1;
-
-struct thread_t* new_thread() {
-  csr_clear(mie, TIMER_INT_ENABLE);
-  if (num_threads == MAX_THREADS) {
-    exit(ERR_THREADS_EXHAUSTED);
-  }
-  struct thread_t* next_thread = &threads[num_threads];
-  next_thread->epc = 0;
-  num_threads++;
-  csr_set(mie, TIMER_INT_ENABLE);
-  return next_thread;
-}
-
-void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
-  struct thread_t* thread = new_thread();
-  thread->epc = target;
-  lnic_add_context(id, priority);
-  volatile uint64_t sp, gp, tp;
-  asm volatile("mv %0, sp" : "=r"(sp));
-  asm volatile("mv %0, gp" : "=r"(gp));
-  asm volatile("mv %0, tp" : "=r"(tp));
-  thread->regs[REG_SP] = sp - STACK_SIZE_BYTES * (1 + id);
-  thread->regs[REG_GP] = gp;
-  thread->regs[REG_TP] = tp;
-}
+extern uint64_t num_threads;
+// Kernel thread structure
+struct thread_t {
+  uintptr_t regs[NUM_REGS];
+  uintptr_t epc;
+  uintptr_t padding;
+} __attribute__((packed));
+extern struct thread_t* threads;
 
 int main(void) {
 //  printf("Hello from scheduler base\n");
