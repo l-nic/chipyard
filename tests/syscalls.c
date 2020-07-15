@@ -181,9 +181,7 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
     }
 
     // Stall all threads but one
-    if (context_id != 0) {
-      while (1);
-    }
+    csr_clear(mie, LNIC_INT_ENABLE | TIMER_INT_ENABLE);
 
     // Join all other cores
     arch_spin_lock(&exit_lock);

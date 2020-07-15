@@ -43,16 +43,11 @@ uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
     }
 }
 
-int prepare_printing(int argc, char** argv) {
-    if (argc != 3) {
-        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
-        return -1;
-    }
+void prepare_printing(int argc, char** argv) {
     printf("Total of %d arguments, which are (line-by-line):\n", argc);
     for (int i = 0; i < argc; i++) {
         printf("%s\n", argv[i]);
     }
-    return 0;
 }
 
 int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority) {
@@ -64,9 +59,6 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
 
     printf("Core %d, context %d, program starting...\n", cid, context_id);
     
-    if (prepare_printing(argc, argv) < 0) {
-        return -1;
-    }
     char* nic_mac_str = argv[1];
     char* nic_ip_str = argv[2];
     uint32_t nic_ip_addr_lendian = 0;
@@ -91,7 +83,7 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
 
     for (int j = 0; j < 1; j++) {
         // Send the msg
-        dst_context = context_id;
+        dst_context = (context_id == 0) ? 1 : 0;
         app_hdr = (dst_ip << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
         //printf("Sending message\n");
         lnic_write_r(app_hdr);
@@ -138,6 +130,7 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
         asm volatile("nop");
     }
     printf("Send recv program complete\n");
+    while (1) {write_csr(0x056, 2);}
     return 0;
 }
 
@@ -145,9 +138,16 @@ int core_main(int argc, char** argv, int cid, int nc) {
     if (cid >= 2) {
         return 0;
     }
+    if (cid == 0) {
+        prepare_printing(argc, argv);
+    }
+    if (argc != 3) {
+        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+        return -1;
+    }
     scheduler_init();
-    start_thread(app_main, 0, 0);
-    start_thread(app_main, 1, 0);
+    start_thread(app_main, 0, 1);
+    start_thread(app_main, 1, 2);
     scheduler_run();
     // Should never reach here, since the scheduler isn't aware that this thread exists.
     // User threads should exit by returning.
