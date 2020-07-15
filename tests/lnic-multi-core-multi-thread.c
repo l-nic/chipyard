@@ -62,9 +62,8 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
     int num_words;
     int i;
 
-    while (1) {
-    printf("Core %d, context %d, program running\n", cid, context_id);
-    }
+    printf("Core %d, context %d, program starting...\n", cid, context_id);
+    
     if (prepare_printing(argc, argv) < 0) {
         return -1;
     }
@@ -90,16 +89,16 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
         return -1;
     }
 
-    // for (int j = 0; j < 1; j++) {
-    //     // Send the msg
-    //     dst_context = (context_id == 0) ? 1 : 0;
-    //     app_hdr = (dst_ip << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
-    //     //printf("Sending message\n");
-    //     lnic_write_r(app_hdr);
-    //     for (i = 0; i < NUM_MSG_WORDS; i++) {
-    //         lnic_write_r(i);
-    //     }
-    // }
+    for (int j = 0; j < 1; j++) {
+        // Send the msg
+        dst_context = context_id;
+        app_hdr = (dst_ip << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
+        //printf("Sending message\n");
+        lnic_write_r(app_hdr);
+        for (i = 0; i < NUM_MSG_WORDS; i++) {
+            lnic_write_r(i);
+        }
+    }
 
     for (int k = 0; k < 1; k++) {
         printf("Receiving message\n");
@@ -115,7 +114,7 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
         }
         // Check dst context
         uint64_t rx_dst_context = (app_hdr & CONTEXT_MASK) >> 16;
-        if (rx_dst_context >= 2) {
+        if (rx_dst_context != dst_context) {
             printf("Expected: dst_context = %ld, Received: dst_context = %ld\n", dst_context, rx_dst_context);
             return -1;
         }
@@ -146,43 +145,6 @@ int core_main(int argc, char** argv, int cid, int nc) {
     if (cid >= 2) {
         return 0;
     }
-    if (cid == 1) {
-        uint64_t app_hdr, i, dst_ip;
-        char* nic_mac_str = argv[1];
-        char* nic_ip_str = argv[2];
-        uint32_t nic_ip_addr_lendian = 0;
-        int retval = inet_pton4(nic_ip_str, nic_ip_str + strlen(nic_ip_str), &nic_ip_addr_lendian);
-
-        // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
-        uint32_t nic_ip_addr = swap32(nic_ip_addr_lendian);
-        if (retval != 1 || nic_ip_addr == 0) {
-            printf("Supplied NIC IP address is invalid.\n");
-            return -1;
-        }
-        dst_ip = get_dst_ip(nic_ip_addr);
-        if (dst_ip == 0) {
-            printf("Could not find valid destination ip\n");
-            return -1;
-        }
-        lnic_add_context(0, 0);
-        for (int j = 0; j < 2; j++) {
-            // Send the msg
-            app_hdr = (dst_ip << 32) | (j << 16) | (NUM_MSG_WORDS*8);
-            //printf("Sending message\n");
-            lnic_write_r(app_hdr);
-            for (i = 0; i < NUM_MSG_WORDS; i++) {
-                lnic_write_r(i);
-            }
-        }
-        for (int k = 0; k < 100000; k++) {
-            asm volatile("nop");
-        }
-        // for (int m = 0; m < 3; m++) {
-        //     printf("Core %d waiting\n", cid);
-        // }
-        return 0;
-    }
-
     scheduler_init();
     start_thread(app_main, 0, 0);
     start_thread(app_main, 1, 0);

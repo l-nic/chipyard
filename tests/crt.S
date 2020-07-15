@@ -212,19 +212,6 @@ valid:
 
 adjusted_context:
   csrw 0x53, x1 # Update current context id
-  csrr x3, 0x52 # Check for pending messages
-  bne x3, zero, messages_pending
-  csrr x3, mscratch
-  LREG x1, 2*REGBYTES(x3) # Load rotating context into x1
-  LREG x4, 3*REGBYTES(x3) # Load num active contexts into x4
-  addi x5, x1, 1 # Next context will be in x5
-  bne x5, x4, wrap_ready
-  mv x5, zero
-wrap_ready:
-  SREG x5, 2*REGBYTES(x3)
-  csrw 0x53, x1 # Change the context again
-
-messages_pending:
   addi x1, x1, 0x1 # Adjust for one-offset in threads
   slli x1, x1, 0x8 # Account for thread struct size
   add x1, x2, x1 # Target context now in x1, base addr in x2
