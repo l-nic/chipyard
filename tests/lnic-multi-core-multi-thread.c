@@ -183,14 +183,11 @@ int leaf() {
     uint32_t rx_src_ip;
     uint16_t rx_src_context, rx_msg_len;
 
-    printf("in leaf\n");
     // Add L-NIC context
     lnic_add_context(0, 0);
-    printf("added context\n");
     // Send outbound messages
-    for (j = 0; j < NUM_SENT_MESSAGES_PER_LEAF*2; j++) {
+    for (j = 0; j < NUM_SENT_MESSAGES_PER_LEAF; j++) {
         // Send to root context 0
-        printf("loop send iteration %d of %d\n", j, NUM_SENT_MESSAGES_PER_LEAF);
         app_hdr = (root_addr << 32) | (0 << 16) | (NUM_MSG_WORDS*8);
         lnic_write_r(app_hdr);
         for (i = 0; i < NUM_MSG_WORDS; i++) {
@@ -198,15 +195,12 @@ int leaf() {
         }
 
         // // Send to root context 1
-        // app_hdr = (root_addr << 32) | (1 << 16) | (NUM_MSG_WORDS*8);
-        // lnic_write_r(app_hdr);
-        // for (i = 0; i < NUM_MSG_WORDS; i++) {
-        //     lnic_write_r(i);
-        // }
-        // lnic_msg_done();
+        app_hdr = (root_addr << 32) | (1 << 16) | (NUM_MSG_WORDS*8);
+        lnic_write_r(app_hdr);
+        for (i = 0; i < NUM_MSG_WORDS; i++) {
+            lnic_write_r(i);
+        }
     }
-
-    printf("receiving messages\n");
 
     // Receive inbound messages. (One from each context)
     for (j = 0; j < NUM_ROOT_CONTEXTS; j++) {
