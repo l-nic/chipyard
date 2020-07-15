@@ -80,6 +80,7 @@ VERILATOR_NONCC_OPTS = \
 	$(shell if ! grep -iq "module.*ariane" $(build_dir)/*.*v; then echo "$(CHIPYARD_VERILATOR_FLAGS)"; else echo "$(ARIANE_VERILATOR_FLAGS)"; fi) \
 	--output-split 10000 \
 	--output-split-cfuncs 100 \
+	-Wno-WIDTH \
 	-f $(sim_common_files) \
 	$(sim_vsrcs)
 

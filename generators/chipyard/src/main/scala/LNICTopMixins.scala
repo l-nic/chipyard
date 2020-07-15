@@ -4,6 +4,7 @@ import chisel3._
 
 import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.util.PlusArg
 import lnic._
 
 /** Top-level mixins for including LNIC **/
@@ -54,6 +55,17 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
 
     latency.io.nic.in <> net.get.out
     net.get.in <> latency.io.nic.out
+
+    // plus args used inside SimNetwork module
+    val nic_mac_addr = PlusArg("nic_mac_addr",
+                               docstring = "MAC address of the L-NIC",
+                               width = 64)
+    val switch_mac_addr = PlusArg("switch_mac_addr",
+                               docstring = "MAC address of port on the upstream switch",
+                               width = 64)
+    val nic_ip_addr = PlusArg("nic_ip_addr",
+                             docstring = "IP address of the L-NIC",
+                             width = 32)
 
     net.get.nic_mac_addr := sim.io.net.nic_mac_addr
     net.get.switch_mac_addr := sim.io.net.switch_mac_addr
