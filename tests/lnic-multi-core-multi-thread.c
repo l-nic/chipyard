@@ -152,11 +152,12 @@ int root(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint6
         for (i = 0; i < NUM_MSG_WORDS; i++) {
             data = lnic_read();
             if (i != data) {
-                printf("Expected: data = %x, Received: data = %lx\n", i, data);
+                //printf("Expected: data = %x, Received: data = %lx\n", i, data);
                 //return -1;
             }
         }
         lnic_msg_done();
+        printf("[Core %d] finished message %d\n", cid, j);
     }
 
     // Send one outbound message to each leaf node

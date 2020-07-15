@@ -25,7 +25,7 @@ NIC_MAC = "08:11:22:33:44:08"
 MY_MAC = "08:55:66:77:88:08"
 
 NIC_IP = "10.0.0.1"
-MY_IP = "10.0.0.2"
+MY_IP = "10.0.0.3"
 
 DST_CONTEXT = 0
 LATENCY_CONTEXT = 0x1234 # use this when we want the HW to insert timestamps into DATA pkts
@@ -79,14 +79,14 @@ class SchedulerTest(unittest.TestCase):
                Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
-        num_lp_msgs = 8
-        num_hp_msgs = 0
+        num_lp_msgs = 9
+        num_hp_msgs = 9
         service_time = 500
         init_inputs = []
         # add high priority msgs
         init_inputs += [self.app_msg(0, service_time, 128) for i in range(num_hp_msgs)]
         # add low priority msgs 
-        init_inputs += [self.app_msg(0, service_time, 128) for i in range(num_lp_msgs)]
+        init_inputs += [self.app_msg(1, service_time, 128) for i in range(num_lp_msgs)]
         # shuffle pkts
         random.shuffle(init_inputs)
 
