@@ -71,7 +71,7 @@ typedef struct {
 
 #define arch_spin_is_locked(x) ((x)->lock != 0)
 
-static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+void arch_spin_unlock(arch_spinlock_t *lock) {
   asm volatile (
     "amoswap.w.rl x0, x0, %0"
     : "=A" (lock->lock)
@@ -79,7 +79,7 @@ static inline void arch_spin_unlock(arch_spinlock_t *lock) {
     );
 }
 
-static inline int arch_spin_trylock(arch_spinlock_t* lock) {
+int arch_spin_trylock(arch_spinlock_t* lock) {
   int tmp = 1, busy;
   asm volatile (
     "amoswap.w.aq %0, %2, %1"
@@ -90,7 +90,7 @@ static inline int arch_spin_trylock(arch_spinlock_t* lock) {
   return !busy;
 }
 
-static inline void arch_spin_lock(arch_spinlock_t* lock) {
+void arch_spin_lock(arch_spinlock_t* lock) {
   while (1) {
     // Thread is idle if locked
     write_csr(0x056, 2);

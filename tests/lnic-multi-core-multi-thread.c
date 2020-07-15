@@ -21,135 +21,224 @@ instead of main, you also need to define bool is_single_core(void) to return fal
 */
 
 bool is_single_core() {return false;}
-#define NUM_MSG_WORDS 400
+#define NUM_MSG_WORDS 8
+#define NUM_SENT_MESSAGES_PER_LEAF 3
+#define NUM_LEAVES 3
+#define NUM_ROOT_CONTEXTS 2
+uint64_t root_addr = 0x0a000002;
+uint64_t leaf_addrs[NUM_LEAVES] = {0x0a000003, 0x0a000004, 0x0a000005};
 
-uint32_t get_dst_ip(uint32_t nic_ip_addr) {
-    if (nic_ip_addr == 0x0a000005) {
-        return 0x0a000002;
-    } else if (nic_ip_addr < 0x0a000005 && nic_ip_addr >= 0x0a000002) {
-        return nic_ip_addr + 1;
+typedef struct {
+  volatile unsigned int lock;
+} arch_spinlock_t;
+arch_spinlock_t ip_lock;
+uint32_t nic_ip_addr;
+bool ip_set;
+
+bool valid_leaf_addr(uint32_t nic_ip_addr) {
+    for (int i = 0; i < NUM_LEAVES; i++) {
+        if (nic_ip_addr == leaf_addrs[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void stall_cycles(uint64_t num_cycles) {
+    for (uint64_t i = 0; i < num_cycles; i++) {
+        asm volatile("nop");
+    }
+}
+
+int root(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority);
+int leaf();
+
+int core_main(uint64_t argc, char** argv, int cid, int nc) {
+    // Check for required arguments
+    if (argc != 3) {
+        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+        return -1;
+    }
+
+    // Core 0 processes the arguments, other cores wait
+    if (cid == 0) {
+        printf("Total of %d arguments, which are (line-by-line):\n", argc);
+        for (int i = 0; i < argc; i++) {
+            printf("%s\n", argv[i]);
+        }
+        char* nic_mac_str = argv[1];
+        char* nic_ip_str = argv[2];
+        uint32_t nic_ip_addr_lendian = 0;
+        int retval = inet_pton4(nic_ip_str, nic_ip_str + strlen(nic_ip_str), &nic_ip_addr_lendian);
+
+        // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
+        nic_ip_addr = swap32(nic_ip_addr_lendian);
+        if (retval != 1 || nic_ip_addr == 0) {
+            printf("Supplied NIC IP address is invalid.\n");
+            nic_ip_addr = 0;
+            arch_spin_lock(&ip_lock);
+            ip_set = true;
+            arch_spin_unlock(&ip_lock);
+            return -1;
+        }
+        arch_spin_lock(&ip_lock);
+        ip_set = true;
+        arch_spin_unlock(&ip_lock);
     } else {
-        return 0;
+        while (1) {
+            arch_spin_lock(&ip_lock);
+            if (ip_set) {
+                arch_spin_unlock(&ip_lock);
+                break;
+            } else {
+                arch_spin_unlock(&ip_lock);
+                stall_cycles(1000);
+            }
+        }
+        if (nic_ip_addr == 0) {
+            return -1;
+        }
     }
-}
 
-uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
-    if (nic_ip_addr == 0x0a000002) {
-        return 0x0a000005;
-    } else if (nic_ip_addr > 0x0a000002 && nic_ip_addr <= 0x0a000005) {
-        return nic_ip_addr - 1;
+    if (nic_ip_addr == root_addr) {
+        // Start the root node's two services
+        printf("[Core %d] Starting root node services...\n", cid);
+        scheduler_init();
+        start_thread(root, 0, 1);
+        start_thread(root, 1, 2);
+        scheduler_run();
+        printf("[Core %d] Invalid control return to main function.\n", cid);
+        return -1;
     } else {
-        return 0;
+        // Start the leaf nodes as bare-metal applications
+        printf("[Core %d] Starting leaf application...\n", cid);
+        int retval = leaf();
+        return retval;
     }
 }
 
-void prepare_printing(int argc, char** argv) {
-    printf("Total of %d arguments, which are (line-by-line):\n", argc);
-    for (int i = 0; i < argc; i++) {
-        printf("%s\n", argv[i]);
-    }
-}
+int root(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority) {
+    // This is the root node
 
-int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority) {
-    uint64_t app_hdr;
-    uint64_t dst_ip;
-    uint64_t dst_context;
-    int num_words;
-    int i;
+    // Declare stack variables
+    uint64_t app_hdr, data;
+    uint32_t rx_src_ip;
+    uint16_t rx_src_context, rx_msg_len;
+    uint32_t i, j;
 
-    printf("Core %d, context %d, program starting...\n", cid, context_id);
-    
-    char* nic_mac_str = argv[1];
-    char* nic_ip_str = argv[2];
-    uint32_t nic_ip_addr_lendian = 0;
-    int retval = inet_pton4(nic_ip_str, nic_ip_str + strlen(nic_ip_str), &nic_ip_addr_lendian);
+    // Receive inbound messages from all leaves
+    for (j = 0; j < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF; j++) {
+        lnic_wait();
+        app_hdr = lnic_read();
+        // Check src IP
+        rx_src_ip = (app_hdr & IP_MASK) >> 32;
+        if (!valid_leaf_addr(rx_src_ip)) {
+            printf("Root node received address from non-leaf node: %lx\n", rx_src_ip);
+            return -1;
+        }
+        // Check src context
+        rx_src_context = (app_hdr & CONTEXT_MASK) >> 16;
+        if (rx_src_context != 0) {
+            printf("Expected: src_context = %ld, Received: rx_src_context = %ld\n", 0, rx_src_context);
+            return -1;
+        }
+        // Check msg length
+        rx_msg_len = app_hdr & LEN_MASK;
+        if (rx_msg_len != NUM_MSG_WORDS*8) {
+            printf("Expected: msg_len = %d, Received: msg_len = %d\n", NUM_MSG_WORDS*8, rx_msg_len);
+            return -1;
+        }
+        // Check msg data
+        for (i = 0; i < NUM_MSG_WORDS; i++) {
+            data = lnic_read();
+            if (i != data) {
+                printf("Expected: data = %x, Received: data = %lx\n", i, data);
+                //return -1;
+            }
+        }
+        lnic_msg_done();
+    }
 
-    // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
-    uint32_t nic_ip_addr = swap32(nic_ip_addr_lendian);
-    if (retval != 1 || nic_ip_addr == 0) {
-        printf("Supplied NIC IP address is invalid.\n");
-        return -1;
-    }
-    dst_ip = get_dst_ip(nic_ip_addr);
-    if (dst_ip == 0) {
-        printf("Could not find valid destination ip\n");
-        return -1;
-    }
-    uint32_t correct_sender_ip = get_correct_sender_ip(nic_ip_addr);
-    if (correct_sender_ip == 0) {
-        printf("Could not find valid correct sender ip\n");
-        return -1;
-    }
-
-    for (int j = 0; j < 1; j++) {
-        // Send the msg
-        dst_context = (context_id == 0) ? 1 : 0;
-        app_hdr = (dst_ip << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
-        //printf("Sending message\n");
+    // Send one outbound message to each leaf node
+    for (j = 0; j < NUM_LEAVES; j++) {
+        app_hdr = ((uint64_t)leaf_addrs[j] << 32) | (0 << 16) | (NUM_MSG_WORDS*8);
         lnic_write_r(app_hdr);
         for (i = 0; i < NUM_MSG_WORDS; i++) {
             lnic_write_r(i);
         }
     }
+    return 0;
+}
 
-    for (int k = 0; k < 1; k++) {
-        printf("Receiving message\n");
-        // Receive the msg
+int leaf() {
+    if (!valid_leaf_addr(nic_ip_addr)) {
+        printf("Supplied NIC IP is not a valid root or leaf address.\n");
+        return -1;
+    }
+    // This is a valid leaf node
+
+    // Declare stack variables
+    uint32_t i, j;
+    uint64_t app_hdr, data;
+    uint32_t rx_src_ip;
+    uint16_t rx_src_context, rx_msg_len;
+
+    printf("in leaf\n");
+    // Add L-NIC context
+    lnic_add_context(0, 0);
+    printf("added context\n");
+    // Send outbound messages
+    for (j = 0; j < NUM_SENT_MESSAGES_PER_LEAF*2; j++) {
+        // Send to root context 0
+        printf("loop send iteration %d of %d\n", j, NUM_SENT_MESSAGES_PER_LEAF);
+        app_hdr = (root_addr << 32) | (0 << 16) | (NUM_MSG_WORDS*8);
+        lnic_write_r(app_hdr);
+        for (i = 0; i < NUM_MSG_WORDS; i++) {
+            lnic_write_r(i);
+        }
+
+        // // Send to root context 1
+        // app_hdr = (root_addr << 32) | (1 << 16) | (NUM_MSG_WORDS*8);
+        // lnic_write_r(app_hdr);
+        // for (i = 0; i < NUM_MSG_WORDS; i++) {
+        //     lnic_write_r(i);
+        // }
+        // lnic_msg_done();
+    }
+
+    printf("receiving messages\n");
+
+    // Receive inbound messages. (One from each context)
+    for (j = 0; j < NUM_ROOT_CONTEXTS; j++) {
         lnic_wait();
         app_hdr = lnic_read();
-        printf("Past wait\n");
-        // Check dst IP
-        uint64_t rx_dst_ip = (app_hdr & IP_MASK) >> 32;
-        if (rx_dst_ip != correct_sender_ip) {
-            printf("Expected: correct_sender_ip = %lx, Received: dst_ip = %lx\n", correct_sender_ip, rx_dst_ip);
-            //return -1;
+        // Check src IP
+        rx_src_ip = (app_hdr & IP_MASK) >> 32;
+        if (rx_src_ip != root_addr) {
+            printf("Leaf node received message from non-root node at address %lx\n", rx_src_ip);
+            return -1;
         }
-        // Check dst context
-        uint64_t rx_dst_context = (app_hdr & CONTEXT_MASK) >> 16;
-        if (rx_dst_context != dst_context) {
-            printf("Expected: dst_context = %ld, Received: dst_context = %ld\n", dst_context, rx_dst_context);
-            //return -1;
+        // Check src context
+        rx_src_context = (app_hdr & CONTEXT_MASK) >> 16;
+        if (rx_src_context > 1) {
+            printf("Expected: src_context 0 or 1, Received: rx_src_context = %ld\n", rx_src_context);
+            return -1;
         }
-        uint16_t rx_msg_len = app_hdr & LEN_MASK;
+        // Check msg length
+        rx_msg_len = app_hdr & LEN_MASK;
         if (rx_msg_len != NUM_MSG_WORDS*8) {
             printf("Expected: msg_len = %d, Received: msg_len = %d\n", NUM_MSG_WORDS*8, rx_msg_len);
-            //return -1;
+            return -1;
         }
-        printf("Main receive loop\n");
         // Check msg data
-        for (i = 0; i < rx_msg_len/8; i++) {
-            uint64_t data = lnic_read();
+        for (i = 0; i < NUM_MSG_WORDS; i++) {
+            data = lnic_read();
             if (i != data) {
                 printf("Expected: data = %x, Received: data = %lx\n", i, data);
-                return -1;
+                //return -1;
             }
         }
         lnic_msg_done();
     }
-    for (int i = 0; i < 100000; i++) {
-        asm volatile("nop");
-    }
-    printf("Send recv program complete\n");
     return 0;
-}
-
-int core_main(int argc, char** argv, int cid, int nc) {
-    if (cid >= 2) {
-        return 0;
-    }
-    if (cid == 0) {
-        prepare_printing(argc, argv);
-    }
-    if (argc != 3) {
-        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
-        return -1;
-    }
-    scheduler_init();
-    start_thread(app_main, 0, 1);
-    start_thread(app_main, 1, 2);
-    scheduler_run();
-    // Should never reach here, since the scheduler isn't aware that this thread exists.
-    // User threads should exit by returning.
-    printf("Invalid control return to main function.\n");
-    return -1;
 }
