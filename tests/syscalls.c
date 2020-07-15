@@ -65,6 +65,15 @@ bool __attribute__((weak)) is_single_core()
   return true;
 }
 
+// Note: These spinlocks should never be used in running nanoservice code, or
+// in any multithreaded code where all threads are expected to resume after the call.
+// They are intended to help with coordination between cores for setup, teardown,
+// and debugging, and for coordination between threads for teardown only.
+// The thread scheduler has no understanding of which threads are blocked on
+// which locks, and can easily cause a high-priority thread attempting to acquire
+// a lock currently held by a low-priority thread to block indefinitely.
+// Lock credit -- risc-v linux implementation.
+
 typedef struct {
   volatile unsigned int lock;
 } arch_spinlock_t;
@@ -134,6 +143,7 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
   if (is_single_core()) {
     // Run the thread
     int retval = target(argc, argv, cid, nc, context_id, priority);
+    //write_csr(0x056, 2);
     printf("Core %d (only core) application %d exited with code %d\n", cid, context_id, retval);
     uint64_t hart_id = csr_read(mhartid);
     arch_spin_lock(&thread_lock[hart_id]);
@@ -152,12 +162,14 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
         arch_spin_unlock(&thread_lock[hart_id]);
         for (int i = 0; i < 1000; i++) {
           asm volatile("nop");
+          write_csr(0x056, 2);
         }
       }
     }
   } else {
     // Run the thread
     int retval = target(argc, argv, cid, nc, context_id, priority);
+    //write_csr(0x056, 2);
     printf("Core %d application %d exited with code %d\n", cid, context_id, retval);
     uint64_t hart_id = csr_read(mhartid);
     arch_spin_lock(&thread_lock[hart_id]);
@@ -173,17 +185,19 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
         arch_spin_unlock(&thread_lock[hart_id]);
         break;
       } else {
+        printf("Core %d app %d entering idle wait\n", cid, context_id);
+        csr_set(mie, TIMER_INT_ENABLE | LNIC_INT_ENABLE);
         arch_spin_unlock(&thread_lock[hart_id]);
         for (int i = 0; i < 1000; i++) {
           asm volatile("nop");
+          write_csr(0x056, 2);
         }
       }
     }
 
     // Stall all threads but one
-    if (context_id != 0) {
-      while (1);
-    }
+    // The scheduler can't change threads after this
+    csr_clear(mie, TIMER_INT_ENABLE | LNIC_INT_ENABLE);
 
     // Join all other cores
     arch_spin_lock(&exit_lock);
@@ -222,6 +236,7 @@ void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   thread->regs[REG_A4] = id;
   thread->regs[REG_A5] = priority;
   thread->regs[REG_A6] = target;
+  threads[read_csr(mhartid)][0].regs[3]++;
 }
 
 void scheduler_init() {
@@ -697,6 +712,9 @@ static void vprintfmt(void (*putch)(int, void**), void **putdat, const char *fmt
 
 int printf(const char* fmt, ...)
 {
+  // The scheduler doesn't know how to boost the priority of threads holding locks,
+  // so we have to make sure it doesn't run while the lock is held.
+  csr_clear(mie, TIMER_INT_ENABLE | LNIC_INT_ENABLE);
   arch_spin_lock(&print_lock);
   va_list ap;
   va_start(ap, fmt);
@@ -705,6 +723,7 @@ int printf(const char* fmt, ...)
 
   va_end(ap);
   arch_spin_unlock(&print_lock);
+  csr_set(mie, TIMER_INT_ENABLE | LNIC_INT_ENABLE);
   return 0; // incorrect return value, but who cares, anyway?
 }
 
