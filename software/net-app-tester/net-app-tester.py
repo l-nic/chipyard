@@ -91,13 +91,13 @@ class SchedulerTest(unittest.TestCase):
         random.shuffle(init_inputs)
 
         more_inputs = []
-        more_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
+        #more_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
         more_inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs/2 - 1)]
         random.shuffle(more_inputs)
         # add a pkt that is going to violate the processing time limit
         inputs = init_inputs + [self.app_msg(LOW, 4000, 128)] + more_inputs
 
-        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, LATENCY_CONTEXT)
+        receiver = LNICReceiver(TEST_IFACE)#, MY_MAC, MY_IP, LATENCY_CONTEXT)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
                     prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=100)

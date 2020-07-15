@@ -102,22 +102,22 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
         uint64_t rx_dst_ip = (app_hdr & IP_MASK) >> 32;
         if (rx_dst_ip != correct_sender_ip) {
             printf("Expected: correct_sender_ip = %lx, Received: dst_ip = %lx\n", correct_sender_ip, rx_dst_ip);
-            return -1;
+            //return -1;
         }
         // Check dst context
         uint64_t rx_dst_context = (app_hdr & CONTEXT_MASK) >> 16;
         if (rx_dst_context != dst_context) {
             printf("Expected: dst_context = %ld, Received: dst_context = %ld\n", dst_context, rx_dst_context);
-            return -1;
+            //return -1;
         }
         uint16_t rx_msg_len = app_hdr & LEN_MASK;
         if (rx_msg_len != NUM_MSG_WORDS*8) {
             printf("Expected: msg_len = %d, Received: msg_len = %d\n", NUM_MSG_WORDS*8, rx_msg_len);
-            return -1;
+            //return -1;
         }
         printf("Main receive loop\n");
         // Check msg data
-        for (i = 0; i < NUM_MSG_WORDS; i++) {
+        for (i = 0; i < rx_msg_len/8; i++) {
             uint64_t data = lnic_read();
             if (i != data) {
                 printf("Expected: data = %x, Received: data = %lx\n", i, data);
@@ -130,7 +130,6 @@ int app_main(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, u
         asm volatile("nop");
     }
     printf("Send recv program complete\n");
-    while (1) {write_csr(0x056, 2);}
     return 0;
 }
 
