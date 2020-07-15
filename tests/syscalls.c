@@ -143,6 +143,7 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
   if (is_single_core()) {
     // Run the thread
     int retval = target(argc, argv, cid, nc, context_id, priority);
+    //write_csr(0x056, 2);
     printf("Core %d (only core) application %d exited with code %d\n", cid, context_id, retval);
     uint64_t hart_id = csr_read(mhartid);
     arch_spin_lock(&thread_lock[hart_id]);
@@ -161,12 +162,14 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
         arch_spin_unlock(&thread_lock[hart_id]);
         for (int i = 0; i < 1000; i++) {
           asm volatile("nop");
+          write_csr(0x056, 2);
         }
       }
     }
   } else {
     // Run the thread
     int retval = target(argc, argv, cid, nc, context_id, priority);
+    //write_csr(0x056, 2);
     printf("Core %d application %d exited with code %d\n", cid, context_id, retval);
     uint64_t hart_id = csr_read(mhartid);
     arch_spin_lock(&thread_lock[hart_id]);
@@ -182,9 +185,12 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
         arch_spin_unlock(&thread_lock[hart_id]);
         break;
       } else {
+        printf("Core %d app %d entering idle wait\n", cid, context_id);
+        csr_set(mie, TIMER_INT_ENABLE | LNIC_INT_ENABLE);
         arch_spin_unlock(&thread_lock[hart_id]);
         for (int i = 0; i < 1000; i++) {
           asm volatile("nop");
+          write_csr(0x056, 2);
         }
       }
     }
@@ -230,6 +236,7 @@ void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   thread->regs[REG_A4] = id;
   thread->regs[REG_A5] = priority;
   thread->regs[REG_A6] = target;
+  threads[read_csr(mhartid)][0].regs[3]++;
 }
 
 void scheduler_init() {
