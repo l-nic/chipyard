@@ -25,7 +25,7 @@ NIC_MAC = "08:11:22:33:44:08"
 MY_MAC = "08:55:66:77:88:08"
 
 NIC_IP = "10.0.0.1"
-MY_IP = "10.0.0.3"
+MY_IP = "10.0.0.2"
 
 DST_CONTEXT = 0
 LATENCY_CONTEXT = 0x1234 # use this when we want the HW to insert timestamps into DATA pkts
