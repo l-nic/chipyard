@@ -343,7 +343,7 @@ class LoopbackNICRocketConfig extends Config(
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
   new freechips.rocketchip.system.BaseConfig)
 
-class LNICRocketConfig extends Config(
+class LNICDualRocketConfig extends Config(
   new chipyard.iobinders.WithUARTAdapter ++
   new chipyard.iobinders.WithTieOffInterrupts ++
   new chipyard.iobinders.WithBlackBoxSimMem ++
@@ -438,9 +438,13 @@ class LNICThirtyTwoCoreRocketConfig extends Config(
   new freechips.rocketchip.subsystem.WithNBigCores(32) ++
   new freechips.rocketchip.system.BaseConfig)
 
-class LNICSimNetworkRocketConfig extends Config(
+class LNICSimNetworkDualRocketConfig extends Config(
   new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
-  new LNICRocketConfig)
+  new LNICDualRocketConfig)
+
+class LNICSimNetworkQuadRocketConfig extends Config(
+  new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
+  new LNICQuadRocketConfig)
 
 class LNICSimNetworkQuadRocketConfig extends Config(
   new chipyard.iobinders.WithSimNetwork ++

@@ -30,6 +30,7 @@ PROGRAMS += lnic-multi-core-different-services
 PROGRAMS += lnic-incast
 PROGRAMS += lnic-single-core-multi-thread
 PROGRAMS += lnic-multi-core-multi-thread
+PROGRAMS += lnic-multi-core-loopback
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

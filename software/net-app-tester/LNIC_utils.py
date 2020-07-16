@@ -1,7 +1,7 @@
 
 from LNIC_headers import *
 
-MAX_SEG_LEN_BYTES = 512
+MAX_SEG_LEN_BYTES = 1024
 RTT_PKTS = 5
 
 def compute_num_pkts(msg_len):
@@ -25,6 +25,8 @@ class LNICReceiver(object):
 
     def process_pkt(self, p):
         if p.haslayer(LNIC) and p[LNIC].flags.DATA:
+            if len(p)-14 != p[IP].len:
+                print "ERROR: len(p) = {}, p[IP].len = {}".format(len(p), p[IP].len)
             msg_key = (p[IP].dst, p[LNIC].dst_context, p[IP].src, p[LNIC].src_context, p[LNIC].tx_msg_id)
             offset = p[LNIC].pkt_offset
             num_pkts = compute_num_pkts(p[LNIC].msg_len)

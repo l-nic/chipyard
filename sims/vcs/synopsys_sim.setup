@@ -1,2 +1,1 @@
 riscv_lib: riscv_lib/
-OTHERS=/home/vagrant/chipyard/vivado/ip/managed_ip_project/managed_ip_project.cache/compile_simlib/vcs/synopsys_sim.setup
