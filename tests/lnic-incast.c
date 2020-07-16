@@ -6,11 +6,13 @@
 #include "lnic.h"
 
 #define NUM_MSG_WORDS 1024
-#define NUM_SENT_MESSAGES_PER_LEAF 1
+#define NUM_SENT_MESSAGES_PER_LEAF 3
 
 #define NUM_LEAVES 3
 uint64_t root_addr = 0x0a000002;
 uint64_t leaf_addrs[NUM_LEAVES] = {0x0a000003, 0x0a000004, 0x0a000005};
+
+uint64_t elapsed_times[NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES*2];
 
 bool valid_leaf_addr(uint32_t nic_ip_addr) {
     for (int i = 0; i < NUM_LEAVES; i++) {
@@ -33,6 +35,7 @@ int main(int argc, char** argv)
     uint64_t app_hdr;
     uint64_t dst_context;
     int i;
+    volatile uint64_t current_time;
 
     dst_context = 0;
 
@@ -51,6 +54,11 @@ int main(int argc, char** argv)
     if (retval != 1 || nic_ip_addr == 0) {
         printf("Supplied NIC IP address is invalid.\n");
         return -1;
+    }
+
+    // Force elapsed_times to be brought into the cache
+    for (int j = 0; j < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF*2; j++) {
+        volatile uint64_t x = elapsed_times[j] = 0;
     }
 
     // Register context ID with L-NIC
@@ -82,15 +90,23 @@ int main(int argc, char** argv)
                 return -1;
             }
             // Check msg data
-            for (i = 0; i < NUM_MSG_WORDS; i++) {
+            uint64_t sent_time = lnic_read();
+            for (i = 0; i < NUM_MSG_WORDS - 1; i++) {
                 uint64_t data = lnic_read();
                 if (i != data) {
                     printf("Expected: data = %x, Received: data = %lx\n", i, data);
                     return -1;
                 }
             }
+            elapsed_times[2*j+1] = read_csr(mcycle) - sent_time;
+            elapsed_times[2*j] = app_hdr;
             lnic_msg_done();
         }
+        printf("&&CSV&&");
+        for (int j = 0; j < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF*2; j++) {
+            printf(",%lx", elapsed_times[j]);
+        }
+        printf("\n");
         printf("Root program finished.\n");
 
         // We need to be sure that all leaves have run to completion.
@@ -108,7 +124,9 @@ int main(int argc, char** argv)
             dst_context = 0;
             app_hdr = (root_addr << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
             lnic_write_r(app_hdr);
-            for (i = 0; i < NUM_MSG_WORDS; i++) {
+            current_time = read_csr(mcycle);
+            lnic_write_r(current_time);
+            for (i = 0; i < NUM_MSG_WORDS - 1; i++) {
                 lnic_write_r(i);
             }
         }
