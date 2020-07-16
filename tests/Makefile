@@ -31,6 +31,7 @@ PROGRAMS += lnic-incast
 PROGRAMS += lnic-single-core-multi-thread
 PROGRAMS += lnic-multi-core-multi-thread
 PROGRAMS += lnic-multi-core-loopback
+PROGRAMS += lnic-load-balance
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

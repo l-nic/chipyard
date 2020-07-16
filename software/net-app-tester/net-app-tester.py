@@ -57,15 +57,15 @@ def print_pkts(pkts):
       pkts[i].show2()
       hexdump(pkts[i])
 
-def packetize(msg, src_context=DEFAULT_CONTEXT, src_ip=MY_IP):
+def packetize(msg, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=MY_IP):
     """Generate LNIC pkts for the given msg
     """
     num_pkts = compute_num_pkts(len(msg))
     pkts = []
     for i in range(num_pkts-1):
-        p = lnic_pkt(len(msg), i, src_context, src_ip=src_ip) / Raw(msg[i*MAX_SEG_LEN_BYTES:(i+1)*MAX_SEG_LEN_BYTES])
+        p = lnic_pkt(len(msg), i, src_context, dst_context, src_ip) / Raw(msg[i*MAX_SEG_LEN_BYTES:(i+1)*MAX_SEG_LEN_BYTES])
         pkts.append(p)
-    p = lnic_pkt(len(msg), num_pkts-1, src_context, src_ip=src_ip) / Raw(msg[(num_pkts-1)*MAX_SEG_LEN_BYTES:])
+    p = lnic_pkt(len(msg), num_pkts-1, src_context, dst_context, src_ip) / Raw(msg[(num_pkts-1)*MAX_SEG_LEN_BYTES:])
     pkts.append(p)
     return pkts
 
@@ -129,52 +129,55 @@ class LoadBalanceTest(unittest.TestCase):
                Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_load_balance(self):
-        ctx0_msgs = 8
-        ctx1_msgs = 0
-        service_time = 500
+        num_msgs = 50
+        num_contexts = 1
         inputs = []
-        # add context 0 msgs
-        inputs += [self.app_msg(0, service_time, 128) for i in range(ctx0_msgs)]
-        # add context 1 msgs 
-        inputs += [self.app_msg(1, service_time, 128) for i in range(ctx1_msgs)]
-        # shuffle pkts
-        random.shuffle(inputs)
+        mean_service_times = [500]*3 + [3000]
+        # create msgs
+        for i in range(num_msgs):
+            ctx = random.randint(0, num_contexts-1)
+            service_time = random.choice(mean_service_times) # int(np.random.exponential(mean_service_time))
+            p = self.app_msg(ctx, service_time, 128)
+            inputs.append(p)
 
-        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, LATENCY_CONTEXT)
+        receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
-                    prn=receiver.process_pkt, count=ctx0_msgs + ctx1_msgs, timeout=100)
+                    prn=receiver.process_pkt, count=num_msgs, timeout=200)
         sniffer.start()
         # send in pkts
-        sendp(inputs, iface=TEST_IFACE, inter=0.3)
+        sendp(inputs, iface=TEST_IFACE, inter=1.2)
         # wait for all responses
         sniffer.join()
         # check responses
-        self.assertEqual(len(sniffer.results), ctx0_msgs + ctx1_msgs)
+        self.assertEqual(len(sniffer.results), num_msgs)
         time = []
         context = []
         latency = []
+        service_time = []
         for p in sniffer.results:
             self.assertTrue(p.haslayer(LNIC))
+            s = p[DummyApp.DummyApp].service_time
             l = struct.unpack('!L', str(p)[-4:])[0]
             t = struct.unpack('!L', str(p)[-8:-4])[0]
-            self.assertTrue(p[LNIC].src_context in [0, 1])
+            self.assertTrue(p[LNIC].src_context < num_contexts)
             time.append(t)
             context.append(p[LNIC].src_context)
             latency.append(l)
+            service_time.append(s)
         # record latencies in a DataFrame
-        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency)}, dtype=float)
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency), 'service_time': pd.Series(service_time)}, dtype=float)
         print df
         write_csv('load-balance', 'stats.csv', df)
 
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkts):
-#        print "Request Pkts:"
+#        print "*********** Request Pkts: ***********"
 #        print_pkts(pkts)
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].src_context == DST_CONTEXT,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == DEFAULT_CONTEXT,
                     prn=receiver.process_pkt, count=len(pkts), timeout=100)
         sniffer.start()
         # send in pkts
@@ -182,21 +185,19 @@ class Loopback(unittest.TestCase):
         # wait for all response pkts
         sniffer.join()
         self.assertEqual(len(pkts), len(sniffer.results))
-#        print "Response Pkts:"
+#        print "*********** Response Pkts: ***********"
 #        print_pkts(sniffer.results)
-        for i in range(len(sniffer.results)):
-            p = sniffer.results[i]
-            self.assertEqual(p[LNIC].src_context, DST_CONTEXT)
         return receiver.msgs
     def test_multi_host(self):
-        src_ips = ['10.0.0.{}'.format(i) for i in range(2, 10)]
+        num_hosts = 8
+        src_ips = ['10.0.0.{}'.format(i) for i in range(2, 2 + num_hosts)]
         tx_msgs = {}
         pkts = []
         for i in range(len(src_ips)):
-            msg_len = random.randint(1, 8192)
-            msg = ''.join([chr(random.randint(97, 122)) for x in range(msg_len)])
+            num_words = random.randint(1, 1024)
+            msg = ''.join(['{:0>8}'.format(x) for x in range(num_words)])
             tx_msgs[src_ips[i]] = msg
-            pkts += packetize(msg, DEFAULT_CONTEXT, src_ips[i])
+            pkts += packetize(msg, DEFAULT_CONTEXT, DST_CONTEXT, src_ips[i])
         random.shuffle(pkts)
         rx_msgs = self.do_loopback(pkts)
         self.assertEqual(len(src_ips), len(rx_msgs))
@@ -205,6 +206,12 @@ class Loopback(unittest.TestCase):
     def check_msg(self, rx_msgs, dst_ip, dst_context, src_ip, src_context, msg):
         for m in rx_msgs:
             if m[0][0] == dst_ip and m[0][1] == dst_context and m[0][2] == src_ip and m[0][3] == src_context:
+                if msg != m[1]:
+                    print "ERROR: Incorrect msg for host: {}".format(dst_ip)
+                    print "rx_msgs:"
+                    for rx_msg in rx_msgs:
+                        print "----------------------{}----------------------".format(rx_msg[0][0])
+                        print "{}".format(rx_msg[1])
                 self.assertEqual(msg, m[1])
                 return
         self.assertTrue(False, "Could not find expected msg!")
