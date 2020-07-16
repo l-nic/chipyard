@@ -28,6 +28,7 @@ PROGRAMS += multiple_cores
 PROGRAMS += lnic-multi-core
 PROGRAMS += lnic-multi-core-different-services
 PROGRAMS += lnic-multi-core-loopback
+PROGRAMS += lnic-load-balance
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
