@@ -123,8 +123,8 @@ _start:
 
   # get core id
   csrr a0, mhartid
-  # for now, assume only 2 cores
-  li a1, 2
+  # for now, assume only 4 cores
+  li a1, 4
 1:bgeu a0, a1, 1b
 
   # give each core 128KB of stack + TLS

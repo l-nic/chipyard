@@ -40,7 +40,7 @@ uint64_t mainvars[MAX_ARGS_BYTES / sizeof(uint64_t)];
 uint64_t argc;
 char ** argv;
 
-#define NCORES 2
+#define NCORES 4
 int core_complete[NCORES];
 
 #undef strcmp
@@ -170,27 +170,40 @@ void wait_for_all_cores() {
 }
 
 void __attribute__((weak)) thread_entry(int cid, int nc) {
-    if (nc != 2 || NCORES != 2) {
+    if (nc != 4 || NCORES != 4) {
         if (cid == 0) {
-            printf("This program requires 2 cores but was given %d\n", nc);
+            printf("This program requires 4 cores but was given %d\n", nc);
         }
         return;
     }
 
     int core0_ret = 0;
     int core1_ret = 0;
+    int core2_ret = 0;
+    int core3_ret = 0;
     if (cid == 0) {
         core0_ret = core0_main(argc, argv);
         notify_core_complete(0);
         wait_for_all_cores();
-        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
+        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
         exit(ret);
     } else if (cid == 1) {
-        // cid == 1
         core1_ret = core1_main(argc, argv);
         notify_core_complete(1);
         wait_for_all_cores();
-        int ret = ((core1_ret << 16) & 0xFFFF0000) | (core0_ret & 0xFFFF);
+        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
+        exit(ret);
+    } else if (cid == 2) {
+        core2_ret = core2_main(argc, argv);
+        notify_core_complete(2);
+        wait_for_all_cores();
+        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
+        exit(ret);
+    } else if (cid == 3) {
+        core3_ret = core3_main(argc, argv);
+        notify_core_complete(3);
+        wait_for_all_cores();
+        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
         exit(ret);
     } else {
         while (1);
@@ -209,7 +222,13 @@ int __attribute__((weak)) core1_main(uint64_t argc, char** argv) {
     return 0;
 }
 
+int __attribute__((weak)) core2_main(uint64_t argc, char** argv) {
+    return 0;
+}
 
+int __attribute__((weak)) core3_main(uint64_t argc, char** argv) {
+    return 0;
+}
 
 void print_counters() {
   char buf[NUM_COUNTERS * 32] __attribute__((aligned(64)));

@@ -52,3 +52,19 @@ void core1_main() {
 
   process_msgs();
 }
+
+void core2_main() {
+  uint64_t context_id = 0;
+  uint64_t priority = 0;
+  lnic_add_context(context_id, priority);
+
+  process_msgs();
+}
+
+void core3_main() {
+  uint64_t context_id = 0;
+  uint64_t priority = 0;
+  lnic_add_context(context_id, priority);
+
+  process_msgs();
+}
