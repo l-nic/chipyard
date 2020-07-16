@@ -20,7 +20,12 @@ typedef struct {
 } arch_spinlock_t;
 arch_spinlock_t counter_lock;
 
-uint64_t elapsed_times[NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES*2];
+volatile uint64_t elapsed_times[NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES*2];
+
+#define NCORES 4
+#define MAX_OUTPUT_LEN 1024
+bool root_finished[NCORES];
+char output_buffer[MAX_OUTPUT_LEN];
 
 bool valid_leaf_addr(uint32_t nic_ip_addr) {
     for (int i = 0; i < NUM_LEAVES; i++) {
@@ -69,6 +74,7 @@ int core_main(int argc, char** argv, int cid)
         volatile uint64_t x = elapsed_times[j] = 0;
     }
 
+    int local_j;
     // Register context ID with L-NIC
     lnic_add_context(0, 0);
 
@@ -82,6 +88,7 @@ int core_main(int argc, char** argv, int cid)
                 arch_spin_unlock(&counter_lock);
                 break;
             }
+            local_j = j;
             j++;
             arch_spin_unlock(&counter_lock);
             lnic_wait();
@@ -106,7 +113,7 @@ int core_main(int argc, char** argv, int cid)
             }
             // Check msg data
             uint64_t sent_time = lnic_read();
-            elapsed_times[2*j+1] = read_csr(mcycle) - sent_time;
+            elapsed_times[2*local_j+1] = read_csr(mcycle) - sent_time;
             for (i = 0; i < NUM_MSG_WORDS - 1; i++) {
                 uint64_t data = lnic_read();
                 if (i != data) {
@@ -114,15 +121,27 @@ int core_main(int argc, char** argv, int cid)
                     return -1;
                 }
             }
-            elapsed_times[2*j] = app_hdr;
+            elapsed_times[2*local_j] = app_hdr;
             lnic_msg_done();
         }
+        root_finished[cid] = true;
         if (cid == 0) {
-            printf("&&CSV&&");
-            for (int k = 0; k < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF*2; k++) {
-                printf(",%lx", elapsed_times[k]);
+            // Wait for all cores. This should probably use a lock or amoadd/or
+            bool all_finished = false;
+            while (!all_finished) {
+                all_finished = true;
+                for (int m = 0; m < NCORES; m++) {
+                    if (!root_finished[m]) {
+                        all_finished = false;
+                    }
+                }
             }
-            printf("\n");
+            int len_written = sprintf(output_buffer, "&&CSV&&");
+            for (int k = 0; k < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF*2; k++) {
+                len_written += sprintf(output_buffer + len_written, ",%lx", elapsed_times[k]);
+            }
+            sprintf(output_buffer + len_written, "\n");
+            printf("%s", output_buffer);
             printf("Root program finished.\n");
         }
 
