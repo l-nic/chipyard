@@ -5,12 +5,20 @@
 
 #include "lnic.h"
 
+bool is_single_core() { return false; }
+
 #define NUM_MSG_WORDS 1024
 #define NUM_SENT_MESSAGES_PER_LEAF 3
 
 #define NUM_LEAVES 3
 uint64_t root_addr = 0x0a000002;
 uint64_t leaf_addrs[NUM_LEAVES] = {0x0a000003, 0x0a000004, 0x0a000005};
+
+int j;
+typedef struct {
+  volatile unsigned int lock;
+} arch_spinlock_t;
+arch_spinlock_t counter_lock;
 
 uint64_t elapsed_times[NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES*2];
 
@@ -29,7 +37,7 @@ void stall_cycles(uint64_t num_cycles) {
     }
 }
 
-int main(int argc, char** argv)
+int core_main(int argc, char** argv, int cid)
 {
     // Initialize variables and parse arguments
     uint64_t app_hdr;
@@ -68,7 +76,14 @@ int main(int argc, char** argv)
     if (nic_ip_addr == root_addr) {
         // This is the root node
         // Receive inbound messages from all leaves
-        for (int j = 0; j < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF; j++) {
+        while (1) {
+            arch_spin_lock(&counter_lock);
+            if (j >= NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES) {
+                arch_spin_unlock(&counter_lock);
+                break;
+            }
+            j++;
+            arch_spin_unlock(&counter_lock);
             lnic_wait();
             app_hdr = lnic_read();
             // Check src IP
@@ -91,6 +106,7 @@ int main(int argc, char** argv)
             }
             // Check msg data
             uint64_t sent_time = lnic_read();
+            elapsed_times[2*j+1] = read_csr(mcycle) - sent_time;
             for (i = 0; i < NUM_MSG_WORDS - 1; i++) {
                 uint64_t data = lnic_read();
                 if (i != data) {
@@ -98,21 +114,26 @@ int main(int argc, char** argv)
                     return -1;
                 }
             }
-            elapsed_times[2*j+1] = read_csr(mcycle) - sent_time;
             elapsed_times[2*j] = app_hdr;
             lnic_msg_done();
         }
-        printf("&&CSV&&");
-        for (int j = 0; j < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF*2; j++) {
-            printf(",%lx", elapsed_times[j]);
+        if (cid == 0) {
+            printf("&&CSV&&");
+            for (int k = 0; k < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF*2; k++) {
+                printf(",%lx", elapsed_times[k]);
+            }
+            printf("\n");
+            printf("Root program finished.\n");
         }
-        printf("\n");
-        printf("Root program finished.\n");
 
         // We need to be sure that all leaves have run to completion.
         stall_cycles(1000000);
         return 0;
     } else {
+        // Only use one core for leaves for now
+        if (cid != 0) {
+            while (1);
+        }
         if (!valid_leaf_addr(nic_ip_addr)) {
             printf("Supplied NIC IP is not a valid root or leaf address.\n");
             return -1;
