@@ -5,9 +5,8 @@
 
 #include "lnic.h"
 
-#define NUM_MSG_WORDS 600
-#define NUM_SENT_MESSAGES_PER_LEAF 3
-#define FINISH_STALL_CYCLES 10000
+#define NUM_MSG_WORDS 1024
+#define NUM_SENT_MESSAGES_PER_LEAF 1
 
 #define NUM_LEAVES 3
 uint64_t root_addr = 0x0a000002;
@@ -128,10 +127,9 @@ int main(int argc, char** argv)
             }
         }
         printf("Root program finished.\n");
-        for (int i = 0; i < 10; i++) {
-            printf("Stalling...\n");
-        }
-        stall_cycles(100000);
+
+        // We need to be sure that all leaves have run to completion.
+        stall_cycles(1000000);
         return 0;
     } else {
         if (!valid_leaf_addr(nic_ip_addr)) {
@@ -188,8 +186,9 @@ int main(int argc, char** argv)
         }
         lnic_msg_done();
         printf("Leaf program finished.\n");
-        stall_cycles(FINISH_STALL_CYCLES);
-        return 0;
+        
+        // Only the root node is allowed to finish. The others will be killed by the simulation environment.
+        while (1);
     }
 }
 

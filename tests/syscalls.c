@@ -362,7 +362,6 @@ void __attribute__((weak)) thread_entry(int cid, int nc) {
     // Support programs that just define a regular main()
     if (cid == 0) {
       core_local_ret = main(argc, argv);
-      print_counters();
       printf("Core %d (only core) exited with code %d\n", cid, core_local_ret);
       exit(core_local_ret);
     } else {
