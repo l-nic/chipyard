@@ -18,10 +18,10 @@ typedef struct {
 bool is_single_core() { return false; }
 
 // Number of 8-byte words in each message
-#define NUM_MSG_WORDS 8
+#define NUM_MSG_WORDS 1024
 
 // Number of messages each leaf sends the root
-#define NUM_SENT_MESSAGES_PER_LEAF 3
+#define NUM_SENT_MESSAGES_PER_LEAF 1
 
 // Same as NCORES in syscalls.c
 #define NCORES 4
@@ -183,6 +183,16 @@ void leaf_node() {
 
     // Send outbound messages
     for (j = 0; j < NUM_SENT_MESSAGES_PER_LEAF; j++) {
+        dst_context = 0;
+        app_hdr = (root_addr << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
+        lnic_write_r(app_hdr);
+        current_time = read_csr(mcycle);
+        lnic_write_r(current_time);
+        for (i = 0; i < NUM_MSG_WORDS - 1; i++) {
+            lnic_write_r(i);
+        }
+
+        dst_context = 1;
         app_hdr = (root_addr << 32) | (dst_context << 16) | (NUM_MSG_WORDS*8);
         lnic_write_r(app_hdr);
         current_time = read_csr(mcycle);
