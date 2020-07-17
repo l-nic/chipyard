@@ -251,6 +251,9 @@ void scheduler_run() {
   uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
   uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO + (read_csr(mhartid) << 3); // One eight-byte word offset per hart id
   *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
+  
+  threads[read_csr(mhartid)][0].regs[2] = num_threads[read_csr(mhartid)] - 1;
+  threads[read_csr(mhartid)][0].regs[3] = 0;
   csr_set(mie, LNIC_INT_ENABLE | TIMER_INT_ENABLE);
   asm volatile ("wfi");
 }
