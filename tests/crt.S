@@ -209,9 +209,13 @@ valid:
   bne x1, x3, adjusted_context
   mv x1, zero # If this is the main thread, manually load context 0 at priority 1
   li x4, 1
+  csrw 0x53, x1 # Update current context id
+  j messages_pending # Jump directly to set the priority, skipping the context adjustment
 
 adjusted_context:
   csrw 0x53, x1 # Update current context id
+  nop
+  nop # Stall the pipeline so that messages pending updates in time
   csrr x5, 0x52 # Read messages pending
   bne x5, zero, messages_pending # TODO: This isn't quite right, it should really branch if the chosen context is active
   csrr x5, mscratch
