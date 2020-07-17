@@ -27,6 +27,9 @@ volatile uint64_t elapsed_times[NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES*2];
 bool root_finished[NCORES];
 char output_buffer[MAX_OUTPUT_LEN];
 
+#define arch_spin_is_locked(x) ((x)->lock != 0)
+
+
 bool valid_leaf_addr(uint32_t nic_ip_addr) {
     for (int i = 0; i < NUM_LEAVES; i++) {
         if (nic_ip_addr == leaf_addrs[i]) {
@@ -40,6 +43,36 @@ void stall_cycles(uint64_t num_cycles) {
     for (uint64_t i = 0; i < num_cycles; i++) {
         asm volatile("nop");
     }
+}
+
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+  asm volatile (
+    "amoswap.w.rl x0, x0, %0"
+    : "=A" (lock->lock)
+    :: "memory"
+    );
+}
+
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
+  int tmp = 1, busy;
+  asm volatile (
+    "amoswap.w.aq %0, %2, %1"
+    : "=r"(busy), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return !busy;
+}
+
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
+  while (1) {
+    if (arch_spin_is_locked(lock)) {
+      continue;
+    }
+    if (arch_spin_trylock(lock)) {
+      break;
+    }
+  }
 }
 
 int core_main(int argc, char** argv, int cid)

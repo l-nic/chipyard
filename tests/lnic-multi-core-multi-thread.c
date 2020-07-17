@@ -53,6 +53,39 @@ void stall_cycles(uint64_t num_cycles) {
 int root(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority);
 int leaf();
 
+#define arch_spin_is_locked(x) ((x)->lock != 0)
+
+
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+  asm volatile (
+    "amoswap.w.rl x0, x0, %0"
+    : "=A" (lock->lock)
+    :: "memory"
+    );
+}
+
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
+  int tmp = 1, busy;
+  asm volatile (
+    "amoswap.w.aq %0, %2, %1"
+    : "=r"(busy), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return !busy;
+}
+
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
+  while (1) {
+    if (arch_spin_is_locked(lock)) {
+      continue;
+    }
+    if (arch_spin_trylock(lock)) {
+      break;
+    }
+  }
+}
+
 int core_main(uint64_t argc, char** argv, int cid, int nc) {
     // Check for required arguments
     if (argc != 3) {

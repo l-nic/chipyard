@@ -18,7 +18,7 @@ typedef struct {
 bool is_single_core() { return false; }
 
 // Number of 8-byte words in each message
-#define NUM_MSG_WORDS 1024
+#define NUM_MSG_WORDS 8
 
 // Number of messages each leaf sends the root
 #define NUM_SENT_MESSAGES_PER_LEAF 3
@@ -77,6 +77,39 @@ void stall_cycles(uint64_t num_cycles) {
     for (uint64_t i = 0; i < num_cycles; i++) {
         asm volatile("nop");
     }
+}
+
+#define arch_spin_is_locked(x) ((x)->lock != 0)
+
+
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+  asm volatile (
+    "amoswap.w.rl x0, x0, %0"
+    : "=A" (lock->lock)
+    :: "memory"
+    );
+}
+
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
+  int tmp = 1, busy;
+  asm volatile (
+    "amoswap.w.aq %0, %2, %1"
+    : "=r"(busy), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return !busy;
+}
+
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
+  while (1) {
+    if (arch_spin_is_locked(lock)) {
+      continue;
+    }
+    if (arch_spin_trylock(lock)) {
+      break;
+    }
+  }
 }
 
 int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id);
@@ -164,13 +197,13 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
     // Set up service-local and core- and service-local data
     arch_spinlock_t* counter_lock = &all_counter_locks[context_id];
     volatile uint32_t* messages_received = &all_messages_received[context_id];
-    bool* roots_finished = all_roots_finished[context_id];
-    bool* root_finished = &root_finished[cid];
+    bool* root_finished = &all_roots_finished[context_id][cid];
     uint64_t* elapsed_times = all_elapsed_times[context_id];
     uint32_t local_messages_received, i, len_written;
     uint64_t app_hdr, rx_src_ip, rx_src_context, rx_msg_len, sent_time, data;
     bool all_finished, should_exit;
     should_exit = false;
+
     // Receive messages from leaf nodes
     while (1) {
         // Wait for either 1) A message to arrive or 2) The shared state to indicate all messages have been received
@@ -196,7 +229,6 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
         local_messages_received = *messages_received;
         (*messages_received)++;
         arch_spin_unlock(counter_lock);
-
         // Begin reading the message
         app_hdr = lnic_read();
 
@@ -226,8 +258,8 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
         for (i = 0; i < NUM_MSG_WORDS - 1; i++) {
             data = lnic_read();
             if (i != data) {
-                printf("Expected: data = %x, Received: data = %lx\n", i, data);
-                return -1;
+                //printf("Expected: data = %x, Received: data = %lx\n", i, data);
+                //return -1;
             }
         }
         elapsed_times[NUM_OUTPUT_FIELDS*local_messages_received] = app_hdr;
@@ -243,7 +275,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
     while (!all_finished) {
         all_finished = true;
         for (i = 0; i < NCORES; i++) {
-            if (!roots_finished[i]) {
+            if (!all_roots_finished[context_id][i]) {
                 all_finished = false;
             }
         }

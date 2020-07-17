@@ -71,7 +71,7 @@ typedef struct {
 
 #define arch_spin_is_locked(x) ((x)->lock != 0)
 
-void arch_spin_unlock(arch_spinlock_t *lock) {
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
   asm volatile (
     "amoswap.w.rl x0, x0, %0"
     : "=A" (lock->lock)
@@ -79,7 +79,7 @@ void arch_spin_unlock(arch_spinlock_t *lock) {
     );
 }
 
-int arch_spin_trylock(arch_spinlock_t* lock) {
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
   int tmp = 1, busy;
   asm volatile (
     "amoswap.w.aq %0, %2, %1"
@@ -90,10 +90,8 @@ int arch_spin_trylock(arch_spinlock_t* lock) {
   return !busy;
 }
 
-void arch_spin_lock(arch_spinlock_t* lock) {
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
   while (1) {
-    // Thread is idle if locked
-    write_csr(0x056, 2);
     if (arch_spin_is_locked(lock)) {
       continue;
     }
@@ -135,10 +133,11 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
     // Run the thread. We discard the return value for now for all threads other than context 0.
     int retval = target(argc, argv, cid, nc, context_id, priority);
 
+    // This needs to use a bool array instead of a counter, since we can only use locks to coordinate cores, not threads.
+    thread_exited[cid][context_id] = true;
+
     // Only context id 0 can trigger the core exit
     if (context_id != 0) {
-      // This needs to use a bool array instead of a counter, since we can only use locks to coordinate cores, not threads.
-      thread_exited[cid][context_id] = true;
       while (1) {
         lnic_idle();
       }
@@ -158,18 +157,20 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
         lnic_idle();
       }
     }
-    
+
     // This is a single-core program, so we're now good to exit
+    printf("Core %d (only core) exited with code %d\n", cid, retval);
     exit(retval);
   } else {
     // Run the thread. We discard the return value for now for all threads other than context 0.
     // After the thread has returned, it will enter a tight loop that repeatedly sets lidle.
     int retval = target(argc, argv, cid, nc, context_id, priority);
 
+    // This needs to use a bool array instead of a counter, since we can only use locks to coordinate cores, not threads.
+    thread_exited[cid][context_id] = true;
+
     // Only context id 0 can trigger the core exit
     if (context_id != 0) {
-      // This needs to use a bool array instead of a counter, since we can only use locks to coordinate cores, not threads.
-      thread_exited[cid][context_id] = true;
       while (1) {
         lnic_idle();
       }
@@ -189,6 +190,8 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
         lnic_idle();
       }
     }
+
+    printf("Core %d exited with code %d\n", cid, retval);
 
     // Context id 0 then joins all other cores. By this point, all threads on the core have exited,
     // so we don't need to worry about setting lidle.
