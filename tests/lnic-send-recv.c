@@ -6,53 +6,55 @@
 
 #define NUM_MSG_WORDS 600
 
-// uint32_t get_dst_ip(uint32_t nic_ip_addr) {
-//     if (nic_ip_addr == 0x0a000005) {
-//         return 0x0a000002;
-//     } else if (nic_ip_addr < 0x0a000005 && nic_ip_addr >= 0x0a000002) {
-//         return nic_ip_addr + 1;
-//     } else {
-//         return 0;
-//     }
-// }
-
-// uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
-//     if (nic_ip_addr == 0x0a000002) {
-//         return 0x0a000005;
-//     } else if (nic_ip_addr > 0x0a000002 && nic_ip_addr <= 0x0a000005) {
-//         return nic_ip_addr - 1;
-//     } else {
-//         return 0;
-//     }
-// }
-
+// Ring test
 uint32_t get_dst_ip(uint32_t nic_ip_addr) {
     if (nic_ip_addr == 0x0a000005) {
-        return 0x0a000003;
-    } else if (nic_ip_addr == 0x0a000003) {
-        return 0x0a000005;
-    } else if (nic_ip_addr == 0x0a000004) {
         return 0x0a000002;
-    } else if (nic_ip_addr == 0x0a000002) {
-        return 0x0a000004;
+    } else if (nic_ip_addr < 0x0a000005 && nic_ip_addr >= 0x0a000002) {
+        return nic_ip_addr + 1;
     } else {
         return 0;
     }
 }
 
 uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
-    if (nic_ip_addr == 0x0a000005) {
-        return 0x0a000003;
-    } else if (nic_ip_addr == 0x0a000003) {
+    if (nic_ip_addr == 0x0a000002) {
         return 0x0a000005;
-    } else if (nic_ip_addr == 0x0a000004) {
-        return 0x0a000002;
-    } else if (nic_ip_addr == 0x0a000002) {
-        return 0x0a000004;
+    } else if (nic_ip_addr > 0x0a000002 && nic_ip_addr <= 0x0a000005) {
+        return nic_ip_addr - 1;
     } else {
         return 0;
     }
 }
+
+// Pairwise loopback
+// uint32_t get_dst_ip(uint32_t nic_ip_addr) {
+//     if (nic_ip_addr == 0x0a000005) {
+//         return 0x0a000003;
+//     } else if (nic_ip_addr == 0x0a000003) {
+//         return 0x0a000005;
+//     } else if (nic_ip_addr == 0x0a000004) {
+//         return 0x0a000002;
+//     } else if (nic_ip_addr == 0x0a000002) {
+//         return 0x0a000004;
+//     } else {
+//         return 0;
+//     }
+// }
+
+// uint32_t get_correct_sender_ip(uint32_t nic_ip_addr) {
+//     if (nic_ip_addr == 0x0a000005) {
+//         return 0x0a000003;
+//     } else if (nic_ip_addr == 0x0a000003) {
+//         return 0x0a000005;
+//     } else if (nic_ip_addr == 0x0a000004) {
+//         return 0x0a000002;
+//     } else if (nic_ip_addr == 0x0a000002) {
+//         return 0x0a000004;
+//     } else {
+//         return 0;
+//     }
+// }
 
 int prepare_printing(int argc, char** argv) {
     if (argc != 3) {
@@ -153,7 +155,7 @@ for (int k = 0; k < 3; k++) {
             printf("Expected: data = %x, Received: data = %lx\n", i, data);
             //return -1;
         } else if (i >= 0x1fe) {
-            printf("got data %#lx\n", data);
+            // printf("got data %#lx\n", data);
         }
     }
     lnic_msg_done();

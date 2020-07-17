@@ -206,6 +206,11 @@ valid:
   csrr x1, 0x59 # Read target priority
   csrw 0x55, x1 # Update current priority
   csrr x1, 0x58 # Read target context id
+  li x3, MAX_THREADS # Check to see if this is the main thread
+  bne x1, x3, adjusted_context
+  mv x1, zero
+
+adjusted_context:
   csrw 0x53, x1 # Update current context id
   addi x1, x1, 0x1 # Adjust for one-offset in threads
   slli x1, x1, 0x8 # Account for thread struct size
@@ -240,10 +245,13 @@ valid:
   LREG x29, 29*REGBYTES(x1)
 
   # Reset the timer interrupt
+  li x2, MTIMECMP_PTR_LO
+  csrr x3, mhartid # Account for timer offset due to hartid
+  slli x3, x3, 3
+  add x2, x2, x3
   li x3, MTIME_PTR_LO
   LREG x3, 0(x3)
   addi x3, x3, TIME_SLICE_RTC_TICKS
-  li x2, MTIMECMP_PTR_LO
   SREG x3, 0(x2)
   
 

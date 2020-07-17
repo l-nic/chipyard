@@ -9,6 +9,8 @@
 #include <sys/signal.h>
 #include "util.h"
 #include "mmio.h"
+#include "lnic-scheduler.h"
+#include "lnic.h"
 
 #define SYS_read  63
 #define SYS_write 64
@@ -43,12 +45,205 @@ char ** argv;
 #define NCORES 4
 int core_complete[NCORES];
 
+int thread_failed[NCORES];
+
 #undef strcmp
 
 extern volatile uint64_t tohost;
 extern volatile uint64_t fromhost;
 
 uint32_t use_uart = 0;
+
+bool did_init = false;
+int core_global_ret = 0;
+uint64_t num_exited = 0;
+
+uint64_t num_threads_exited[NCORES];
+
+bool __attribute__((weak)) is_single_core()
+{
+  return true;
+}
+
+typedef struct {
+  volatile unsigned int lock;
+} arch_spinlock_t;
+
+#define arch_spin_is_locked(x) ((x)->lock != 0)
+
+void arch_spin_unlock(arch_spinlock_t *lock) {
+  asm volatile (
+    "amoswap.w.rl x0, x0, %0"
+    : "=A" (lock->lock)
+    :: "memory"
+    );
+}
+
+int arch_spin_trylock(arch_spinlock_t* lock) {
+  int tmp = 1, busy;
+  asm volatile (
+    "amoswap.w.aq %0, %2, %1"
+    : "=r"(busy), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return !busy;
+}
+
+void arch_spin_lock(arch_spinlock_t* lock) {
+  while (1) {
+    // Thread is idle if locked
+    write_csr(0x056, 2);
+    if (arch_spin_is_locked(lock)) {
+      continue;
+    }
+    if (arch_spin_trylock(lock)) {
+      break;
+    }
+  }
+}
+
+arch_spinlock_t init_lock, exit_lock, print_lock;
+arch_spinlock_t thread_lock[NCORES];
+
+// Kernel thread structure
+struct thread_t {
+  uintptr_t regs[NUM_REGS];
+  uintptr_t epc;
+  uintptr_t padding;
+} __attribute__((packed));
+
+// Thread metadata storage in global state
+struct thread_t threads[NCORES][MAX_THREADS + 2]; // Extra one for dummy main thread, and another because index 0 is reserved for asm scratch space
+uint64_t num_threads[NCORES];
+
+struct thread_t* new_thread() {
+  uint64_t hart_id = csr_read(mhartid);
+  //csr_clear(mie, TIMER_INT_ENABLE);
+  if (num_threads[hart_id] == MAX_THREADS) {
+    exit(ERR_THREADS_EXHAUSTED);
+  }
+  struct thread_t* next_thread = &threads[hart_id][num_threads[hart_id]];
+  next_thread->epc = 0;
+  num_threads[hart_id]++;
+  //csr_set(mie, TIMER_INT_ENABLE);
+  return next_thread;
+}
+
+void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority, int (*target)(uint64_t, char**, int, int, uint64_t, uint64_t)) {
+  if (is_single_core()) {
+    // Run the thread
+    int retval = target(argc, argv, cid, nc, context_id, priority);
+    printf("Core %d (only core) application %d exited with code %d\n", cid, context_id, retval);
+    uint64_t hart_id = csr_read(mhartid);
+    arch_spin_lock(&thread_lock[hart_id]);
+    num_threads_exited[hart_id]++;
+    if (retval != 0) {
+      thread_failed[hart_id] = -1;
+    }
+    arch_spin_unlock(&thread_lock[hart_id]);
+
+    // Join all threads
+    while (1) {
+      arch_spin_lock(&thread_lock[hart_id]);
+      if (num_threads_exited[hart_id] == num_threads[hart_id] - 1) {
+        exit(thread_failed[hart_id]);
+      } else {
+        arch_spin_unlock(&thread_lock[hart_id]);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
+  } else {
+    // Run the thread
+    int retval = target(argc, argv, cid, nc, context_id, priority);
+    printf("Core %d application %d exited with code %d\n", cid, context_id, retval);
+    uint64_t hart_id = csr_read(mhartid);
+    arch_spin_lock(&thread_lock[hart_id]);
+    num_threads_exited[hart_id]++;
+    if (retval != 0) {
+      thread_failed[hart_id] = -1;
+    }
+    arch_spin_unlock(&thread_lock[hart_id]);
+    // Join all threads on this core
+    while (1) {
+      arch_spin_lock(&thread_lock[hart_id]);
+      if (num_threads_exited[hart_id] == num_threads[hart_id] - 1) {
+        arch_spin_unlock(&thread_lock[hart_id]);
+        break;
+      } else {
+        arch_spin_unlock(&thread_lock[hart_id]);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
+
+    // Stall all threads but one
+    csr_clear(mie, LNIC_INT_ENABLE | TIMER_INT_ENABLE);
+
+    // Join all other cores
+    arch_spin_lock(&exit_lock);
+    core_global_ret |= (thread_failed[hart_id] & 0xFF) << (8*cid);
+    num_exited++;
+    arch_spin_unlock(&exit_lock);
+    while (1) {
+      arch_spin_lock(&exit_lock);
+      if (num_exited == NCORES) {
+        exit(core_global_ret);
+      } else {
+        arch_spin_unlock(&exit_lock);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
+  }
+}
+
+void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
+  struct thread_t* thread = new_thread();
+  thread->epc = app_wrapper;
+  lnic_add_context(id, priority);
+  volatile uint64_t sp, gp, tp;
+  asm volatile("mv %0, sp" : "=r"(sp));
+  asm volatile("mv %0, gp" : "=r"(gp));
+  asm volatile("mv %0, tp" : "=r"(tp));
+  thread->regs[REG_SP] = sp - STACK_SIZE_BYTES * (1 + id);
+  thread->regs[REG_GP] = gp;
+  thread->regs[REG_TP] = tp;
+  thread->regs[REG_A0] = argc;
+  thread->regs[REG_A1] = argv;
+  thread->regs[REG_A2] = csr_read(mhartid);
+  thread->regs[REG_A3] = NCORES;
+  thread->regs[REG_A4] = id;
+  thread->regs[REG_A5] = priority;
+  thread->regs[REG_A6] = target;
+}
+
+void scheduler_init() {
+  uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
+  uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO + (read_csr(mhartid) << 3); // One eight-byte word offset per hart id
+  *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
+  num_threads[read_csr(mhartid)] = 1;
+  csr_write(mscratch, &threads[read_csr(mhartid)][0]); // mscratch now holds thread base addr
+}
+
+void scheduler_run() {
+  // Turn on the timer interrupts and wait for the scheduler to start
+  csr_write(0x53, MAX_THREADS); // Set the main thread's id to an illegal value
+
+  csr_write(0x55, MAX_THREADS); // Set the main thread's priority to a low value
+
+  // This will keep it from being re-scheduled.
+  uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
+  uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO + (read_csr(mhartid) << 3); // One eight-byte word offset per hart id
+  *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
+  csr_set(mie, LNIC_INT_ENABLE);
+  csr_set(mie, TIMER_INT_ENABLE);
+  asm volatile ("wfi");
+}
 
 void uart_init() {
   reg_write32(UART_BASE_ADDR + UART_TX_CTRL, UART_TX_EN);    
@@ -153,80 +348,52 @@ void printstr(const char* s)
   syscall(SYS_write, 1, (uintptr_t)s, strlen(s));
 }
 
-void notify_core_complete(int cid) {
-    core_complete[cid] = true;
-}
-
-void wait_for_all_cores() {
-    bool all_cores_complete = true;
-    do {
-        all_cores_complete = true;
-        for (int i = 0; i < NCORES; i++) {
-            if (!core_complete[i]) {
-                all_cores_complete = false;
-            }
-        }
-     } while (!all_cores_complete);
-}
-
 void __attribute__((weak)) thread_entry(int cid, int nc) {
-    if (nc != 4 || NCORES != 4) {
-        if (cid == 0) {
-            printf("This program requires 4 cores but was given %d\n", nc);
-        }
-        return;
-    }
+  if (nc != 4 || NCORES != 4) {
+      if (cid == 0) {
+          printf("This program requires 4 cores but was given %d\n", nc);
+      }
+      return;
+  }
 
-    int core0_ret = 0;
-    int core1_ret = 0;
-    int core2_ret = 0;
-    int core3_ret = 0;
+  int core_local_ret = 0;
+
+  if (is_single_core()) {
+    // Support programs that just define a regular main()
     if (cid == 0) {
-        core0_ret = core0_main(argc, argv);
-        notify_core_complete(0);
-        wait_for_all_cores();
-        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
-        exit(ret);
-    } else if (cid == 1) {
-        core1_ret = core1_main(argc, argv);
-        notify_core_complete(1);
-        wait_for_all_cores();
-        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
-        exit(ret);
-    } else if (cid == 2) {
-        core2_ret = core2_main(argc, argv);
-        notify_core_complete(2);
-        wait_for_all_cores();
-        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
-        exit(ret);
-    } else if (cid == 3) {
-        core3_ret = core3_main(argc, argv);
-        notify_core_complete(3);
-        wait_for_all_cores();
-        int ret = ((core3_ret << 24) & 0xFF000000) | ((core2_ret << 16) & 0x00FF0000) | ((core1_ret << 8) & 0x0000FF00) | (core0_ret & 0x000000FF);
-        exit(ret);
+      core_local_ret = main(argc, argv);
+      printf("Core %d (only core) exited with code %d\n", cid, core_local_ret);
+      exit(core_local_ret);
     } else {
-        while (1);
+      while (1);
     }
+  } else {
+    // Support multicore programs
+    core_local_ret = core_main(argc, argv, cid, nc);
+    printf("Core %d exited with code %d\n", cid, core_local_ret);
+    arch_spin_lock(&exit_lock);
+    core_global_ret |= (core_local_ret & 0xFF) << (8*cid);
+    num_exited++;
+    arch_spin_unlock(&exit_lock);
+
+    while (1) {
+      arch_spin_lock(&exit_lock);
+      if (num_exited == NCORES) {
+        exit(core_global_ret);
+      } else {
+        arch_spin_unlock(&exit_lock);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
+  }
+
+  // Should never get here
+  exit(-1);
 }
 
-int __attribute__((weak)) core0_main(uint64_t argc, char** argv) {
-    // Default implementation of core0_main, allows running regular single-core
-    // programs as before.
-    int ret = main(argc, argv);
-    print_counters();
-    return ret;
-}
-
-int __attribute__((weak)) core1_main(uint64_t argc, char** argv) {
-    return 0;
-}
-
-int __attribute__((weak)) core2_main(uint64_t argc, char** argv) {
-    return 0;
-}
-
-int __attribute__((weak)) core3_main(uint64_t argc, char** argv) {
+int __attribute__((weak)) core_main(uint64_t argc, char** argv, int cid, int nc) {
     return 0;
 }
 
@@ -268,18 +435,34 @@ void _init(int cid, int nc)
     argv = mainvars + 1;
     if (argc == 0 || argv == 0) {
       printf("Unable to parse program arguments.\n");
-      return -1;
+      exit(-1);
     }
+    arch_spin_lock(&init_lock);
+    did_init = true;
+    arch_spin_unlock(&init_lock);
   } else {
-    // TODO: do we need to wait for core 0 to set everything up?
-    asm volatile("nop");
+    // // A really bad fake condition variable wait
+    while (1) {
+      arch_spin_lock(&init_lock);
+      if (did_init) {
+        arch_spin_unlock(&init_lock);
+        break;
+      } else {
+        arch_spin_unlock(&init_lock);
+        for (int i = 0; i < 1000; i++) {
+          asm volatile("nop");
+        }
+      }
+    }
   }
 
   // wait for lnicrdy CSR to be set
   while (read_csr(0x057) == 0);
 
   thread_entry(cid, nc);
-  while (1);
+
+  // We should never get here
+  exit(-1);
 }
 
 #undef putchar
@@ -511,12 +694,14 @@ static void vprintfmt(void (*putch)(int, void**), void **putdat, const char *fmt
 
 int printf(const char* fmt, ...)
 {
+  arch_spin_lock(&print_lock);
   va_list ap;
   va_start(ap, fmt);
 
   vprintfmt((void*)putchar, 0, fmt, ap);
 
   va_end(ap);
+  arch_spin_unlock(&print_lock);
   return 0; // incorrect return value, but who cares, anyway?
 }
 

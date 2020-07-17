@@ -27,6 +27,9 @@ PROGRAMS += lnic-send-recv
 PROGRAMS += multiple_cores
 PROGRAMS += lnic-multi-core
 PROGRAMS += lnic-multi-core-different-services
+PROGRAMS += lnic-incast
+PROGRAMS += lnic-single-core-multi-thread
+PROGRAMS += lnic-multi-core-multi-thread
 PROGRAMS += lnic-multi-core-loopback
 PROGRAMS += lnic-load-balance
 

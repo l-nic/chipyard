@@ -29,6 +29,8 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
     vonly.nic_mac_addr := nicio.nic_mac_addr
     vonly.switch_mac_addr := nicio.switch_mac_addr
     vonly.nic_ip_addr := nicio.nic_ip_addr
+    vonly.timeout_cycles := nicio.timeout_cycles
+    vonly.rtt_pkts := nicio.rtt_pkts
     // connect L-NIC to tiles
     val num_cores = outer.lnicTiles.size
     for (i <- 0 until num_cores) {
@@ -66,10 +68,18 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
     val nic_ip_addr = PlusArg("nic_ip_addr",
                              docstring = "IP address of the L-NIC",
                              width = 32)
+    val timeout_cycles = PlusArg("timeout_cycles",
+                                docstring = "Cycles to priority 0 timeout",
+                                width = 64)
+    val rtt_pkts = PlusArg("rtt_pkts",
+                           docstring = "Number of outstanding RTT packets",
+                           width = 16)
 
     net.get.nic_mac_addr := sim.io.net.nic_mac_addr
     net.get.switch_mac_addr := sim.io.net.switch_mac_addr
     net.get.nic_ip_addr := sim.io.net.nic_ip_addr
+    net.get.timeout_cycles := sim.io.net.timeout_cycles
+    net.get.rtt_pkts := sim.io.net.rtt_pkts
   }
 
 }

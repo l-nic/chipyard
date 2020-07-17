@@ -94,6 +94,20 @@ class WithFireSimConfigTweaks extends Config(
   new chipyard.config.WithUART
 )
 
+// Needed for nanoPU versions with no TracerV
+class WithFireSimNoTraceConfigTweaks extends Config(
+  new WithBootROM ++ // needed to support FireSim-as-top
+  new WithPeripheryBusFrequency(BigInt(3200000000L)) ++ // 3.2 GHz
+  new WithoutClockGating ++
+// TraceIO temporarily removed from 8-core, 16-core, and 32-core nanoPU, since it currently breaks RTL
+// generation for designs with more than 4 cores.
+//  new WithTraceIO ++
+  new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 16L) ++ // 16 GB
+  new testchipip.WithTSI ++
+  new testchipip.WithBlockDevice ++
+  new chipyard.config.WithUART
+)
+
 /*******************************************************************************
 * Full TARGET_CONFIG configurations. These set parameters of the target being
 * simulated.
@@ -186,7 +200,7 @@ class FireSimLNICDualRocketConfig extends Config(
   new WithFireSimConfigTweaks ++
   new chipyard.LNICDualRocketConfig)
 
-class SupernodeFireSimLNICRocketConfig extends Config(
+class SupernodeFireSimLNICDualRocketConfig extends Config(
   new WithNumNodes(4) ++
   new freechips.rocketchip.subsystem.WithExtMemSize((1 << 30) * 8L) ++ // 8 GB
   new FireSimLNICDualRocketConfig
@@ -207,18 +221,18 @@ class SupernodeFireSimLNICQuadRocketConfig extends Config(
 class FireSimLNICOctaRocketConfig extends Config(
   new WithLNICFireSimBridges ++
   new WithDefaultMemModel ++
-  new WithFireSimConfigTweaks ++
+  new WithFireSimNoTraceConfigTweaks ++
   new chipyard.LNICOctaRocketConfig)
 
 class FireSimLNICSixteenCoreRocketConfig extends Config(
   new WithLNICFireSimBridges ++
   new WithDefaultMemModel ++
-  new WithFireSimConfigTweaks ++
+  new WithFireSimNoTraceConfigTweaks ++
   new chipyard.LNICSixteenCoreRocketConfig)
 
 class FireSimLNICThirtyTwoCoreRocketConfig extends Config(
   new WithLNICFireSimBridges ++
   new WithDefaultMemModel ++
-  new WithFireSimConfigTweaks ++
+  new WithFireSimNoTraceConfigTweaks ++
   new chipyard.LNICThirtyTwoCoreRocketConfig)
 

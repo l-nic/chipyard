@@ -75,29 +75,24 @@ class SchedulerTest(unittest.TestCase):
 
     def app_msg(self, priority, service_time, pkt_len):
         msg_len = pkt_len - len(Ether()/IP()/LNIC())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=priority) / DummyApp.DummyApp(service_time=service_time) / \
+        return lnic_pkt(msg_len, 0, src_context=0, dst_context=priority) / DummyApp.DummyApp(service_time=service_time) / \
                Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
-        num_lp_msgs = 20
-        num_hp_msgs = 20
+        num_lp_msgs = 9
+        num_hp_msgs = 9
         service_time = 500
         init_inputs = []
         # add high priority msgs
-        init_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
+        init_inputs += [self.app_msg(0, service_time, 128) for i in range(num_hp_msgs)]
         # add low priority msgs 
-        init_inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs/2)]
+        init_inputs += [self.app_msg(1, service_time, 128) for i in range(num_lp_msgs)]
         # shuffle pkts
         random.shuffle(init_inputs)
 
-        more_inputs = []
-        more_inputs += [self.app_msg(HIGH, service_time, 128) for i in range(num_hp_msgs/2)]
-        more_inputs += [self.app_msg(LOW, service_time, 128) for i in range(num_lp_msgs/2 - 1)]
-        random.shuffle(more_inputs)
-        # add a pkt that is going to violate the processing time limit
-        inputs = init_inputs + [self.app_msg(LOW, 4000, 128)] + more_inputs
+        inputs = init_inputs
 
-        receiver = LNICReceiver(TEST_IFACE, MY_MAC, MY_IP, LATENCY_CONTEXT)
+        receiver = LNICReceiver(TEST_IFACE)#, MY_MAC, MY_IP, LATENCY_CONTEXT)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
                     prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=100)

@@ -5,6 +5,8 @@
 
 #include "lnic.h"
 
+bool is_single_core() { return false; }
+
 void process_msgs() {
   uint64_t app_hdr;
   uint16_t msg_len;
@@ -31,34 +33,13 @@ void process_msgs() {
   }
 }
 
-void core0_main() {
+int core_main() {
   uint64_t context_id = 0;
   uint64_t priority = 0;
   lnic_add_context(context_id, priority);
 
   process_msgs();
+
+  return 0;
 }
 
-void core1_main() {
-  uint64_t context_id = 0;
-  uint64_t priority = 0;
-  lnic_add_context(context_id, priority);
-
-  process_msgs();
-}
-
-void core2_main() {
-  uint64_t context_id = 0;
-  uint64_t priority = 0;
-  lnic_add_context(context_id, priority);
-
-  process_msgs();
-}
-
-void core3_main() {
-  uint64_t context_id = 0;
-  uint64_t priority = 0;
-  lnic_add_context(context_id, priority);
-
-  process_msgs();
-}
