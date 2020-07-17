@@ -289,7 +289,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
     // Print the collected stats
     len_written = sprintf(output_buffer[context_id], "&&CSV&&,%d", context_id);
     for (i = 0; i < NUM_LEAVES*NUM_SENT_MESSAGES_PER_LEAF*NUM_OUTPUT_FIELDS; i++) {
-        len_written += sprintf(output_buffer[context_id] + len_written, ",%lx", all_elapsed_times[i]);
+        len_written += sprintf(output_buffer[context_id] + len_written, ",%lx", all_elapsed_times[context_id][i]);
     }
     len_written += sprintf(output_buffer[context_id] + len_written, "\n");
 
