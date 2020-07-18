@@ -194,7 +194,7 @@ class Loopback(unittest.TestCase):
         tx_msgs = {}
         pkts = []
         for i in range(len(src_ips)):
-            num_words = random.randint(1, 1024)
+            num_words = random.randint(1, 512)
             msg = ''.join(['{:0>8}'.format(x) for x in range(num_words)])
             tx_msgs[src_ips[i]] = msg
             pkts += packetize(msg, DEFAULT_CONTEXT, DST_CONTEXT, src_ips[i])
