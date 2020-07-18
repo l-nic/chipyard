@@ -21,7 +21,7 @@
 #define lnic_ready() (read_csr(0x52) != 0)
 #define lnic_idle() write_csr(0x56, 2)
 
-#define lnic_read() __extension__({ uint64_t __tmp; \
+#define lnic_read() ({ uint64_t __tmp; \
   asm volatile ("mv %0, " LREAD  : "=r"(__tmp)); \
   __tmp; })
 #define lnic_copy() asm volatile ("mv " LWRITE ", " LREAD)
