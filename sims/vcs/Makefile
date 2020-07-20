@@ -88,17 +88,17 @@ $(sim_debug): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
 
 riscv_dpi.so: $(sim_common_files)
 	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir) \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/mm.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/mm_dramsim2.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/remote_bitbang.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimDRAM.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimDTM.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimJTAG.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimSerial.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/SimUART.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/uart.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/LNIC_device.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkRocketConfig/LNIC_SimNetwork.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/mm.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/mm_dramsim2.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/remote_bitbang.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimDRAM.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimDTM.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimJTAG.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimSerial.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimUART.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/uart.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/LNIC_device.cc \
+		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/LNIC_SimNetwork.cc \
 		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
 
 #########################################################################################
