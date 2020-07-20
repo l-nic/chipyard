@@ -69,10 +69,10 @@ trait CanHaveLNICModuleImp extends LazyModuleImp {
                              docstring = "IP address of the L-NIC",
                              width = 32)
     val timeout_cycles = PlusArg("timeout_cycles",
-                                docstring = "Cycles to priority 0 timeout",
+                                docstring = "Retransmission timeout in cycles",
                                 width = 64)
     val rtt_pkts = PlusArg("rtt_pkts",
-                           docstring = "Number of outstanding RTT packets",
+                           docstring = "Number of outstanding packets",
                            width = 16)
 
     net.get.nic_mac_addr := sim.io.net.nic_mac_addr

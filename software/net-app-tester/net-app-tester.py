@@ -31,10 +31,6 @@ DST_CONTEXT = 0
 LATENCY_CONTEXT = 0x1234 # use this when we want the HW to insert timestamps into DATA pkts
 DEFAULT_CONTEXT = 0x5678
 
-# Priorities
-LOW = 1
-HIGH = 0
-
 LOG_DIR = '/vagrant/logs'
 
 NUM_SAMPLES = 1
@@ -82,17 +78,15 @@ class SchedulerTest(unittest.TestCase):
         num_lp_msgs = 9
         num_hp_msgs = 9
         service_time = 500
-        init_inputs = []
+        inputs = []
         # add high priority msgs
-        init_inputs += [self.app_msg(0, service_time, 128) for i in range(num_hp_msgs)]
+        inputs += [self.app_msg(0, service_time, 128) for i in range(num_hp_msgs)]
         # add low priority msgs 
-        init_inputs += [self.app_msg(1, service_time, 128) for i in range(num_lp_msgs)]
+        inputs += [self.app_msg(1, service_time, 128) for i in range(num_lp_msgs)]
         # shuffle pkts
-        random.shuffle(init_inputs)
+        random.shuffle(inputs)
 
-        inputs = init_inputs
-
-        receiver = LNICReceiver(TEST_IFACE)#, MY_MAC, MY_IP, LATENCY_CONTEXT)
+        receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
                     prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=100)
@@ -110,7 +104,7 @@ class SchedulerTest(unittest.TestCase):
             self.assertTrue(p.haslayer(LNIC))
             l = struct.unpack('!L', str(p)[-4:])[0]
             t = struct.unpack('!L', str(p)[-8:-4])[0]
-            self.assertTrue(p[LNIC].src_context in [LOW, HIGH])
+            self.assertTrue(p[LNIC].src_context in [0, 1])
             time.append(t)
             context.append(p[LNIC].src_context)
             latency.append(l)
@@ -189,12 +183,12 @@ class Loopback(unittest.TestCase):
 #        print_pkts(sniffer.results)
         return receiver.msgs
     def test_multi_host(self):
-        num_hosts = 8
+        num_hosts = 32
         src_ips = ['10.0.0.{}'.format(i) for i in range(2, 2 + num_hosts)]
         tx_msgs = {}
         pkts = []
         for i in range(len(src_ips)):
-            num_words = random.randint(1, 1024)
+            num_words = random.randint(1, 256)
             msg = ''.join(['{:0>8}'.format(x) for x in range(num_words)])
             tx_msgs[src_ips[i]] = msg
             pkts += packetize(msg, DEFAULT_CONTEXT, DST_CONTEXT, src_ips[i])
