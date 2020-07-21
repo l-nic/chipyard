@@ -2,6 +2,8 @@
 #define MAX_THREADS 10
 #define TIME_SLICE_RTC_TICKS 150
 
+#define NANOKERNEL_CONTEXT 0xffff
+
 // Timer interrupt control
 #define TIMER_INT_ENABLE 0b10000000 /* Timer interrupts enabled */
 #define TIMER_INT_CAUSE  0x8000000000000007 /* Current interrupt is from timer */

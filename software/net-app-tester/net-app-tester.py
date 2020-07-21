@@ -171,7 +171,7 @@ class Loopback(unittest.TestCase):
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == DEFAULT_CONTEXT,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
                     prn=receiver.process_pkt, count=len(pkts), timeout=100)
         sniffer.start()
         # send in pkts
@@ -185,18 +185,19 @@ class Loopback(unittest.TestCase):
     def test_multi_host(self):
         num_hosts = 32
         src_ips = ['10.0.0.{}'.format(i) for i in range(2, 2 + num_hosts)]
+        src_contexts = range(num_hosts)
         tx_msgs = {}
         pkts = []
-        for i in range(len(src_ips)):
+        for src_ip, src_context in zip(src_ips, src_contexts):
             num_words = random.randint(1, 256)
             msg = ''.join(['{:0>8}'.format(x) for x in range(num_words)])
-            tx_msgs[src_ips[i]] = msg
-            pkts += packetize(msg, DEFAULT_CONTEXT, DST_CONTEXT, src_ips[i])
+            tx_msgs[(src_ip, src_context)] = msg
+            pkts += packetize(msg, src_context, DST_CONTEXT, src_ip)
         random.shuffle(pkts)
         rx_msgs = self.do_loopback(pkts)
         self.assertEqual(len(src_ips), len(rx_msgs))
-        for ip in src_ips:
-            self.check_msg(rx_msgs, ip, DEFAULT_CONTEXT, NIC_IP, DST_CONTEXT, tx_msgs[ip])
+        for ip, context in zip(src_ips, src_contexts):
+            self.check_msg(rx_msgs, ip, context, NIC_IP, DST_CONTEXT, tx_msgs[(ip, context)])
     def check_msg(self, rx_msgs, dst_ip, dst_context, src_ip, src_context, msg):
         for m in rx_msgs:
             if m[0][0] == dst_ip and m[0][1] == dst_context and m[0][2] == src_ip and m[0][3] == src_context:
