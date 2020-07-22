@@ -7,7 +7,7 @@
 
 bool is_single_core() { return false; }
 
-#define NUM_MSG_WORDS 1024
+#define NUM_MSG_WORDS 256
 #define NUM_SENT_MESSAGES_PER_LEAF 3
 
 #define NUM_LEAVES 3
