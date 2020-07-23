@@ -33,6 +33,7 @@ PROGRAMS += lnic-multi-core-multi-thread
 PROGRAMS += lnic-multi-core-loopback
 PROGRAMS += lnic-load-balance
 PROGRAMS += lnic-incast-multi-service
+PROGRAMS += lnic-ping-latency
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
