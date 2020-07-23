@@ -5,10 +5,10 @@
 
 #include "lnic.h"
 
-#define CLIENT_IP 0x0a000001
+#define CLIENT_IP 0x0a000002
 #define CLIENT_CONTEXT 0
 
-#define SERVER_IP 0x0a000001
+#define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 1
 
 #define NUM_MSGS 10
