@@ -102,7 +102,7 @@ int main(void) {
 //  printf("Started app 2\n");
 
   // Turn on the timer interrupts and wait for the scheduler to start
-  csr_write(0x53, num_threads - 1); // Set the main thread's id to an illegal value
+  csr_write(0x53, NANOKERNEL_CONTEXT); // Set the main thread's id to nanokernel context id
   csr_write(0x55, num_threads - 1); // Set the main thread's priority to a low value 
   // This will keep it from being re-scheduled.
   // As long as it doesn't use the lnic, this should be fine.

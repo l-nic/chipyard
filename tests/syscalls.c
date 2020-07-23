@@ -462,7 +462,7 @@ void _init(int cid, int nc)
         break;
       } else {
         arch_spin_unlock(&init_lock);
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < 100; i++) {
           asm volatile("nop");
         }
       }
