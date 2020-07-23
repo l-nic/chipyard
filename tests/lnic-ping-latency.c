@@ -113,6 +113,7 @@ int run_server() {
 
   for (n = 0; n < NUM_MSGS; n++) {
     // wait for a pkt to arrive
+    printf("Server waiting for messages\n");
     lnic_wait();
     // read request application hdr
     app_hdr = lnic_read();
@@ -165,7 +166,26 @@ int run_server() {
 int core_main(uint64_t argc, char** argv, int cid, int nc) {
   uint64_t context_id = cid;
   uint64_t priority = 0;
-  printf("Starting core main\n");
+
+  if (argc != 3) {
+      printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+      return -1;
+  }
+
+  char* nic_ip_str = argv[2];
+  uint32_t nic_ip_addr_lendian = 0;
+  int retval = inet_pton4(nic_ip_str, nic_ip_str + strlen(nic_ip_str), &nic_ip_addr_lendian);
+
+  // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
+  uint32_t nic_ip_addr = swap32(nic_ip_addr_lendian);
+  if (retval != 1 || nic_ip_addr == 0) {
+      printf("Supplied NIC IP address is invalid.\n");
+      return -1;
+  }
+  if (nic_ip_addr != SERVER_IP) {
+    return 0;
+  }
+
   lnic_add_context(context_id, priority);
 
   // wait for all cores to boot -- TODO: is there a better way than this?

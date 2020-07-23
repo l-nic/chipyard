@@ -10,7 +10,8 @@ def build_components(num_sims, current_run):
         run("make")
     with cd("chipyard/software/local_firesim/logs/"):
         run("mkdir " + current_run)
-        run("ln -sf " + current_run + " recent")
+        run("rm -f recent")
+        run("ln -s " + current_run + " recent")
     with cd("chipyard/tests"):
         run("make -j16")
 
