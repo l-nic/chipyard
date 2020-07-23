@@ -11,10 +11,19 @@
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 1
 
-#define NUM_MSGS 1
-#define MSG_LEN_WORDS 1
+#define NUM_MSGS 10
+#define MSG_LEN_WORDS 8
 
 bool is_single_core() { return false; }
+
+void print_app_hdr(uint64_t app_hdr) {
+  uint64_t ip = (app_hdr & IP_MASK) >> 32;
+  uint64_t context = (app_hdr & CONTEXT_MASK) >> 16;
+  uint16_t msg_len = app_hdr & LEN_MASK;
+  printf("\tip = %lx\n", ip);
+  printf("\tcontext = %ld\n", context);
+  printf("\tmsg_len = %d\n", msg_len);
+}
 
 int run_client() {
   uint64_t app_hdr;
@@ -38,9 +47,12 @@ int run_client() {
   for (n = 0; n < NUM_MSGS; n++) {
     // Send msg to server
     app_hdr = (dst_ip << 32) | (dst_context << 16) | (MSG_LEN_WORDS*8);
-    //printf("Sending message\n");
     lnic_write_r(app_hdr);
-    lnic_write_r(rdcycle());
+    now = rdcycle();
+    lnic_write_r(now);
+    for (i = 1; i < MSG_LEN_WORDS; i++) {
+      lnic_write_r(i);
+    }
 
     // receive response from server
     lnic_wait();
@@ -49,6 +61,9 @@ int run_client() {
     now = rdcycle();
     timestamps[n] = now;
     latencies[n] = now - lnic_read();
+    for (i = 1; i < MSG_LEN_WORDS; i++) {
+      lnic_read();
+    }
     // Check src IP
     src_ip = (app_hdr & IP_MASK) >> 32;
     if (src_ip != SERVER_IP) {
@@ -74,19 +89,15 @@ int run_client() {
   if (read_csr(0x052) != 0) {
     printf("CLIENT ERROR: RX Queue is not empty after processing all msgs!\n");
     app_hdr = lnic_read();
-    src_ip = (app_hdr & IP_MASK) >> 32;
-    src_context = (app_hdr & CONTEXT_MASK) >> 16;
-    rx_msg_len = app_hdr & LEN_MASK;
-    printf("\tsrc_ip = %lx\n", src_ip);
-    printf("\tsrc_context = %ld\n", src_context);
-    printf("\tmsg_len = %d\n", rx_msg_len);
+    printf("CLIENT Rx AppHdr:\n");
+    print_app_hdr(app_hdr);
     ret = -1;
   }
 
   // print latency measurements
   printf("time, latency\n");
   for (n = 0; n < NUM_MSGS; n++) {
-    printf("%lld, %lld\n", timestamps[n], latencies[n]);
+    printf("%ld, %ld\n", timestamps[n], latencies[n]);
   }
 
   return ret; 
@@ -124,6 +135,9 @@ int run_server() {
         return -1;
     }
 
+//    printf("%ld: SERVER Rx AppHdr:\n", rdcycle());
+//    print_app_hdr(app_hdr);
+
     // write response application hdr
     lnic_write_r(app_hdr);
     // extract msg_len
@@ -158,9 +172,9 @@ int core_main(uint64_t argc, char** argv, int cid, int nc) {
   }
 
   int ret = 0;
-  if (cid == 0) {
+  if (cid == CLIENT_CONTEXT) {
     ret = run_client();
-  } else if (cid == 1) {
+  } else if (cid == SERVER_CONTEXT) {
     ret = run_server();
   }
  
