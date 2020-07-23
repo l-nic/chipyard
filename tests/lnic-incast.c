@@ -7,7 +7,7 @@
 
 bool is_single_core() { return false; }
 
-#define NUM_MSG_WORDS 1024
+#define NUM_MSG_WORDS 128
 #define NUM_SENT_MESSAGES_PER_LEAF 3
 
 #define NUM_LEAVES 3
@@ -151,11 +151,12 @@ int core_main(int argc, char** argv, int cid)
                 uint64_t data = lnic_read();
                 if (i != data) {
                     printf("Expected: data = %x, Received: data = %lx\n", i, data);
-                    return -1;
+                    //return -1;
                 }
             }
             elapsed_times[2*local_j] = app_hdr;
             lnic_msg_done();
+            printf("Received message %d\n", local_j);
         }
         root_finished[cid] = true;
         if (cid == 0) {
@@ -177,9 +178,6 @@ int core_main(int argc, char** argv, int cid)
             printf("%s", output_buffer);
             printf("Root program finished.\n");
         }
-
-        // We need to be sure that all leaves have run to completion.
-        stall_cycles(1000000);
         return 0;
     } else {
         // Only use one core for leaves for now
