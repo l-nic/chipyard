@@ -11,7 +11,7 @@
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 1
 
-#define NUM_MSGS 10
+#define NUM_MSGS 1
 #define MSG_LEN_WORDS 1
 
 bool is_single_core() { return false; }
@@ -20,10 +20,17 @@ int run_client() {
   uint64_t app_hdr;
   uint64_t dst_ip;
   uint64_t dst_context;
+  uint64_t src_ip;
+  uint64_t src_context;
+  uint16_t rx_msg_len;
   uint64_t now;
   uint64_t latency;
   int i;
   int n;
+  int ret = 0; // return code
+
+  uint64_t timestamps[NUM_MSGS];
+  uint64_t latencies[NUM_MSGS];
 
   dst_ip = SERVER_IP;
   dst_context = SERVER_CONTEXT;
@@ -40,24 +47,24 @@ int run_client() {
     app_hdr = lnic_read();
     // Record latency
     now = rdcycle();
-    latency = now - lnic_read();
-    printf("time = %lld cycles, latency = %lld cycles\n", now, latency);
+    timestamps[n] = now;
+    latencies[n] = now - lnic_read();
     // Check src IP
-    uint64_t src_ip = (app_hdr & IP_MASK) >> 32;
+    src_ip = (app_hdr & IP_MASK) >> 32;
     if (src_ip != SERVER_IP) {
-        printf("ERROR: Expected: correct_sender_ip = %lx, Received: src_ip = %lx\n", SERVER_IP, src_ip);
+        printf("CLIENT ERROR: Expected: correct_sender_ip = %lx, Received: src_ip = %lx\n", SERVER_IP, src_ip);
         return -1;
     }
     // Check src context
-    uint64_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
+    src_context = (app_hdr & CONTEXT_MASK) >> 16;
     if (src_context != SERVER_CONTEXT) {
-        printf("ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", SERVER_CONTEXT, src_context);
+        printf("CLIENT ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", SERVER_CONTEXT, src_context);
         return -1;
     }
     // Check msg length
-    uint16_t rx_msg_len = app_hdr & LEN_MASK;
+    rx_msg_len = app_hdr & LEN_MASK;
     if (rx_msg_len != MSG_LEN_WORDS*8) {
-        printf("ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", MSG_LEN_WORDS*8, rx_msg_len);
+        printf("CLIENT ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", MSG_LEN_WORDS*8, rx_msg_len);
         return -1;
     }
     lnic_msg_done();
@@ -65,11 +72,24 @@ int run_client() {
 
   // make sure RX queue is empty
   if (read_csr(0x052) != 0) {
-    printf("ERROR: RX Queue is not empty after processing all msgs!\n");
-    return -1;
+    printf("CLIENT ERROR: RX Queue is not empty after processing all msgs!\n");
+    app_hdr = lnic_read();
+    src_ip = (app_hdr & IP_MASK) >> 32;
+    src_context = (app_hdr & CONTEXT_MASK) >> 16;
+    rx_msg_len = app_hdr & LEN_MASK;
+    printf("\tsrc_ip = %lx\n", src_ip);
+    printf("\tsrc_context = %ld\n", src_context);
+    printf("\tmsg_len = %d\n", rx_msg_len);
+    ret = -1;
   }
 
-  return 0; 
+  // print latency measurements
+  printf("time, latency\n");
+  for (n = 0; n < NUM_MSGS; n++) {
+    printf("%lld, %lld\n", timestamps[n], latencies[n]);
+  }
+
+  return ret; 
 }
  
 int run_server() {
@@ -84,6 +104,26 @@ int run_server() {
     lnic_wait();
     // read request application hdr
     app_hdr = lnic_read();
+
+    // Check src IP
+    uint64_t src_ip = (app_hdr & IP_MASK) >> 32;
+    if (src_ip != CLIENT_IP) {
+        printf("SERVER ERROR: Expected: correct_sender_ip = %lx, Received: src_ip = %lx\n", CLIENT_IP, src_ip);
+        return -1;
+    }
+    // Check src context
+    uint64_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
+    if (src_context != CLIENT_CONTEXT) {
+        printf("SERVER ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", CLIENT_CONTEXT, src_context);
+        return -1;
+    }
+    // Check msg length
+    uint16_t rx_msg_len = app_hdr & LEN_MASK;
+    if (rx_msg_len != MSG_LEN_WORDS*8) {
+        printf("SERVER ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", MSG_LEN_WORDS*8, rx_msg_len);
+        return -1;
+    }
+
     // write response application hdr
     lnic_write_r(app_hdr);
     // extract msg_len
@@ -100,7 +140,7 @@ int run_server() {
 
   // make sure RX queue is empty
   if (read_csr(0x052) != 0) {
-    printf("ERROR: RX Queue is not empty after processing all msgs!\n");
+    printf("SERVER ERROR: RX Queue is not empty after processing all msgs!\n");
     return -1;
   }
 
