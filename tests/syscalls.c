@@ -775,6 +775,19 @@ void* memset(void* dest, int byte, size_t len)
   return dest;
 }
 
+int memcmp(const void *s1, const void *s2, size_t n) {
+    char *a = (char *)s1, *b = (char *)s2;
+    for (size_t i = 0; i < n; i++, a++, b++) {
+        if (*a < *b) {
+            return -1;
+        }
+        else if (*a > *b) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 size_t strlen(const char *s)
 {
   const char *p = s;
