@@ -205,31 +205,7 @@ valid:
   csrwi 0x54, 0x4
   csrr x4, 0x59 # Read target priority
   csrr x1, 0x58 # Read target context id
-  li x3, MAX_THREADS # Check to see if this is the main thread
-  bne x1, x3, adjusted_context
-  mv x1, zero # If this is the main thread, manually load context 0 at priority 1
-  li x4, 1
-  csrw 0x53, x1 # Update current context id
-  j messages_pending # Jump directly to set the priority, skipping the context adjustment
-
-adjusted_context:
-  csrw 0x53, x1 # Update current context id
-  nop
-  nop # Stall the pipeline so that messages pending updates in time
-  csrr x5, 0x52 # Read messages pending
-  bne x5, zero, messages_pending # TODO: This isn't quite right, it should really branch if the chosen context is active
-  csrr x5, mscratch
-  LREG x6, 2*REGBYTES(x5) # Load num threads
-  LREG x1, 3*REGBYTES(x5) # Load next context
-  csrw 0x53, x1 # Adjust current context id
-  csrr x4, 0x59 # Read new target priority
-  addi x7, x1, 1 # Store next context in x7
-  bne x7, x6, no_cycle
-  mv x7, zero
-no_cycle:
-  SREG x7, 3*REGBYTES(x5) # Store the updated next context
-
-messages_pending:
+  csrw 0x53, x1 # Update current context id # TODO: Do we still need a pipeline stall after this?
   csrw 0x55, x4 # Update current priority
   addi x1, x1, 0x1 # Adjust for one-offset in threads
   slli x1, x1, 0x8 # Account for thread struct size

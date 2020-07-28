@@ -116,6 +116,17 @@ static inline void arch_spin_lock(arch_spinlock_t* lock) {
   }
 }
 
+static inline int arch_amoadd(arch_spinlock_t* lock, int tmp) {
+  int next;
+  asm volatile (
+    "amoadd.w.aq %0, %2, %1"
+    : "=r"(next), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return next;
+}
+
 int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id);
 
 // --------------------------------------------------------------------------
@@ -222,27 +233,24 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
     while (1) {
         // Wait for either 1) A message to arrive or 2) The shared state to indicate all messages have been received
         while (1) {
-            arch_spin_lock(counter_lock);
-            if (*messages_received >= NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES) {
+            if (arch_amoadd(counter_lock, 0) >= NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES) {
                 should_exit = true;
                 break;
             } else if (lnic_ready()) {
                 should_exit = false;
+                local_messages_received = arch_amoadd(counter_lock, 1);
                 break;
             } else {
-                arch_spin_unlock(counter_lock);
                 lnic_idle();
+                for (int m = 0; m < 10; m++) {
+                    asm volatile("nop");
+                }
             }
         }
         if (should_exit) {
-            arch_spin_unlock(counter_lock);
             break;
         }
-
-        // Capture and update the shared state
-        local_messages_received = *messages_received;
-        (*messages_received)++;
-        arch_spin_unlock(counter_lock);
+        
         // Begin reading the message
         app_hdr = lnic_read();
 

@@ -254,7 +254,9 @@ void scheduler_run() {
   
   threads[read_csr(mhartid)][0].regs[2] = num_threads[read_csr(mhartid)] - 1;
   threads[read_csr(mhartid)][0].regs[3] = 0;
-  csr_set(mie, LNIC_INT_ENABLE | TIMER_INT_ENABLE);
+  csr_write(0x53, NANOKERNEL_CONTEXT); // Set the main thread's id to nanokernel context id
+  csr_write(0x55, num_threads - 1); // Set the main thread's priority to a low value 
+  csr_set(mie, LNIC_INT_ENABLE);
   asm volatile ("wfi");
 }
 
