@@ -224,28 +224,60 @@ class Loopback(unittest.TestCase):
 #        df = pd.DataFrame({'pkt_len':length, 'latency':latency})
 #        write_csv('loopback', 'pkt_len_latency.csv', df)
 
+class LoopbackLatency(unittest.TestCase):
+    def do_loopback(self, pkts):
+#        print "*********** Request Pkts: ***********"
+#        print_pkts(pkts)
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+                    prn=receiver.process_pkt, count=len(pkts), timeout=100)
+        sniffer.start()
+        # send in pkts
+        sendp(pkts, iface=TEST_IFACE)
+        # wait for all response pkts
+        sniffer.join()
+        self.assertEqual(len(pkts), len(sniffer.results))
+#        print "*********** Response Pkts: ***********"
+#        print_pkts(sniffer.results)
+        return sniffer.results
+    def test_latency(self):
+        msg_len = 8 # bytes
+        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
+        rx_pkts = self.do_loopback(pkts)
+        self.assertEqual(1, len(rx_pkts))
+        p = rx_pkts[0]
+        latency = struct.unpack('!L', str(p)[-4:])[0]
+        time = struct.unpack('!L', str(p)[-8:-4])[0]
+        print "latency = {} cycles".format(latency)
+
 class ThroughputTest(unittest.TestCase):
     def setUp(self):
         bind_layers(LNIC, Throughput.Throughput)
 
     def start_rx_msg(self, num_msgs):
-        return lnic_req() / Throughput.Throughput() / Throughput.StartRx(num_msgs=num_msgs) / Raw('\x00'*8)
+        msg = Throughput.Throughput() / Throughput.StartRx(num_msgs=num_msgs) / Raw('\x00'*8)
+        return lnic_pkt(len(msg), 0, src_context=LATENCY_CONTEXT, dst_context=0) / msg
 
     def start_tx_msg(self, num_msgs, msg_size):
-        return lnic_req() / Throughput.Throughput() / Throughput.StartTx(num_msgs=num_msgs, msg_size=msg_size) / Raw('\x00'*8)
+        msg = Throughput.Throughput() / Throughput.StartTx(num_msgs=num_msgs, msg_size=msg_size) / Raw('\x00'*8)
+        return lnic_pkt(len(msg), 0, src_context=LATENCY_CONTEXT, dst_context=0) / msg
 
-    def data_msg(self):
-        return lnic_req() / Throughput.Throughput(msg_type=Throughput.DATA_TYPE)
+    def data_msg(self, msg_len):
+        msg = Throughput.Throughput(msg_type=Throughput.DATA_TYPE) / Raw('\x00'*(msg_len - len(Throughput.Throughput())))
+        return lnic_pkt(len(msg), 0, src_context=LATENCY_CONTEXT, dst_context=0) / msg
 
-    def do_rx_test(self, num_pkts, pkt_len):
+    def do_rx_test(self, num_msgs, msg_len):
         # test RX throughput - how fast can the application receive msgs?
         pkts = []
-        pkts += [self.start_rx_msg(num_pkts)]
-        for i in range(num_pkts):
-            pkts += [self.data_msg() / Raw('\x00'*(pkt_len - len(self.data_msg())))]
+        pkts += [self.start_rx_msg(num_msgs)]
+        for i in range(num_msgs):
+            pkts += [self.data_msg(msg_len)]
+        receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=1, timeout=10)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+                    prn=receiver.process_pkt, count=1, timeout=100)
         sniffer.start()
         # send in pkts
         sendp(pkts, iface=TEST_IFACE)
@@ -253,37 +285,45 @@ class ThroughputTest(unittest.TestCase):
         sniffer.join()
         self.assertEqual(1, len(sniffer.results))
         done_msg = sniffer.results[0]
-        total_latency = struct.unpack('!Q', str(done_msg)[-8:])[0]
-        throughput = len(pkts)/float(total_latency)
-        return throughput # pkts/cycle
-    def do_tx_test(self, num_pkts, pkt_len):
+        total_latency = struct.unpack('!L', str(done_msg)[-4:])[0]
+        total_bytes = (len(Ether()/IP()/LNIC()) + msg_len)*num_msgs
+        throughput = total_bytes/float(total_latency)
+        return throughput # bytes/cycle
+
+    def do_tx_test(self, num_msgs, msg_len):
         # test TX throughput - how fast can the application generate pkts?
-        pkts = []
-        msg_len = pkt_len - len(lnic_req())
-        pkts += [self.start_tx_msg(num_pkts, msg_len)]
-        # start sniffing for generated DATA msgs
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].dst == MY_CONTEXT,
-                    count=num_pkts, timeout=10)
+        start_msg = self.start_tx_msg(num_msgs, msg_len)
+        receiver = LNICReceiver(TEST_IFACE)
+        # start sniffing for generated msgs
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+                    prn=receiver.process_pkt, count=num_msgs, timeout=100)
         sniffer.start()
         # send in START msg
-        sendp(pkts, iface=TEST_IFACE)
+        sendp(start_msg, iface=TEST_IFACE)
         # wait for all generated DATA msgs
         sniffer.join()
-        self.assertEqual(num_pkts, len(sniffer.results))
+        self.assertEqual(num_msgs, len(sniffer.results))
+        for p in sniffer.results:
+            self.assertEqual(len(Ether()/IP()/LNIC()) + msg_len, len(p))
         final_msg = sniffer.results[-1]
-        total_latency = struct.unpack('!Q', str(final_msg)[-8:])[0]
-        throughput = num_pkts/float(total_latency)
-        return throughput # pkts/cycle
+        total_latency = struct.unpack('!L', str(final_msg)[-4:])[0]
+        total_bytes = reduce(lambda a,b: a+b, map(len, sniffer.results))
+        throughput = total_bytes/float(total_latency)
+        print 'total_latency = {} cycles'.format(total_latency)
+        print 'total_bytes = {} bytes'.format(total_bytes)
+        return throughput # bytes/cycle
+
     def test_rx_throughput(self):
-        pkt_len = 64 # bytes
-        num_pkts = 200
-        throughput = self.do_rx_test(num_pkts, pkt_len)
-        print 'RX Throughput = {} pkts/cycle ({} bytes/cycle)'.format(throughput, throughput*pkt_len)
+        msg_len = MAX_SEG_LEN_BYTES
+        num_msgs = 100
+        throughput = self.do_rx_test(num_msgs, msg_len)
+        print 'RX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
+
     def test_tx_throughput(self):
-        pkt_len = 64 # bytes
-        num_pkts = 200
-        throughput = self.do_tx_test(num_pkts, pkt_len)
-        print 'RX Throughput = {} pkts/cycle ({} bytes/cycle)'.format(throughput, throughput*pkt_len)
+        msg_len = MAX_SEG_LEN_BYTES
+        num_msgs = 100
+        throughput = self.do_tx_test(num_msgs, msg_len)
+        print 'TX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
 
 class Stream(unittest.TestCase):
     def do_loopback(self, pkt_len):

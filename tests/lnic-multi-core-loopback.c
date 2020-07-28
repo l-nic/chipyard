@@ -5,6 +5,8 @@
 
 #include "lnic.h"
 
+// #define MSG_LEN 8
+
 bool is_single_core() { return false; }
 
 void process_msgs() {
@@ -22,13 +24,20 @@ void process_msgs() {
     lnic_write_r(app_hdr);
     // extract msg_len
     msg_len = (uint16_t)app_hdr;
-//    printf("Received msg of length: %hu bytes", msg_len);
+#ifdef MSG_LEN
+    if (msg_len != MSG_LEN) {
+      printf("ERROR: application only supports %d byte msgs!\n", MSG_LEN);
+      return -1;
+    }
+    lnic_copy();
+#else
     num_words = msg_len/LNIC_WORD_SIZE;
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
     for (i = 0; i < num_words; i++) {
       lnic_copy();
     }
+#endif
     lnic_msg_done();
   }
 }
