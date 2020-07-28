@@ -11,8 +11,8 @@
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 1
 
-#define NUM_MSGS 10
-#define MSG_LEN_WORDS 8
+#define NUM_MSGS 1
+#define MSG_LEN_WORDS 1
 
 bool is_single_core() { return false; }
 

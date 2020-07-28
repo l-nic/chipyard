@@ -11,16 +11,98 @@
 
 #define DONE_MSG_LEN 16
 
-int main(void)
-{
-  uint64_t app_hdr;
+#define UNROLL_LOOP
+#define MSG_LEN_WORDS 128
+
+#define REPEAT_4(X) X X X X
+#define REPEAT_8(X) REPEAT_4(X) REPEAT_4(X)
+#define REPEAT_16(X) REPEAT_8(X) REPEAT_8(X)
+#define REPEAT_32(X) REPEAT_16(X) REPEAT_16(X)
+#define REPEAT_64(X) REPEAT_32(X) REPEAT_32(X)
+#define REPEAT_126(X) REPEAT_64(X) REPEAT_32(X) REPEAT_16(X) REPEAT_8(X) REPEAT_4(X) X X
+#define REPEAT_128(X) REPEAT_64(X) REPEAT_64(X)
+
+int rx_throughput_test(uint64_t app_hdr) {
   uint16_t msg_len;
   int num_words;
   int i, j;
-  uint64_t msg_type;
+  uint64_t start_time;
+  uint64_t num_msgs;
+
+  // perform RX throughput test
+  num_msgs = lnic_read(); // # of msgs to receive
+  start_time = lnic_read();
+  lnic_msg_done();
+  // read all msgs as fast as possible
+  for (i = 0; i < num_msgs; i++) {
+    lnic_wait();
+    app_hdr = lnic_read();
+    // extract msg_len
+    msg_len = (uint16_t)app_hdr;
+#ifdef UNROLL_LOOP
+    if (msg_len != MSG_LEN_WORDS*8) {
+      printf("ERROR: application only supports %d byte msgs!\n", MSG_LEN_WORDS*8);
+      return -1;
+    }
+    REPEAT_128(lnic_read();)
+#else
+    num_words = msg_len/LNIC_WORD_SIZE;
+    if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
+    // read and discard all msg data
+    for (j = 0; j < num_words; j++) {
+      lnic_read();
+    }
+#endif
+    lnic_msg_done();
+  }
+  // send DONE msg
+  lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | DONE_MSG_LEN); // app hdr
+  lnic_write_i(DONE_TYPE); // msg type
+  lnic_write_r(start_time); // timestamp
+}
+
+int tx_throughput_test(uint64_t app_hdr) {
+  int num_words;
+  int i, j;
   uint64_t start_time;
   uint64_t num_msgs;
   uint64_t msg_size;
+
+  // perform TX throughput test
+  num_msgs = lnic_read(); // # of msgs to generate
+  msg_size = lnic_read(); // size of msgs to generate (bytes)
+  start_time = lnic_read();
+  lnic_msg_done();
+  // generate all required msgs
+  app_hdr = (app_hdr & (IP_MASK | CONTEXT_MASK)) | msg_size;
+#ifdef UNROLL_LOOP
+  if (msg_size != MSG_LEN_WORDS*8) {
+    printf("ERROR: application only supports %d byte msgs!\n", MSG_LEN_WORDS*8);
+    return -1;
+  }
+  for (i = 0; i < num_msgs; i++) {
+    lnic_write_r(app_hdr);
+    lnic_write_i(DATA_TYPE); // msg_type
+    REPEAT_126(lnic_write_i(0);) // dummy data to generate
+    lnic_write_r(start_time); // timestamp
+  }
+#else // do not unroll
+  num_words = msg_size/LNIC_WORD_SIZE;
+  if (msg_size % LNIC_WORD_SIZE != 0) { num_words++; }
+  for (i = 0; i < num_msgs; i++) {
+    lnic_write_r(app_hdr);
+    lnic_write_i(DATA_TYPE); // msg_type
+    for (j = 0; j < num_words-2; j++) {
+      lnic_write_i(0); // dummy data to generate
+    }
+    lnic_write_r(start_time); // timestamp
+  }
+#endif
+}
+
+int main(void)
+{
+  uint64_t app_hdr;
 
   // register context ID with L-NIC
   lnic_add_context(0, 0);
@@ -30,43 +112,9 @@ int main(void)
     lnic_wait();
     app_hdr = lnic_read();
     if (lnic_read() == START_RX_TYPE) {
-      // perform RX throughput test
-      num_msgs = lnic_read(); // # of msgs to receive
-      start_time = lnic_read();
-      // read all msgs as fast as possible
-      for (i = 0; i < num_msgs; i++) {
-        lnic_wait();
-	app_hdr = lnic_read();
-        // extract msg_len
-        msg_len = (uint16_t)app_hdr;
-        num_words = msg_len/LNIC_WORD_SIZE;
-        if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
-        // read and discard all msg data
-        for (j = 0; j < num_words; j++) {
-	  lnic_read();
-        }
-      }
-      // send DONE msg
-      lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | DONE_MSG_LEN); // app hdr
-      lnic_write_i(DONE_TYPE); // msg type
-      lnic_write_r(start_time); // timestamp
+      rx_throughput_test(app_hdr);
     } else {
-      // perform TX throughput test
-      num_msgs = lnic_read(); // # of msgs to generate
-      msg_size = lnic_read(); // size of msgs to generate (bytes)
-      start_time = lnic_read();
-      // generate all required msgs
-      app_hdr = (app_hdr & (IP_MASK | CONTEXT_MASK)) | msg_size;
-      num_words = msg_size/LNIC_WORD_SIZE;
-      if (msg_size % LNIC_WORD_SIZE != 0) { num_words++; }
-      for (i = 0; i < num_msgs; i++) {
-        lnic_write_r(app_hdr);
-	lnic_write_i(DATA_TYPE); // msg_type
-	for (j = 0; j < num_words-2; j++) {
-          lnic_write_i(0); // dummy data to generate
-	}
-	lnic_write_r(start_time); // timestamp
-      }
+      tx_throughput_test(app_hdr);
     }
   }
   return 0;
