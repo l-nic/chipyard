@@ -247,7 +247,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
         // Check src IP
         rx_src_ip = (app_hdr & IP_MASK) >> 32;
         if (!valid_leaf_addr(rx_src_ip)) {
-            printf("Root node received address from non-leaf node: %lx\n", rx_src_ip);
+            printf("Root node received address from non-leaf node: %lx\n", app_hdr);
             return -1;
         }
         // Check src context
@@ -269,7 +269,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id) 
         for (i = 0; i < NUM_MSG_WORDS - 1; i++) {
             data = lnic_read();
             if (i != data) {
-                //printf("Expected: data = %x, Received: data = %lx\n", i, data);
+                printf("Expected: data = %x, Received: data = %lx\n", i, data);
                 //return -1;
             }
         }
