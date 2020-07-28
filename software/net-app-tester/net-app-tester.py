@@ -319,11 +319,11 @@ class ThroughputTest(unittest.TestCase):
         throughput = self.do_rx_test(num_msgs, msg_len)
         print 'RX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
 
-#    def test_tx_throughput(self):
-#        msg_len = MAX_SEG_LEN_BYTES
-#        num_msgs = 100
-#        throughput = self.do_tx_test(num_msgs, msg_len)
-#        print 'TX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
+    def test_tx_throughput(self):
+        msg_len = MAX_SEG_LEN_BYTES
+        num_msgs = 100
+        throughput = self.do_tx_test(num_msgs, msg_len)
+        print 'TX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
 
 class Stream(unittest.TestCase):
     def do_loopback(self, pkt_len):
