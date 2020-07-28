@@ -16,6 +16,13 @@ git submodule update --init sim/firesim-lib/src/main/cc/lib/elfutils
 ./scripts/build-libdwarf.sh
 sudo ldconfig
 
+Enable Password authentication for ssh:
+* Open /etc/ssh/sshd_config and replace the line `PasswordAuthentication no` with `PasswordAuthentication yes` 
+* service sshd restart
+
+Create the logs directory:
+* mkdir -p ~/chipyard/software/local_firesim/logs
+
 To build the MIDAS-level simulator, run this:
 cd ~/chipyard/sims/firesim/sim
 make verilator-debug DESIGN=FireSim TARGET_CONFIG=DDR3FRFCFSLLC4MB_FireSimLNICQuadRocketConfig PLATFORM_CONFIG=F90MHz_BaseF1Config
