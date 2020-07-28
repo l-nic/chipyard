@@ -11,7 +11,7 @@
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 1
 
-#define NUM_MSGS 10
+#define NUM_MSGS 1
 #define MSG_LEN_WORDS 1
 
 bool is_single_core() { return false; }
@@ -170,38 +170,33 @@ int run_server() {
 
   for (n = 0; n < NUM_MSGS; n++) {
     // wait for a pkt to arrive
-    printf("Server waiting for messages\n");
     lnic_wait();
     // read request application hdr
     app_hdr = lnic_read();
 
-    // Check src IP
-    uint64_t src_ip = (app_hdr & IP_MASK) >> 32;
-    if (src_ip != CLIENT_IP) {
-        printf("SERVER ERROR: Expected: correct_sender_ip = %lx, Received: src_ip = %lx\n", CLIENT_IP, src_ip);
-        // return -1;
-    }
-    // Check src context
-    uint64_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
-    if (src_context != CLIENT_CONTEXT) {
-        printf("SERVER ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", CLIENT_CONTEXT, src_context);
-        // return -1;
-    }
-    // Check msg length
-    uint16_t rx_msg_len = app_hdr & LEN_MASK;
-    if (rx_msg_len != MSG_LEN_WORDS*8) {
-        printf("SERVER ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", MSG_LEN_WORDS*8, rx_msg_len);
-        return -1;
-    }
-
-//    printf("%ld: SERVER Rx AppHdr:\n", rdcycle());
-//    print_app_hdr(app_hdr);
+//    // Check src IP
+//    uint64_t src_ip = (app_hdr & IP_MASK) >> 32;
+//    if (src_ip != CLIENT_IP) {
+//        printf("SERVER ERROR: Expected: correct_sender_ip = %lx, Received: src_ip = %lx\n", CLIENT_IP, src_ip);
+//        // return -1;
+//    }
+//    // Check src context
+//    uint64_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
+//    if (src_context != CLIENT_CONTEXT) {
+//        printf("SERVER ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", CLIENT_CONTEXT, src_context);
+//        // return -1;
+//    }
+//    // Check msg length
+//    uint16_t rx_msg_len = app_hdr & LEN_MASK;
+//    if (rx_msg_len != MSG_LEN_WORDS*8) {
+//        printf("SERVER ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", MSG_LEN_WORDS*8, rx_msg_len);
+//        return -1;
+//    }
 
     // write response application hdr
     lnic_write_r(app_hdr);
     // extract msg_len
     msg_len = (uint16_t)app_hdr;
-//    printf("Received msg of length: %hu bytes", msg_len);
     num_words = msg_len/LNIC_WORD_SIZE;
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
@@ -244,11 +239,6 @@ int core_main(uint64_t argc, char** argv, int cid, int nc) {
   }
 
   lnic_add_context(context_id, priority);
-
-  // wait for all cores to boot -- TODO: is there a better way than this?
-  for (int i = 0; i < 1000; i++) {
-    asm volatile("nop");
-  }
 
   int ret = 0;
   if (cid == CLIENT_CONTEXT) {
