@@ -142,6 +142,7 @@ _start:
 
   .align 2
 trap_entry:
+  csrci mstatus, MSTATUS_MIE
   addi sp, sp, -272
 
   # Calculate the base and current thread struct addr
@@ -202,16 +203,10 @@ trap_entry:
 valid:
   # restart timer on NIC to track msg processing time
   csrwi 0x54, 0x4
-  # Switch x1 to target context
-  csrr x1, 0x59 # Read target priority
-  csrw 0x55, x1 # Update current priority
+  csrr x4, 0x59 # Read target priority
   csrr x1, 0x58 # Read target context id
-  li x3, MAX_THREADS # Check to see if this is the main thread
-  bne x1, x3, adjusted_context
-  mv x1, zero
-
-adjusted_context:
-  csrw 0x53, x1 # Update current context id
+  csrw 0x53, x1 # Update current context id # TODO: Do we still need a pipeline stall after this?
+  csrw 0x55, x4 # Update current priority
   addi x1, x1, 0x1 # Adjust for one-offset in threads
   slli x1, x1, 0x8 # Account for thread struct size
   add x1, x2, x1 # Target context now in x1, base addr in x2
@@ -265,6 +260,7 @@ adjusted_context:
   LREG x1, 1*REGBYTES(x1)
 
   addi sp, sp, 272
+  csrsi mstatus, MSTATUS_MIE
   mret
 
 .section ".tdata.begin"

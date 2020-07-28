@@ -32,8 +32,10 @@ PROGRAMS += lnic-single-core-multi-thread
 PROGRAMS += lnic-multi-core-multi-thread
 PROGRAMS += lnic-multi-core-loopback
 PROGRAMS += lnic-load-balance
+PROGRAMS += lnic-incast-multi-service
 PROGRAMS += lnic-net-loopback
 PROGRAMS += lnic-ping-latency
+PROGRAMS += lnic-incast-nolock
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

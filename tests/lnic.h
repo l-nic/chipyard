@@ -18,6 +18,8 @@
 
 // poll CSR lmsgsrdy until non-zero
 #define lnic_wait() while (read_csr(0x052) == 0) { write_csr(0x056, 2); }
+#define lnic_ready() (read_csr(0x52) != 0)
+#define lnic_idle() write_csr(0x56, 2)
 
 #define lnic_read() ({ uint64_t __tmp; \
   asm volatile ("mv %0, "LREAD  : "=r"(__tmp)); \

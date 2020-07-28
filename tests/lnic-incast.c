@@ -7,7 +7,7 @@
 
 bool is_single_core() { return false; }
 
-#define NUM_MSG_WORDS 1024
+#define NUM_MSG_WORDS 128
 #define NUM_SENT_MESSAGES_PER_LEAF 3
 
 #define NUM_LEAVES 3
@@ -27,6 +27,9 @@ volatile uint64_t elapsed_times[NUM_SENT_MESSAGES_PER_LEAF*NUM_LEAVES*2];
 bool root_finished[NCORES];
 char output_buffer[MAX_OUTPUT_LEN];
 
+#define arch_spin_is_locked(x) ((x)->lock != 0)
+
+
 bool valid_leaf_addr(uint32_t nic_ip_addr) {
     for (int i = 0; i < NUM_LEAVES; i++) {
         if (nic_ip_addr == leaf_addrs[i]) {
@@ -40,6 +43,36 @@ void stall_cycles(uint64_t num_cycles) {
     for (uint64_t i = 0; i < num_cycles; i++) {
         asm volatile("nop");
     }
+}
+
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+  asm volatile (
+    "amoswap.w.rl x0, x0, %0"
+    : "=A" (lock->lock)
+    :: "memory"
+    );
+}
+
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
+  int tmp = 1, busy;
+  asm volatile (
+    "amoswap.w.aq %0, %2, %1"
+    : "=r"(busy), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return !busy;
+}
+
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
+  while (1) {
+    if (arch_spin_is_locked(lock)) {
+      continue;
+    }
+    if (arch_spin_trylock(lock)) {
+      break;
+    }
+  }
 }
 
 int core_main(int argc, char** argv, int cid)
@@ -118,11 +151,12 @@ int core_main(int argc, char** argv, int cid)
                 uint64_t data = lnic_read();
                 if (i != data) {
                     printf("Expected: data = %x, Received: data = %lx\n", i, data);
-                    return -1;
+                    //return -1;
                 }
             }
             elapsed_times[2*local_j] = app_hdr;
             lnic_msg_done();
+            printf("Received message %d\n", local_j);
         }
         root_finished[cid] = true;
         if (cid == 0) {
@@ -144,9 +178,6 @@ int core_main(int argc, char** argv, int cid)
             printf("%s", output_buffer);
             printf("Root program finished.\n");
         }
-
-        // We need to be sure that all leaves have run to completion.
-        stall_cycles(1000000);
         return 0;
     } else {
         // Only use one core for leaves for now

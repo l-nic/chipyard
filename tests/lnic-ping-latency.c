@@ -11,10 +11,50 @@
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 1
 
-#define NUM_MSGS 1
+#define NUM_MSGS 10
 #define MSG_LEN_WORDS 1
 
 bool is_single_core() { return false; }
+
+bool server_up = false;
+
+typedef struct {
+  volatile unsigned int lock;
+} arch_spinlock_t;
+
+#define arch_spin_is_locked(x) ((x)->lock != 0)
+
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
+  asm volatile (
+    "amoswap.w.rl x0, x0, %0"
+    : "=A" (lock->lock)
+    :: "memory"
+    );
+}
+
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
+  int tmp = 1, busy;
+  asm volatile (
+    "amoswap.w.aq %0, %2, %1"
+    : "=r"(busy), "+A" (lock->lock)
+    : "r"(tmp)
+    : "memory"
+    );
+  return !busy;
+}
+
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
+  while (1) {
+    if (arch_spin_is_locked(lock)) {
+      continue;
+    }
+    if (arch_spin_trylock(lock)) {
+      break;
+    }
+  }
+}
+
+arch_spinlock_t up_lock;
 
 void print_app_hdr(uint64_t app_hdr) {
   uint64_t ip = (app_hdr & IP_MASK) >> 32;
@@ -41,11 +81,25 @@ int run_client() {
   uint64_t timestamps[NUM_MSGS];
   uint64_t latencies[NUM_MSGS];
 
-  dst_ip = SERVER_IP;
+  dst_ip = 0x0a000002;
   dst_context = SERVER_CONTEXT;
+
+  while (true) {
+    arch_spin_lock(&up_lock);
+    if (server_up) {
+      arch_spin_unlock(&up_lock);
+      break;
+    } else {
+      arch_spin_unlock(&up_lock);
+      for (int k = 0; k < 100; k++) {
+        asm volatile("nop");
+      }
+    }
+  }
 
   for (n = 0; n < NUM_MSGS; n++) {
     // Send msg to server
+    printf("Client sending to server\n");
     app_hdr = (dst_ip << 32) | (dst_context << 16) | (MSG_LEN_WORDS*8);
     lnic_write_r(app_hdr);
     now = rdcycle();
@@ -68,13 +122,13 @@ int run_client() {
     src_ip = (app_hdr & IP_MASK) >> 32;
     if (src_ip != SERVER_IP) {
         printf("CLIENT ERROR: Expected: correct_sender_ip = %lx, Received: src_ip = %lx\n", SERVER_IP, src_ip);
-        return -1;
+        // return -1;
     }
     // Check src context
     src_context = (app_hdr & CONTEXT_MASK) >> 16;
     if (src_context != SERVER_CONTEXT) {
         printf("CLIENT ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", SERVER_CONTEXT, src_context);
-        return -1;
+        // return -1;
     }
     // Check msg length
     rx_msg_len = app_hdr & LEN_MASK;
@@ -110,8 +164,13 @@ int run_server() {
   int i;
   int n;
 
+  arch_spin_lock(&up_lock);
+  server_up = true;
+  arch_spin_unlock(&up_lock);
+
   for (n = 0; n < NUM_MSGS; n++) {
     // wait for a pkt to arrive
+    printf("Server waiting for messages\n");
     lnic_wait();
     // read request application hdr
     app_hdr = lnic_read();
@@ -120,13 +179,13 @@ int run_server() {
     uint64_t src_ip = (app_hdr & IP_MASK) >> 32;
     if (src_ip != CLIENT_IP) {
         printf("SERVER ERROR: Expected: correct_sender_ip = %lx, Received: src_ip = %lx\n", CLIENT_IP, src_ip);
-        return -1;
+        // return -1;
     }
     // Check src context
     uint64_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
     if (src_context != CLIENT_CONTEXT) {
         printf("SERVER ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", CLIENT_CONTEXT, src_context);
-        return -1;
+        // return -1;
     }
     // Check msg length
     uint16_t rx_msg_len = app_hdr & LEN_MASK;
@@ -164,6 +223,26 @@ int run_server() {
 int core_main(uint64_t argc, char** argv, int cid, int nc) {
   uint64_t context_id = cid;
   uint64_t priority = 0;
+
+  if (argc != 3) {
+      printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+      return -1;
+  }
+
+  char* nic_ip_str = argv[2];
+  uint32_t nic_ip_addr_lendian = 0;
+  int retval = inet_pton4(nic_ip_str, nic_ip_str + strlen(nic_ip_str), &nic_ip_addr_lendian);
+
+  // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
+  uint32_t nic_ip_addr = swap32(nic_ip_addr_lendian);
+  if (retval != 1 || nic_ip_addr == 0) {
+      printf("Supplied NIC IP address is invalid.\n");
+      return -1;
+  }
+  if (nic_ip_addr != SERVER_IP) {
+    while(1);
+  }
+
   lnic_add_context(context_id, priority);
 
   // wait for all cores to boot -- TODO: is there a better way than this?

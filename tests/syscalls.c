@@ -71,7 +71,7 @@ typedef struct {
 
 #define arch_spin_is_locked(x) ((x)->lock != 0)
 
-void arch_spin_unlock(arch_spinlock_t *lock) {
+static inline void arch_spin_unlock(arch_spinlock_t *lock) {
   asm volatile (
     "amoswap.w.rl x0, x0, %0"
     : "=A" (lock->lock)
@@ -79,7 +79,7 @@ void arch_spin_unlock(arch_spinlock_t *lock) {
     );
 }
 
-int arch_spin_trylock(arch_spinlock_t* lock) {
+static inline int arch_spin_trylock(arch_spinlock_t* lock) {
   int tmp = 1, busy;
   asm volatile (
     "amoswap.w.aq %0, %2, %1"
@@ -90,10 +90,8 @@ int arch_spin_trylock(arch_spinlock_t* lock) {
   return !busy;
 }
 
-void arch_spin_lock(arch_spinlock_t* lock) {
+static inline void arch_spin_lock(arch_spinlock_t* lock) {
   while (1) {
-    // Thread is idle if locked
-    write_csr(0x056, 2);
     if (arch_spin_is_locked(lock)) {
       continue;
     }
@@ -104,7 +102,7 @@ void arch_spin_lock(arch_spinlock_t* lock) {
 }
 
 arch_spinlock_t init_lock, exit_lock, print_lock;
-arch_spinlock_t thread_lock[NCORES];
+bool thread_exited[NCORES][MAX_THREADS];
 
 // Kernel thread structure
 struct thread_t {
@@ -132,60 +130,73 @@ struct thread_t* new_thread() {
 
 void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority, int (*target)(uint64_t, char**, int, int, uint64_t, uint64_t)) {
   if (is_single_core()) {
-    // Run the thread
+    // Run the thread. We discard the return value for now for all threads other than context 0.
     int retval = target(argc, argv, cid, nc, context_id, priority);
-    printf("Core %d (only core) application %d exited with code %d\n", cid, context_id, retval);
-    uint64_t hart_id = csr_read(mhartid);
-    arch_spin_lock(&thread_lock[hart_id]);
-    num_threads_exited[hart_id]++;
-    if (retval != 0) {
-      thread_failed[hart_id] = -1;
-    }
-    arch_spin_unlock(&thread_lock[hart_id]);
 
-    // Join all threads
-    while (1) {
-      arch_spin_lock(&thread_lock[hart_id]);
-      if (num_threads_exited[hart_id] == num_threads[hart_id] - 1) {
-        exit(thread_failed[hart_id]);
-      } else {
-        arch_spin_unlock(&thread_lock[hart_id]);
-        for (int i = 0; i < 1000; i++) {
-          asm volatile("nop");
-        }
+    // This needs to use a bool array instead of a counter, since we can only use locks to coordinate cores, not threads.
+    thread_exited[cid][context_id] = true;
+
+    // Only context id 0 can trigger the core exit
+    if (context_id != 0) {
+      while (1) {
+        lnic_idle();
       }
     }
+
+    // Context id 0 joins all other threads on this core
+    bool all_finished = false;
+    while (!all_finished) {
+      all_finished = true;
+      for (int i = 0; i < num_threads[cid] - 1; i++) {
+        if (!thread_exited[cid][i]) {
+          all_finished = false;
+        }
+      }
+      for (int i = 0; i < 1000; i++) {
+        asm volatile("nop");
+        lnic_idle();
+      }
+    }
+
+    // This is a single-core program, so we're now good to exit
+    printf("Core %d (only core) exited with code %d\n", cid, retval);
+    exit(retval);
   } else {
-    // Run the thread
+    // Run the thread. We discard the return value for now for all threads other than context 0.
+    // After the thread has returned, it will enter a tight loop that repeatedly sets lidle.
     int retval = target(argc, argv, cid, nc, context_id, priority);
-    printf("Core %d application %d exited with code %d\n", cid, context_id, retval);
-    uint64_t hart_id = csr_read(mhartid);
-    arch_spin_lock(&thread_lock[hart_id]);
-    num_threads_exited[hart_id]++;
-    if (retval != 0) {
-      thread_failed[hart_id] = -1;
-    }
-    arch_spin_unlock(&thread_lock[hart_id]);
-    // Join all threads on this core
-    while (1) {
-      arch_spin_lock(&thread_lock[hart_id]);
-      if (num_threads_exited[hart_id] == num_threads[hart_id] - 1) {
-        arch_spin_unlock(&thread_lock[hart_id]);
-        break;
-      } else {
-        arch_spin_unlock(&thread_lock[hart_id]);
-        for (int i = 0; i < 1000; i++) {
-          asm volatile("nop");
-        }
+
+    // This needs to use a bool array instead of a counter, since we can only use locks to coordinate cores, not threads.
+    thread_exited[cid][context_id] = true;
+
+    // Only context id 0 can trigger the core exit
+    if (context_id != 0) {
+      while (1) {
+        lnic_idle();
       }
     }
 
-    // Stall all threads but one
-    csr_clear(mie, LNIC_INT_ENABLE | TIMER_INT_ENABLE);
+    // Context id 0 joins all other threads on this core
+    bool all_finished = false;
+    while (!all_finished) {
+      all_finished = true;
+      for (int i = 0; i < num_threads[cid] - 1; i++) {
+        if (!thread_exited[cid][i]) {
+          all_finished = false;
+        }
+      }
+      for (int i = 0; i < 1000; i++) {
+        asm volatile("nop");
+        lnic_idle();
+      }
+    }
 
-    // Join all other cores
+    printf("Core %d exited with code %d\n", cid, retval);
+
+    // Context id 0 then joins all other cores. By this point, all threads on the core have exited,
+    // so we don't need to worry about setting lidle.
     arch_spin_lock(&exit_lock);
-    core_global_ret |= (thread_failed[hart_id] & 0xFF) << (8*cid);
+    core_global_ret |= (retval & 0xFF) << (8*cid);
     num_exited++;
     arch_spin_unlock(&exit_lock);
     while (1) {
@@ -240,8 +251,12 @@ void scheduler_run() {
   uint64_t* mtime_ptr_lo = MTIME_PTR_LO;
   uint64_t* mtimecmp_ptr_lo = MTIMECMP_PTR_LO + (read_csr(mhartid) << 3); // One eight-byte word offset per hart id
   *mtimecmp_ptr_lo = *mtime_ptr_lo + TIME_SLICE_RTC_TICKS;
+  
+  threads[read_csr(mhartid)][0].regs[2] = num_threads[read_csr(mhartid)] - 1;
+  threads[read_csr(mhartid)][0].regs[3] = 0;
+  csr_write(0x53, NANOKERNEL_CONTEXT); // Set the main thread's id to nanokernel context id
+  csr_write(0x55, num_threads - 1); // Set the main thread's priority to a low value 
   csr_set(mie, LNIC_INT_ENABLE);
-  csr_set(mie, TIMER_INT_ENABLE);
   asm volatile ("wfi");
 }
 
