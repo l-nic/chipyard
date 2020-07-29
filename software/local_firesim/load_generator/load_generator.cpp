@@ -119,6 +119,66 @@ char* TEST_TYPE;
 int POISSON_LAMBDA = 0;
 #define RTT_PKTS 2 // TODO: This should be user-configurable
 
+class parsed_packet_t {
+ private:
+    pcpp::Packet* pcpp_packet;
+ public:
+    pcpp::EthLayer* eth;
+    pcpp::IPv4Layer* ip;
+    pcpp::LnicLayer* lnic;
+    pcpp::AppLayer* app;
+    switchpacket* tsp;
+
+    parsed_packet_t() {
+        eth = nullptr;
+        ip = nullptr;
+        lnic = nullptr;
+        app = nullptr;
+        tsp = nullptr;
+        pcpp_packet = nullptr;
+    }
+
+    ~parsed_packet_t() {
+        if (pcpp_packet != nullptr) {
+            delete pcpp_packet;
+        }
+    }
+
+    bool parse(switchpacket* tsp) {
+        uint64_t packet_size_bytes = tsp->amtwritten * sizeof(uint64_t);
+        struct timeval format_time;
+        format_time.tv_sec = tsp->timestamp / 1000000000;
+        format_time.tv_usec = (tsp->timestamp % 1000000000) / 1000;
+        pcpp::RawPacket raw_packet((const uint8_t*)tsp->dat, 200*sizeof(uint64_t), format_time, false, pcpp::LINKTYPE_ETHERNET);
+        pcpp::Packet* parsed_packet = new pcpp::Packet(&raw_packet);
+        pcpp::EthLayer* eth_layer = parsed_packet->getLayerOfType<pcpp::EthLayer>();
+        pcpp::IPv4Layer* ip_layer = parsed_packet->getLayerOfType<pcpp::IPv4Layer>();
+        pcpp::LnicLayer* lnic_layer = (pcpp::LnicLayer*)parsed_packet->getLayerOfType(pcpp::LNIC, 0);
+        pcpp::AppLayer* app_layer = (pcpp::AppLayer*)parsed_packet->getLayerOfType(pcpp::GenericPayload, 0);
+        if (!eth_layer || !ip_layer || !lnic_layer || !app_layer) {
+            if (!eth_layer) fprintf(stdout, "Null eth layer\n");
+            if (!ip_layer) fprintf(stdout, "Null ip layer\n");
+            if (!lnic_layer) fprintf(stdout, "Null lnic layer\n");
+            if (!app_layer) fprintf(stdout, "Null app layer\n");
+            this->eth = nullptr;
+            this->ip = nullptr;
+            this->lnic = nullptr;
+            this->app = nullptr;
+            this->tsp = nullptr;
+            delete parsed_packet;
+            this->pcpp_packet = nullptr;
+            return false;
+        }
+        this->eth = eth_layer;
+        this->ip = ip_layer;
+        this->lnic = lnic_layer;
+        this->app = app_layer;
+        this->tsp = tsp;
+        this->pcpp_packet = parsed_packet;
+        return true;
+    }
+};
+
 // TODO: replace these port mapping hacks with a mac -> port mapping,
 // could be hardcoded
 
@@ -207,30 +267,12 @@ for (int i = 0; i < NUMPORTS; i++) {
 while (!pqueue.empty()) {
     switchpacket * tsp = pqueue.top().switchpack;
     pqueue.pop();
-
-    struct timeval format_time;
-    format_time.tv_sec = tsp->timestamp / 1000000000;
-    format_time.tv_usec = (tsp->timestamp % 1000000000) / 1000;
-    pcpp::RawPacket raw_packet((const uint8_t*)tsp->dat, 200*sizeof(uint64_t), format_time, false, pcpp::LINKTYPE_ETHERNET);
-    pcpp::Packet parsed_packet(&raw_packet);
-    pcpp::EthLayer* ethernet_layer = parsed_packet.getLayerOfType<pcpp::EthLayer>();
-    pcpp::IPv4Layer* ip_layer = parsed_packet.getLayerOfType<pcpp::IPv4Layer>();
-    if (ethernet_layer == NULL) {
-        fprintf(stdout, "NULL ethernet layer\n");
-        free(tsp);
-        continue;
-    }
-    if (ip_layer == NULL) {
-        fprintf(stdout, "NULL ip layer\n");
-        free(tsp);
-        continue;
-    }
-
     // Instead of switching the input packets, the load generator will log any inputs
     // and independently generate sets of outputs.
 
     // Send ACKs and PULLs and log non load-gen packets
     handle_packet(tsp);
+    free(tsp);
 }
 
 // Generate and log load packets
@@ -266,152 +308,67 @@ for (int port = 0; port < NUMPORTS; port++) {
 
 }
 
-std::string getLnicHeaderString(pcpp::lnichdr* lnic_hdr) {
-    std::ostringstream output_string;
-    std::string flags_str;
-    uint8_t lnic_header_flags = lnic_hdr->flags;
-    bool is_data = lnic_header_flags & LNIC_DATA_FLAG_MASK;
-    bool is_ack = lnic_header_flags & LNIC_ACK_FLAG_MASK;
-    bool is_nack = lnic_header_flags & LNIC_NACK_FLAG_MASK;
-    bool is_pull = lnic_header_flags & LNIC_PULL_FLAG_MASK;
-    bool is_chop = lnic_header_flags & LNIC_CHOP_FLAG_MASK;
-    flags_str += is_data ? "DATA" : "";
-    flags_str += is_ack ? " ACK" : "";
-    flags_str += is_nack ? " NACK" : "";
-    flags_str += is_pull ? " PULL" : "";
-    flags_str += is_chop ? " CHOP" : "";
-    output_string << "LNIC(flags=" << flags_str << ", src_context=" << be16toh(lnic_hdr->src_context)
-                  << ", dst_context=" << be16toh(lnic_hdr->dst_context) << ", msg_len="
-                  << be16toh(lnic_hdr->msg_len) << ", pkt_offset=" << (int)lnic_hdr->pkt_offset
-                  << ", pull_offset=" << be16toh(lnic_hdr->pull_offset) << ", tx_msg_id="
-                  << be16toh(lnic_hdr->pkt_offset) << ", buf_ptr=" << be16toh(lnic_hdr->buf_ptr)
-                  << ", buf_size_class=" << (int)lnic_hdr->buf_size_class << ")";
-    return output_string.str();
-}
-
-std::string getAppHeaderString(pcpp::apphdr* app_hdr) {
-    std::ostringstream output_string;
-    output_string << "App(service_time=" << be64toh(app_hdr->service_time) << ", sent_time="
-                  << be64toh(app_hdr->sent_time) << ")";
-    return output_string.str();
-}
-
-void print_switchpacket(char* direction, switchpacket* tsp) {
-    uint64_t packet_size_bytes = tsp->amtwritten * sizeof(uint64_t);
-    struct timeval format_time;
-    format_time.tv_sec = tsp->timestamp / 1000000000;
-    format_time.tv_usec = (tsp->timestamp % 1000000000) / 1000;
-    pcpp::RawPacket raw_packet((const uint8_t*)tsp->dat, 200*sizeof(uint64_t), format_time, false, pcpp::LINKTYPE_ETHERNET);
-    pcpp::Packet parsed_packet(&raw_packet);
-    pcpp::EthLayer* eth_layer = parsed_packet.getLayerOfType<pcpp::EthLayer>();
-    pcpp::IPv4Layer* ip_layer = parsed_packet.getLayerOfType<pcpp::IPv4Layer>();
-    pcpp::LnicLayer* lnic_layer = (pcpp::LnicLayer*)parsed_packet.getLayerOfType(pcpp::LNIC, 0);
-    pcpp::AppLayer* app_layer = (pcpp::AppLayer*)parsed_packet.getLayerOfType(pcpp::GenericPayload, 0);
-    //fprintf(stdout, "manual deref app word: %ld\n", *(uint64_t*)lnic_layer->getLayerPayload());
-    if (!eth_layer || !ip_layer || !lnic_layer || !app_layer) {
-        if (!eth_layer) fprintf(stdout, "Null eth layer\n");
-        if (!ip_layer) fprintf(stdout, "Null ip layer\n");
-        if (!lnic_layer) fprintf(stdout, "Null lnic layer\n");
-        if (!app_layer) fprintf(stdout, "Null app layer\n");
-        return;
-    }
-    fprintf(stdout, "ip id: %d, ip ttl: %d\n", ntohs(ip_layer->getIPv4Header()->ipId), (int)ip_layer->getIPv4Header()->timeToLive);
+void print_packet(char* direction, parsed_packet_t* packet) {
     fprintf(stdout, "%s IP(src=%s, dst=%s), %s, %s, packet_len=%d\n", direction,
-            ip_layer->getSrcIpAddress().toString().c_str(), ip_layer->getDstIpAddress().toString().c_str(),
-            getLnicHeaderString(lnic_layer->getLnicHeader()).c_str(),
-            getAppHeaderString(app_layer->getAppHeader()).c_str(), packet_size_bytes);
+            packet->ip->getSrcIpAddress().toString().c_str(), packet->ip->getDstIpAddress().toString().c_str(),
+            packet->lnic->toString().c_str(), packet->app->toString().c_str(), packet->tsp->amtwritten * sizeof(uint64_t));
 }
 
 void handle_packet(switchpacket* tsp) {
     // Parse and log the incoming packet
-    uint8_t lnic_header_flags = *((uint8_t*)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE);
-    bool is_data = lnic_header_flags & LNIC_DATA_FLAG_MASK;
-    bool is_ack = lnic_header_flags & LNIC_ACK_FLAG_MASK;
-    bool is_nack = lnic_header_flags & LNIC_NACK_FLAG_MASK;
-    bool is_pull = lnic_header_flags & LNIC_PULL_FLAG_MASK;
-    bool is_chop = lnic_header_flags & LNIC_CHOP_FLAG_MASK;
-    uint64_t packet_size_bytes = tsp->amtwritten * sizeof(uint64_t);
-    
-    uint64_t lnic_msg_len_bytes_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + LNIC_HEADER_MSG_LEN_OFFSET;
-    uint16_t lnic_msg_len_bytes = *(uint16_t*)lnic_msg_len_bytes_offset;
-    lnic_msg_len_bytes = __builtin_bswap16(lnic_msg_len_bytes);
-
-    uint64_t lnic_src_context_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + 1;
-    uint64_t lnic_dst_context_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + 3;
-    uint16_t lnic_src_context = __builtin_bswap16(*(uint16_t*)lnic_src_context_offset);
-    uint16_t lnic_dst_context = __builtin_bswap16(*(uint16_t*)lnic_dst_context_offset);
-
-    uint64_t lnic_pkt_offset_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + LNIC_HEADER_PKT_OFFSET_OFFSET;
-
-    
-
-    uint64_t packet_data_size = packet_size_bytes - ETHER_HEADER_SIZE - IP_HEADER_SIZE - LNIC_HEADER_SIZE;
-    uint64_t packet_msg_words_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + LNIC_HEADER_SIZE;
-    uint64_t* packet_msg_words = (uint64_t*)packet_msg_words_offset;
-
-    struct timeval format_time;
-    format_time.tv_sec = tsp->timestamp / 1000000000;
-    format_time.tv_usec = (tsp->timestamp % 1000000000) / 1000;
-    pcpp::RawPacket raw_packet((const uint8_t*)tsp->dat, 200*sizeof(uint64_t), format_time, false, pcpp::LINKTYPE_ETHERNET);
-    pcpp::Packet parsed_packet(&raw_packet);
-    pcpp::EthLayer* eth_layer = parsed_packet.getLayerOfType<pcpp::EthLayer>();
-    pcpp::IPv4Layer* ip_layer = parsed_packet.getLayerOfType<pcpp::IPv4Layer>();
-    std::string ip_src_addr = ip_layer->getSrcIpAddress().toString();
-    std::string ip_dst_addr = ip_layer->getDstIpAddress().toString();
-    std::string flags_str;
-    flags_str += is_data ? "DATA" : "";
-    flags_str += is_ack ? " ACK" : "";
-    flags_str += is_nack ? " NACK" : "";
-    flags_str += is_pull ? " PULL" : "";
-    flags_str += is_chop ? " CHOP" : "";
-    fprintf(stdout, "Old RECV IP(src=%s, dst=%s), LNIC(flags=%s, msg_len=%d, src_context=%d, dst_context=%d), packet_len=%d\n", ip_src_addr.c_str(), ip_dst_addr.c_str(),
-                     flags_str.c_str(), lnic_msg_len_bytes, lnic_src_context, lnic_dst_context, packet_size_bytes);
-
-    
-    pcpp::LnicLayer* lnic_layer = (pcpp::LnicLayer*)parsed_packet.getLayerOfType(pcpp::LNIC, 0);
-    if (lnic_layer == NULL) {
-        fprintf(stdout, "Null lnic layer\n");
-    } else {
-        fprintf(stdout, "Parsed msg len is %d\n", be16toh(lnic_layer->getLnicHeader()->msg_len));
+    parsed_packet_t packet;
+    bool is_valid = packet.parse(tsp);
+    if (!is_valid) {
+        fprintf(stdout, "Invalid received packet.\n");
+        return;
     }
-    //fprintf(stdout, "RECV IP(src=%s, dst=%s), %s, packet_len=%d\n", ip_src_addr.c_str(), ip_dst_addr.c_str(), getLnicHeaderString(lnic_layer->getLnicHeader()).c_str(), packet_size_bytes);
-    print_switchpacket("RECV", tsp);
+    print_packet("RECV", &packet);
 
     // Send ACK+PULL responses to DATA packets
-    if (lnic_layer->getLnicHeader()->flags & LNIC_DATA_FLAG_MASK) {
-        pcpp::lnichdr* lnic_hdr = lnic_layer->getLnicHeader();
+    if (packet.lnic->getLnicHeader()->flags & LNIC_DATA_FLAG_MASK) {
+        // Calculate the ACK+PULL values
+        pcpp::lnichdr* lnic_hdr = packet.lnic->getLnicHeader();
         uint16_t pull_offset = lnic_hdr->pkt_offset + RTT_PKTS;
         uint8_t flags = LNIC_ACK_FLAG_MASK | LNIC_PULL_FLAG_MASK;
         uint64_t ack_packet_size_bytes = ETHER_HEADER_SIZE + IP_HEADER_SIZE + LNIC_HEADER_SIZE + APP_HEADER_SIZE;
 
-        pcpp::EthLayer new_eth_layer(eth_layer->getDestMac(), eth_layer->getSourceMac());
-        pcpp::IPv4Layer new_ip_layer(ip_layer->getDstIpAddress(), ip_layer->getSrcIpAddress());
+        // Build the new packet layers
+        pcpp::EthLayer new_eth_layer(packet.eth->getDestMac(), packet.eth->getSourceMac());
+        pcpp::IPv4Layer new_ip_layer(packet.ip->getDstIpAddress(), packet.ip->getSrcIpAddress());
         new_ip_layer.getIPv4Header()->ipId = htons(1);
         new_ip_layer.getIPv4Header()->timeToLive = 64;
-        new_ip_layer.getIPv4Header()->protocol = 153;
+        new_ip_layer.getIPv4Header()->protocol = 153; // Protocol code for LNIC
         pcpp::LnicLayer new_lnic_layer(flags, ntohs(lnic_hdr->dst_context), ntohs(lnic_hdr->src_context),
                                        ntohs(lnic_hdr->msg_len), lnic_hdr->pkt_offset, pull_offset,
                                        ntohs(lnic_hdr->tx_msg_id), ntohs(lnic_hdr->buf_ptr), lnic_hdr->buf_size_class);
         pcpp::AppLayer new_app_layer(3, 4);
+
+        // Join the layers into a new packet
         pcpp::Packet new_packet(ack_packet_size_bytes);
         new_packet.addLayer(&new_eth_layer);
         new_packet.addLayer(&new_ip_layer);
         new_packet.addLayer(&new_lnic_layer);
         new_packet.addLayer(&new_app_layer);
         new_packet.computeCalculateFields();
+
+        // Convert the packet to a switchpacket
         switchpacket* new_tsp = (switchpacket*)calloc(sizeof(switchpacket), 1);
         new_tsp->timestamp = this_iter_cycles_start;
         new_tsp->amtwritten = ack_packet_size_bytes / sizeof(uint64_t);
         new_tsp->amtread = 0;
         new_tsp->sender = 0;
         memcpy(new_tsp->dat, new_packet.getRawPacket()->getRawData(), ack_packet_size_bytes);
-        for (int i = 0; i < ack_packet_size_bytes / sizeof(uint64_t); i++) {
-            fprintf(stdout, "%#lx, %#lx\n", be64toh(tsp->dat[i]), be64toh(new_tsp->dat[i]));
+
+        // Verify and log the switchpacket
+        // TODO: For now we only work with port 0.
+        parsed_packet_t sent_packet;
+        if (!sent_packet.parse(new_tsp)) {
+            fprintf(stdout, "Invalid sent packet.\n");
+            free(new_tsp);
+            return;
         }
-        // TODO: For now we only work with port 0. There are also no buffer size checks, chops, or drops.
-        // Control is still prioritized over data, though.
+        print_packet("SEND", &sent_packet);
         send_with_priority(0, new_tsp);
-        print_switchpacket("SEND", new_tsp);
     }
 }
 
@@ -422,43 +379,8 @@ void generate_load_packets() {
 void send_with_priority(uint16_t port, switchpacket* tsp) {
     uint8_t lnic_header_flags = *((uint8_t*)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE);
     bool is_data = lnic_header_flags & LNIC_DATA_FLAG_MASK;
-    bool is_ack = lnic_header_flags & LNIC_ACK_FLAG_MASK;
-    bool is_nack = lnic_header_flags & LNIC_NACK_FLAG_MASK;
-    bool is_pull = lnic_header_flags & LNIC_PULL_FLAG_MASK;
     bool is_chop = lnic_header_flags & LNIC_CHOP_FLAG_MASK;
     uint64_t packet_size_bytes = tsp->amtwritten * sizeof(uint64_t);
-    
-    uint64_t lnic_msg_len_bytes_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + LNIC_HEADER_MSG_LEN_OFFSET;
-    uint16_t lnic_msg_len_bytes = *(uint16_t*)lnic_msg_len_bytes_offset;
-    lnic_msg_len_bytes = __builtin_bswap16(lnic_msg_len_bytes);
-
-    uint64_t lnic_src_context_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + 1;
-    uint64_t lnic_dst_context_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + 3;
-    uint16_t lnic_src_context = __builtin_bswap16(*(uint16_t*)lnic_src_context_offset);
-    uint16_t lnic_dst_context = __builtin_bswap16(*(uint16_t*)lnic_dst_context_offset);
-
-    uint64_t packet_data_size = packet_size_bytes - ETHER_HEADER_SIZE - IP_HEADER_SIZE - LNIC_HEADER_SIZE;
-    uint64_t packet_msg_words_offset = (uint64_t)tsp->dat + ETHER_HEADER_SIZE + IP_HEADER_SIZE + LNIC_HEADER_SIZE;
-    uint64_t* packet_msg_words = (uint64_t*)packet_msg_words_offset;
-
-#ifdef LOG_ALL_PACKETS
-    struct timeval format_time;
-    format_time.tv_sec = tsp->timestamp / 1000000000;
-    format_time.tv_usec = (tsp->timestamp % 1000000000) / 1000;
-    pcpp::RawPacket raw_packet((const uint8_t*)tsp->dat, 200*sizeof(uint64_t), format_time, false, pcpp::LINKTYPE_ETHERNET);
-    pcpp::Packet parsed_packet(&raw_packet);
-    pcpp::IPv4Layer* ip_layer = parsed_packet.getLayerOfType<pcpp::IPv4Layer>();
-    std::string ip_src_addr = ip_layer->getSrcIpAddress().toString();
-    std::string ip_dst_addr = ip_layer->getDstIpAddress().toString();
-    std::string flags_str;
-    flags_str += is_data ? "DATA" : "";
-    flags_str += is_ack ? " ACK" : "";
-    flags_str += is_nack ? " NACK" : "";
-    flags_str += is_pull ? " PULL" : "";
-    flags_str += is_chop ? " CHOP" : "";
-    fprintf(stdout, "IP(src=%s, dst=%s), LNIC(flags=%s, msg_len=%d, src_context=%d, dst_context=%d), packet_len=%d, port=%d\n", ip_src_addr.c_str(), ip_dst_addr.c_str(),
-                     flags_str.c_str(), lnic_msg_len_bytes, lnic_src_context, lnic_dst_context, packet_size_bytes, port);
-#endif LOG_ALL_PACKETS
 
     if (is_data && !is_chop) {
         // Regular data, send to low priority queue or chop and send to high priority
