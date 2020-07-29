@@ -204,17 +204,17 @@ class ChainReplication(unittest.TestCase):
         bind_layers(LNIC, ChainRep)
 
     @staticmethod
-    def read_msg(nodes=[NIC_IP], dst_context=DST_CONTEXT, key=0):
-        cr_hdr = ChainRep(nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_READ, seq=0, key=key, value=0)
+    def read_msg(nodes=[NIC_IP], key=0):
+        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_READ, seq=0, key=key, value=0)
         return Ether(dst=NIC_MAC, src=MY_MAC) / \
-                IP(src=MY_IP, dst=nodes[0]) / \
-                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=dst_context, msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+                IP(src=MY_IP, dst=nodes[0][0]) / \
+                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
     @staticmethod
-    def write_msg(nodes=[NIC_IP], dst_context=DST_CONTEXT, seq=0, key=0, val=0):
-        cr_hdr = ChainRep(nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_WRITE, seq=seq, key=key, value=val)
+    def write_msg(nodes=[NIC_IP], seq=0, key=0, val=0):
+        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_WRITE, seq=seq, key=key, value=val)
         return Ether(dst=NIC_MAC, src=MY_MAC) / \
-                IP(src=MY_IP, dst=nodes[0]) / \
-                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=dst_context, msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+                IP(src=MY_IP, dst=nodes[0][0]) / \
+                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
 
     def stop_filter(self, p):
         return p[IP].dst == MY_IP
@@ -223,18 +223,15 @@ class ChainReplication(unittest.TestCase):
         self.assertTrue(p.haslayer(ChainRep))
         if p[IP].dst == MY_IP: return
         resp = p.copy()
-        resp[Ether].src = p[Ether].dst
-        resp[Ether].dst = p[Ether].src
-        resp[LNIC].dst_context = DST_CONTEXT
-        resp[LNIC].src_context = DEFAULT_CONTEXT
+        resp[ChainRep].flags = 'FROM_TEST'
         sendp([resp], iface=TEST_IFACE)
 
     def test_write(self):
         receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src != MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
                     prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
         sniffer.start()
-        nodes = ['10.0.0.3', '10.0.0.4', '10.0.0.5']
+        nodes = [(NIC_IP, 0), (NIC_IP, 1), (NIC_IP, 2)]
         req = ChainReplication.write_msg(nodes=nodes, key=4, val=7, seq=0)
         sendp([req], iface=TEST_IFACE)
         sniffer.join()
@@ -247,16 +244,16 @@ class ChainReplication(unittest.TestCase):
             self.assertEqual(resp[ChainRep].node_cnt, max(len(nodes)-2-i, 0))
         p1, p2, p3 = sniffer.results
         self.assertEqual(p1[ChainRep].nodes, nodes[2:])
-        self.assertEqual(p1[IP].dst, nodes[1])
-        self.assertEqual(p2[IP].dst, nodes[2])
+        self.assertEqual(p1[IP].dst, nodes[1][0])
+        self.assertEqual(p2[IP].dst, nodes[2][0])
         self.assertEqual(p3[IP].dst, req[ChainRep].client_ip)
 
     def test_read(self):
         receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src != MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
                     prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
         sniffer.start()
-        req = ChainReplication.read_msg(nodes=[NIC_IP], key=3)
+        req = ChainReplication.read_msg(nodes=[(NIC_IP, 2)], key=3)
         sendp([req], iface=TEST_IFACE)
         sniffer.join()
         self.assertEqual(len(sniffer.results), 1)

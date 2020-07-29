@@ -51,9 +51,10 @@ int process_msgs(int core_id) {
 	uint64_t app_hdr;
   uint64_t cr_meta_fields;
   uint32_t client_ip;
+  uint8_t flags;
   uint8_t op_type;
   uint8_t seq;
-  uint16_t node_cnt;
+  uint8_t node_cnt;
   uint64_t msg_key;
   uint64_t msg_val;
 	uint16_t msg_len;
@@ -76,10 +77,11 @@ int process_msgs(int core_id) {
 		printf("[%d] --> Received msg of length: %u bytes\n", core_id, msg_len);
 
     cr_meta_fields = lnic_read();
-    client_ip = cr_meta_fields >> 32;
-    op_type = (uint8_t) (cr_meta_fields >> 24);
-    seq = (uint16_t) (cr_meta_fields >> 16);
-    node_cnt = (uint16_t) (cr_meta_fields);
+    flags = (uint8_t) (cr_meta_fields >> 56);
+    op_type = (uint8_t) (cr_meta_fields >> 48);
+    seq = (uint16_t) (cr_meta_fields >> 40);
+    node_cnt = (uint16_t) (cr_meta_fields >> 32);
+    client_ip = (uint32_t) cr_meta_fields;
     for (unsigned i = 0; i < node_cnt; i++) {
       nodes[i] = lnic_read();
     }
@@ -88,6 +90,7 @@ int process_msgs(int core_id) {
 
     unsigned new_node_head = 0;
     uint32_t dst_ip = 0;
+    uint16_t dst_context = 0;
 
 #if USE_MICA
     key_hash = mica_hash(&msg_key, sizeof(msg_key));
@@ -117,6 +120,7 @@ int process_msgs(int core_id) {
       }
       else {
         dst_ip = (uint32_t) nodes[0];
+        dst_context = nodes[0] >> 32;
         new_node_head = 1;
         node_cnt -= 1;
       }
@@ -131,14 +135,14 @@ int process_msgs(int core_id) {
       printf("[%d] PUT key=%lu val=%lu\n", core_id, msg_key, msg_val);
     }
 
-    // TODO: load dst context from nodes[]
+    // TODO: what dst_context should be used when replying to the client?
     //uint16_t dst_context = (app_hdr & CONTEXT_MASK) >> 16;
-    uint16_t dst_context = 0;
     unsigned msg_len = 8 + (node_cnt * 8) + 8 + 8;
     app_hdr = ((uint64_t)dst_ip << 32) | (dst_context << 16) | msg_len;
     lnic_write_r(app_hdr);
 
-    cr_meta_fields = ((uint64_t) client_ip << 32) | ((uint64_t)op_type << 24) | ((uint64_t)seq << 16) | (node_cnt);
+    flags = 0;
+    cr_meta_fields = ((uint64_t)flags << 56) | ((uint64_t)op_type << 48) | ((uint64_t)seq << 40) | ((uint64_t)node_cnt << 32) | client_ip;
     lnic_write_r(cr_meta_fields);
 
     for (unsigned i = new_node_head; i < new_node_head+node_cnt; i++) {
