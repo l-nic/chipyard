@@ -6,6 +6,9 @@ import os
 
 # Note that this doesn't rebuild the simulator by default, since that can be pretty slow even when nothing has changed.
 def build_components(num_sims, current_run):
+    with cd("chipyard/software/local_firesim/PcapPlusPlus"):
+        run("make -j16")
+        run("sudo make install")
     with cd("chipyard/software/local_firesim/switch"):
         run("make")
     with cd("chipyard/software/local_firesim/load_generator"):

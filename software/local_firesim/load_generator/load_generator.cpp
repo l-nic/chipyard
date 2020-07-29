@@ -20,8 +20,8 @@
 #include "Packet.h"
 #include "EthLayer.h"
 #include "IPv4Layer.h"
-#include "lnic_layer.h"
-#include "app_layer.h"
+#include "LnicLayer.h"
+#include "AppLayer.h"
 
 #define IGNORE_PRINTF
 
@@ -305,19 +305,21 @@ void print_switchpacket(char* direction, switchpacket* tsp) {
     pcpp::Packet parsed_packet(&raw_packet);
     pcpp::EthLayer* eth_layer = parsed_packet.getLayerOfType<pcpp::EthLayer>();
     pcpp::IPv4Layer* ip_layer = parsed_packet.getLayerOfType<pcpp::IPv4Layer>();
-    pcpp::LnicLayer* lnic_layer = (pcpp::LnicLayer*)parsed_packet.getLayerOfType(pcpp::GenericPayload, 0);
-    pcpp::apphdr* app_hdr = (pcpp::apphdr*)lnic_layer->getLayerPayload();
-    if (!eth_layer || !ip_layer || !lnic_layer || !app_hdr) {
+    pcpp::LnicLayer* lnic_layer = (pcpp::LnicLayer*)parsed_packet.getLayerOfType(pcpp::LNIC, 0);
+    pcpp::AppLayer* app_layer = (pcpp::AppLayer*)parsed_packet.getLayerOfType(pcpp::GenericPayload, 0);
+    //fprintf(stdout, "manual deref app word: %ld\n", *(uint64_t*)lnic_layer->getLayerPayload());
+    if (!eth_layer || !ip_layer || !lnic_layer || !app_layer) {
         if (!eth_layer) fprintf(stdout, "Null eth layer\n");
         if (!ip_layer) fprintf(stdout, "Null ip layer\n");
         if (!lnic_layer) fprintf(stdout, "Null lnic layer\n");
-        if (!app_hdr) fprintf(stdout, "Null app layer\n");
+        if (!app_layer) fprintf(stdout, "Null app layer\n");
         return;
     }
+    fprintf(stdout, "ip id: %d, ip ttl: %d\n", ntohs(ip_layer->getIPv4Header()->ipId), (int)ip_layer->getIPv4Header()->timeToLive);
     fprintf(stdout, "%s IP(src=%s, dst=%s), %s, %s, packet_len=%d\n", direction,
             ip_layer->getSrcIpAddress().toString().c_str(), ip_layer->getDstIpAddress().toString().c_str(),
             getLnicHeaderString(lnic_layer->getLnicHeader()).c_str(),
-            getAppHeaderString(app_hdr).c_str(), packet_size_bytes);
+            getAppHeaderString(app_layer->getAppHeader()).c_str(), packet_size_bytes);
 }
 
 void handle_packet(switchpacket* tsp) {
@@ -366,7 +368,7 @@ void handle_packet(switchpacket* tsp) {
                      flags_str.c_str(), lnic_msg_len_bytes, lnic_src_context, lnic_dst_context, packet_size_bytes);
 
     
-    pcpp::LnicLayer* lnic_layer = (pcpp::LnicLayer*)parsed_packet.getLayerOfType(pcpp::GenericPayload, 0);
+    pcpp::LnicLayer* lnic_layer = (pcpp::LnicLayer*)parsed_packet.getLayerOfType(pcpp::LNIC, 0);
     if (lnic_layer == NULL) {
         fprintf(stdout, "Null lnic layer\n");
     } else {
@@ -384,10 +386,13 @@ void handle_packet(switchpacket* tsp) {
 
         pcpp::EthLayer new_eth_layer(eth_layer->getDestMac(), eth_layer->getSourceMac());
         pcpp::IPv4Layer new_ip_layer(ip_layer->getDstIpAddress(), ip_layer->getSrcIpAddress());
-        pcpp::LnicLayer new_lnic_layer(flags, lnic_hdr->dst_context, lnic_hdr->src_context,
-                                       lnic_hdr->msg_len, lnic_hdr->pkt_offset, pull_offset,
-                                       lnic_hdr->tx_msg_id, lnic_hdr->buf_ptr, lnic_hdr->buf_size_class);
-        pcpp::AppLayer new_app_layer(0, 0);
+        new_ip_layer.getIPv4Header()->ipId = htons(1);
+        new_ip_layer.getIPv4Header()->timeToLive = 64;
+        new_ip_layer.getIPv4Header()->protocol = 153;
+        pcpp::LnicLayer new_lnic_layer(flags, ntohs(lnic_hdr->dst_context), ntohs(lnic_hdr->src_context),
+                                       ntohs(lnic_hdr->msg_len), lnic_hdr->pkt_offset, pull_offset,
+                                       ntohs(lnic_hdr->tx_msg_id), ntohs(lnic_hdr->buf_ptr), lnic_hdr->buf_size_class);
+        pcpp::AppLayer new_app_layer(3, 4);
         pcpp::Packet new_packet(ack_packet_size_bytes);
         new_packet.addLayer(&new_eth_layer);
         new_packet.addLayer(&new_ip_layer);
@@ -399,10 +404,13 @@ void handle_packet(switchpacket* tsp) {
         new_tsp->amtwritten = ack_packet_size_bytes / sizeof(uint64_t);
         new_tsp->amtread = 0;
         new_tsp->sender = 0;
-        memcpy(tsp->dat, new_packet.getRawPacket()->getRawData(), ack_packet_size_bytes);
+        memcpy(new_tsp->dat, new_packet.getRawPacket()->getRawData(), ack_packet_size_bytes);
+        for (int i = 0; i < ack_packet_size_bytes / sizeof(uint64_t); i++) {
+            fprintf(stdout, "%#lx, %#lx\n", be64toh(tsp->dat[i]), be64toh(new_tsp->dat[i]));
+        }
         // TODO: For now we only work with port 0. There are also no buffer size checks, chops, or drops.
         // Control is still prioritized over data, though.
-        ports[0]->outputqueue_high.push(new_tsp);
+        send_with_priority(0, new_tsp);
         print_switchpacket("SEND", new_tsp);
     }
 }
