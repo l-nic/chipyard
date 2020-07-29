@@ -129,3 +129,6 @@
 [submodule "generators/lnic"]
 	path = generators/lnic
 	url = https://github.com/l-nic/lnic.git
+[submodule "software/local_firesim/PcapPlusPlus"]
+	path = software/local_firesim/PcapPlusPlus
+	url = https://github.com/l-nic/PcapPlusPlus
