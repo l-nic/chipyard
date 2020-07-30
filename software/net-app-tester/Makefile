@@ -37,3 +37,5 @@ nbody:
 multithread:
 	python -m unittest net-app-tester.Multithread
 
+chainreplication:
+	python -m unittest net-app-tester.ChainReplication
