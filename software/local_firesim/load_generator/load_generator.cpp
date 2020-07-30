@@ -79,6 +79,7 @@ int throttle_denom = 1;
 #define SWITCHLAT_BUFSIZE_BYTES (SWITCHLAT_NUM_BIGTOKENS*BIGTOKEN_BYTES)
 
 uint64_t this_iter_cycles_start = 0;
+uint64_t next_threshold = 0;
 
 // pull in mac2port array
 #define MACPORTSCONFIG
@@ -325,6 +326,7 @@ void handle_packet(switchpacket* tsp) {
     print_packet("RECV", &packet);
 
     // Send ACK+PULL responses to DATA packets
+    // TODO: This only works for one-packet messages for now
     if (packet.lnic->getLnicHeader()->flags & LNIC_DATA_FLAG_MASK) {
         // Calculate the ACK+PULL values
         pcpp::lnichdr* lnic_hdr = packet.lnic->getLnicHeader();
@@ -353,7 +355,7 @@ void handle_packet(switchpacket* tsp) {
 
         // Convert the packet to a switchpacket
         switchpacket* new_tsp = (switchpacket*)calloc(sizeof(switchpacket), 1);
-        new_tsp->timestamp = this_iter_cycles_start;
+        new_tsp->timestamp = tsp->timestamp;
         new_tsp->amtwritten = ack_packet_size_bytes / sizeof(uint64_t);
         new_tsp->amtread = 0;
         new_tsp->sender = 0;
@@ -372,8 +374,82 @@ void handle_packet(switchpacket* tsp) {
     }
 }
 
-void generate_load_packets() {
+// TODO: This needs to be a poisson distribution, not a fixed distribution
+bool should_generate_packet_this_cycle() {
+    if (this_iter_cycles_start >= next_threshold) {
+        next_threshold = this_iter_cycles_start + 1000;
+        return true;
+    }
+    return false;
+}
 
+uint64_t get_service_time() {
+    
+}
+
+void send_load_packet(uint16_t dst_context, uint64_t service_time, uint64_t sent_time) {
+    // Build the new ethernet/ip packet layers
+    pcpp::EthLayer new_eth_layer(pcpp::MacAddress(LOAD_GEN_MAC), pcpp::MacAddress(NIC_MAC));
+    pcpp::IPv4Layer new_ip_layer(pcpp::IPv4Address(std::string(LOAD_GEN_IP)), pcpp::IPv4Address(std::string(NIC_IP)));
+    new_ip_layer.getIPv4Header()->ipId = htons(1);
+    new_ip_layer.getIPv4Header()->timeToLive = 64;
+    new_ip_layer.getIPv4Header()->protocol = 153; // Protocol code for LNIC
+
+    // Build the new lnic and application packet layers
+    pcpp::LnicLayer new_lnic_layer(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    new_lnic_layer.getLnicHeader()->msg_len = htons(16);
+    new_lnic_layer.getLnicHeader()->src_context = htons(0);
+    new_lnic_layer.getLnicHeader()->dst_context = htons(dst_context);
+    pcpp::AppLayer new_app_layer(service_time, sent_time);
+
+    // Join the layers into a new packet
+    pcpp::Packet new_packet(ack_packet_size_bytes);
+    new_packet.addLayer(&new_eth_layer);
+    new_packet.addLayer(&new_ip_layer);
+    new_packet.addLayer(&new_lnic_layer);
+    new_packet.addLayer(&new_app_layer);
+    new_packet.computeCalculateFields();
+
+    // Convert the packet to a switchpacket
+    switchpacket* new_tsp = (switchpacket*)calloc(sizeof(switchpacket), 1);
+    new_tsp->timestamp = tsp->timestamp;
+    new_tsp->amtwritten = ack_packet_size_bytes / sizeof(uint64_t);
+    new_tsp->amtread = 0;
+    new_tsp->sender = 0;
+    memcpy(new_tsp->dat, new_packet.getRawPacket()->getRawData(), ack_packet_size_bytes);
+
+    // Verify and log the switchpacket
+    // TODO: For now we only work with port 0.
+    parsed_packet_t sent_packet;
+    if (!sent_packet.parse(new_tsp)) {
+        fprintf(stdout, "Invalid generated packet.\n");
+        free(new_tsp);
+        return;
+    }
+    print_packet("LOAD", &sent_packet);
+    send_with_priority(0, new_tsp);
+}
+
+void generate_load_packets() {
+    if (!should_generate_packet_this_cycle()) {
+        return;
+    }
+    uint64_t service_time = get_service_time();
+    uint64_t sent_time = this_iter_cycles_start; // TODO: Check this
+
+    if (strcmp(TEST_TYPE, "ONE_CONTEXT_FOUR_CORES") == 0) {
+        send_load_packet(0, service_time, sent_time);
+    } else if (strcmp(TEST_TYPE, "FOUR_CONTEXTS_FOUR_CORES") == 0) {
+        send_load_packet(rand() % 4, service_time, sent_time);
+    } else if ((strcmp(TEST_TYPE, "TWO_CONTEXTS_FOUR_SHARED_CORES") == 0) ||
+               (strcmp(TEST_TYPE, "DIF_PRIORITY_LNIC_DRIVEN") == 0) ||
+               (strcmp(TEST_TYPE, "DIF_PRIORITY_TIMER_DRIVEN") == 0) ||
+               (strcmp(TEST_TYPE, "HIGH_PRIORITY_C1_STALL") == 0) ||
+               (strcmp(TEST_TYPE, "LOW_PRIORITY_C1_STALL") == 0)) {
+        send_load_packet(rand % 2, service_time, sent_time);
+    } else {
+        fprintf(stdout, "Unknown test type: %s\n", TEST_TYPE);
+    }
 }
 
 void send_with_priority(uint16_t port, switchpacket* tsp) {
