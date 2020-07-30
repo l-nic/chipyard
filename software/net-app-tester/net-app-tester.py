@@ -164,6 +164,40 @@ class LoadBalanceTest(unittest.TestCase):
         print df
         write_csv('load-balance', 'stats.csv', df)
 
+class Mica(unittest.TestCase):
+    def do_loopback(self, pkts):
+        print "*********** Request Pkts: ***********"
+        print_pkts(pkts)
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == DEFAULT_CONTEXT,
+                    prn=receiver.process_pkt, count=len(pkts), timeout=10)
+        sniffer.start()
+        # send in pkts
+        sendp(pkts, iface=TEST_IFACE)
+        # wait for all response pkts
+        sniffer.join()
+        self.assertEqual(len(pkts), len(sniffer.results))
+        print "*********** Response Pkts: ***********"
+        print_pkts(sniffer.results)
+        return receiver.msgs
+    def test_read(self):
+        msg_type_r = '\x00\x00\x00\x00\x00\x00\x00\x01'
+        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        payload = Raw(msg_type_r + msg_key)
+        dst_ctx = DST_CONTEXT
+        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
+        rx_msgs = self.do_loopback(pkts)
+    def test_write(self):
+        msg_type_w = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        msg_val    = '\x00\x00\x00\x00\x00\x00\x00\x07'
+        payload = Raw(msg_type_w + msg_key + msg_val)
+        dst_ctx = DST_CONTEXT
+        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
+        rx_msgs = self.do_loopback(pkts)
+
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkts):
 #        print "*********** Request Pkts: ***********"
