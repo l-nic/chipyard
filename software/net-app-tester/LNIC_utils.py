@@ -11,7 +11,7 @@ class LNICReceiver(object):
     """
     Receive pkts and send ACK+PULL pkts.
     """
-    def __init__(self, iface):
+    def __init__(self, iface, prn=None):
         # iface to send packets on
         self.iface = iface
 
@@ -19,6 +19,8 @@ class LNICReceiver(object):
         self.buffers = {}
         # bitmap to determine when all pkts have arrived, {dst_ip, dst_port, src_ip, src_port, tx_msg_id => bitmap}
         self.received = {}
+
+        self.prn = prn
 
         # store list of all received msgs: [((dst_ip, dst_port, src_ip, src_port, tx_msg_id), msg), ...]
         self.msgs = []
@@ -59,4 +61,6 @@ class LNICReceiver(object):
                        Raw("\x00"*64)
             print "Sending ACK+PULL: {}".format(ack_pull.summary())
             sendp(ack_pull, iface=self.iface)
+        if self.prn:
+            self.prn(p)
 

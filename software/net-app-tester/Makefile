@@ -1,6 +1,9 @@
 
 # Makefile to run specific tests
 
+mica:
+	python -m unittest net-app-tester.Mica
+
 loopback:
 	python -m unittest net-app-tester.Loopback
 
@@ -34,3 +37,5 @@ nbody:
 multithread:
 	python -m unittest net-app-tester.Multithread
 
+chainreplication:
+	python -m unittest net-app-tester.ChainReplication
