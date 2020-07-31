@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <string>
 #include <sstream>
+#include <random>
 
 #include <time.h>
 #include <netinet/ether.h>
@@ -80,6 +81,8 @@ int throttle_denom = 1;
 
 uint64_t this_iter_cycles_start = 0;
 uint64_t next_threshold = 0;
+uint16_t global_tx_msg_id = 0;
+bool start_message_received = false;
 
 // pull in mac2port array
 #define MACPORTSCONFIG
@@ -110,15 +113,42 @@ uint64_t next_threshold = 0;
 #define LOG_EVENTS
 #define LOG_ALL_PACKETS
 
-// These are both set by command-line arguments. Don't change them here.
+// These are all set by command-line arguments. Don't change them here.
 int HIGH_PRIORITY_OBUF_SIZE = 0;
 int LOW_PRIORITY_OBUF_SIZE = 0;
-
-// These are all set by command-line arguments. Don't change them here.
 char* DISTRIBUTION_TYPE;
 char* TEST_TYPE;
-int POISSON_LAMBDA = 0;
-#define RTT_PKTS 2 // TODO: This should be user-configurable
+double POISSON_LAMBDA = 0;
+
+// These are NIC-related constants. TODO: These should also be user-configurable.
+#define RTT_PKTS 2
+#define LOAD_GEN_MAC "08:55:66:77:88:08"
+#define LOAD_GEN_IP "10.0.0.1"
+#define NIC_MAC "00:26:E1:00:00:00"
+#define NIC_IP "10.0.0.2"
+#define MAX_TX_MSG_ID 127
+
+// Sampling distributions and random number generators.
+std::exponential_distribution<double>* gen_dist;
+std::default_random_engine* gen_rand;
+std::exponential_distribution<double>* service_exp_dist;
+std::default_random_engine* dist_rand;
+std::normal_distribution<double>* service_normal_high;
+std::normal_distribution<double>* service_normal_low;
+std::binomial_distribution<int>* service_select_dist;
+
+// Constants used to control the sampling distributions. TODO: These should be set in a config file.
+uint64_t MIN_SERVICE_TIME = 300;
+uint64_t MAX_SERVICE_TIME = 10000;
+double EXP_SCALE_FACTOR = 10000;
+double EXP_DECAY_CONST = 3.5;
+double SERVICE_HIGH_MEAN = 5000;
+double SERVICE_HIGH_STDEV = 300;
+double SERVICE_LOW_MEAN = 500;
+double SERVICE_LOW_STDEV = 30;
+double FRACTION_HIGH = 0.5;
+uint64_t FIXED_SERVICE_CYCLES = 500;
+
 
 class parsed_packet_t {
  private:
@@ -343,7 +373,7 @@ void handle_packet(switchpacket* tsp) {
         pcpp::LnicLayer new_lnic_layer(flags, ntohs(lnic_hdr->dst_context), ntohs(lnic_hdr->src_context),
                                        ntohs(lnic_hdr->msg_len), lnic_hdr->pkt_offset, pull_offset,
                                        ntohs(lnic_hdr->tx_msg_id), ntohs(lnic_hdr->buf_ptr), lnic_hdr->buf_size_class);
-        pcpp::AppLayer new_app_layer(3, 4);
+        pcpp::AppLayer new_app_layer(0, 0);
 
         // Join the layers into a new packet
         pcpp::Packet new_packet(ack_packet_size_bytes);
@@ -371,20 +401,52 @@ void handle_packet(switchpacket* tsp) {
         }
         print_packet("SEND", &sent_packet);
         send_with_priority(0, new_tsp);
+        if (!start_message_received) {
+            start_message_received = true;
+        }
     }
 }
 
-// TODO: This needs to be a poisson distribution, not a fixed distribution
 bool should_generate_packet_this_cycle() {
+    if (!start_message_received) {
+        return false;
+    }
     if (this_iter_cycles_start >= next_threshold) {
-        next_threshold = this_iter_cycles_start + 1000;
+        next_threshold = this_iter_cycles_start + (uint64_t)(*gen_dist)(*gen_rand);
         return true;
     }
     return false;
 }
 
 uint64_t get_service_time() {
-    
+    if (strcmp(DISTRIBUTION_TYPE, "FIXED") == 0) {
+        return FIXED_SERVICE_CYCLES;
+    } else if (strcmp(DISTRIBUTION_TYPE, "EXP") == 0) {
+        double exp_value = EXP_SCALE_FACTOR * (*service_exp_dist)(*dist_rand);
+        return std::min(std::max((uint64_t)exp_value, MIN_SERVICE_TIME), MAX_SERVICE_TIME);
+    } else if (strcmp(DISTRIBUTION_TYPE, "BIMODAL") == 0) {
+        double service_low = (*service_normal_low)(*dist_rand);
+        double service_high = (*service_normal_high)(*dist_rand);
+        int select_high = (*service_select_dist)(*dist_rand);
+        if (select_high) {
+            return std::min(std::max((uint64_t)service_high, MIN_SERVICE_TIME), MAX_SERVICE_TIME);
+        } else {
+            return std::min(std::max((uint64_t)service_low, MIN_SERVICE_TIME), MAX_SERVICE_TIME);
+        }
+    } else {
+        fprintf(stdout, "Unknown distribution type: %s\n", DISTRIBUTION_TYPE);
+        exit(-1);
+    }
+
+}
+
+uint16_t get_next_tx_msg_id() {
+    uint16_t to_return = global_tx_msg_id;
+    global_tx_msg_id++;
+    if (global_tx_msg_id == MAX_TX_MSG_ID) {
+        global_tx_msg_id = 0;
+    }
+    return to_return;
 }
 
 void send_load_packet(uint16_t dst_context, uint64_t service_time, uint64_t sent_time) {
@@ -394,16 +456,19 @@ void send_load_packet(uint16_t dst_context, uint64_t service_time, uint64_t sent
     new_ip_layer.getIPv4Header()->ipId = htons(1);
     new_ip_layer.getIPv4Header()->timeToLive = 64;
     new_ip_layer.getIPv4Header()->protocol = 153; // Protocol code for LNIC
+    uint64_t data_packet_size_bytes = ETHER_HEADER_SIZE + IP_HEADER_SIZE + LNIC_HEADER_SIZE + APP_HEADER_SIZE;
 
     // Build the new lnic and application packet layers
     pcpp::LnicLayer new_lnic_layer(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    new_lnic_layer.getLnicHeader()->flags = (uint8_t)LNIC_DATA_FLAG_MASK;
     new_lnic_layer.getLnicHeader()->msg_len = htons(16);
     new_lnic_layer.getLnicHeader()->src_context = htons(0);
     new_lnic_layer.getLnicHeader()->dst_context = htons(dst_context);
+    new_lnic_layer.getLnicHeader()->tx_msg_id = htons(get_next_tx_msg_id());
     pcpp::AppLayer new_app_layer(service_time, sent_time);
 
     // Join the layers into a new packet
-    pcpp::Packet new_packet(ack_packet_size_bytes);
+    pcpp::Packet new_packet(data_packet_size_bytes);
     new_packet.addLayer(&new_eth_layer);
     new_packet.addLayer(&new_ip_layer);
     new_packet.addLayer(&new_lnic_layer);
@@ -412,11 +477,11 @@ void send_load_packet(uint16_t dst_context, uint64_t service_time, uint64_t sent
 
     // Convert the packet to a switchpacket
     switchpacket* new_tsp = (switchpacket*)calloc(sizeof(switchpacket), 1);
-    new_tsp->timestamp = tsp->timestamp;
-    new_tsp->amtwritten = ack_packet_size_bytes / sizeof(uint64_t);
+    new_tsp->timestamp = this_iter_cycles_start;
+    new_tsp->amtwritten = data_packet_size_bytes / sizeof(uint64_t);
     new_tsp->amtread = 0;
     new_tsp->sender = 0;
-    memcpy(new_tsp->dat, new_packet.getRawPacket()->getRawData(), ack_packet_size_bytes);
+    memcpy(new_tsp->dat, new_packet.getRawPacket()->getRawData(), data_packet_size_bytes);
 
     // Verify and log the switchpacket
     // TODO: For now we only work with port 0.
@@ -446,9 +511,10 @@ void generate_load_packets() {
                (strcmp(TEST_TYPE, "DIF_PRIORITY_TIMER_DRIVEN") == 0) ||
                (strcmp(TEST_TYPE, "HIGH_PRIORITY_C1_STALL") == 0) ||
                (strcmp(TEST_TYPE, "LOW_PRIORITY_C1_STALL") == 0)) {
-        send_load_packet(rand % 2, service_time, sent_time);
+        send_load_packet(rand() % 2, service_time, sent_time);
     } else {
         fprintf(stdout, "Unknown test type: %s\n", TEST_TYPE);
+        exit(-1);
     }
 }
 
@@ -528,16 +594,14 @@ int main (int argc, char *argv[]) {
 
     if (argc < 9) {
         // if insufficient args, error out
-        fprintf(stdout, "usage: ./switch LINKLATENCY SWITCHLATENCY BANDWIDTH HIGH_PRIORITY_OBUF_SIZE LOW_PRIORITY_OBUF_SIZE DISTRIBUTION_TYPE TEST_TYPE POISSON_LAMBDA\n");
+        fprintf(stdout, "usage: ./switch LINKLATENCY SWITCHLATENCY BANDWIDTH HIGH_PRIORITY_OBUF_SIZE LOW_PRIORITY_OBUF_SIZE DISTRIBUTION_TYPE TEST_TYPE POISSON_LAMBDA_INVERSE\n");
         fprintf(stdout, "insufficient args provided\n.");
         fprintf(stdout, "LINKLATENCY and SWITCHLATENCY should be provided in cycles.\n");
         fprintf(stdout, "BANDWIDTH should be provided in Gbps\n");
         fprintf(stdout, "OBUF SIZES should be provided in bytes.\n");
         fprintf(stdout, "DISTRIBUTION_TYPE should be one of FIXED, EXPONENTIAL, BIMODAL\n");
-        fprintf(stdout, "TEST_TYPE should be one of ONE_CONTEXT_FOUR_CORES, FOUR_CONTEXTS_FOUR_CORES, TWO_CONTEXTS_FOUR_SHARED_CORES, \
-                          DIF_PRIORITY_LNIC_DRIVEN, DIF_PRIORITY_TIMER_DRIVEN, HIGH_PRIORITY_C1_STALL, \
-                          LOW_PRIORITY_C1_STALL\n");
-        fprintf(stdout, "POISSON_LAMBDA should be provided in mean cycles between generated requests\n");
+        fprintf(stdout, "TEST_TYPE should be one of ONE_CONTEXT_FOUR_CORES, FOUR_CONTEXTS_FOUR_CORES, TWO_CONTEXTS_FOUR_SHARED_CORES, DIF_PRIORITY_LNIC_DRIVEN, DIF_PRIORITY_TIMER_DRIVEN, HIGH_PRIORITY_C1_STALL, LOW_PRIORITY_C1_STALL\n");
+        fprintf(stdout, "POISSON_LAMBDA_INVERSE should be provided in mean cycles between generated requests\n");
         exit(1);
     }
 
@@ -548,7 +612,16 @@ int main (int argc, char *argv[]) {
     LOW_PRIORITY_OBUF_SIZE = atoi(argv[5]);
     DISTRIBUTION_TYPE = argv[6];
     TEST_TYPE = argv[7];
-    POISSON_LAMBDA = atoi(argv[8]);
+    POISSON_LAMBDA = 1.0 / (double)atoi(argv[8]);
+
+    gen_rand = new std::default_random_engine;
+    gen_dist = new std::exponential_distribution<double>(POISSON_LAMBDA);
+
+    dist_rand = new std::default_random_engine;
+    service_exp_dist = new std::exponential_distribution<double>(EXP_DECAY_CONST);
+    service_normal_high = new std::normal_distribution<double>(SERVICE_HIGH_MEAN, SERVICE_HIGH_STDEV);
+    service_normal_low = new std::normal_distribution<double>(SERVICE_LOW_MEAN, SERVICE_LOW_STDEV);
+    service_select_dist = new std::binomial_distribution<int>(1, FRACTION_HIGH);
 
     simplify_frac(bandwidth, 200, &throttle_numer, &throttle_denom);
 
