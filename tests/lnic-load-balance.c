@@ -159,13 +159,12 @@ int core_main(int argc, char** argv, int cid, int nc) {
     return -1;
 }
 
-void send_startup_msg(int cid) {
+void send_startup_msg(int cid, uint64_t context_id) {
     uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
-    uint64_t empty_data = 0;
     uint64_t cid_to_send = cid;
     lnic_write_r(app_hdr);
     lnic_write_r(cid_to_send);
-    lnic_write_r(empty_data);
+    lnic_write_r(context_id);
 }
 
 // ----------------------------------------------
@@ -178,7 +177,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
         sent_time, msgs_since_last_stall, start_stall_time;
     msgs_since_last_stall = 0;
 
-    send_startup_msg(cid);
+    send_startup_msg(cid, context_id);
 
     while (1) {
       // Wait for a message to process

@@ -83,6 +83,7 @@ uint64_t this_iter_cycles_start = 0;
 uint64_t next_threshold = 0;
 uint16_t global_tx_msg_id = 0;
 bool start_message_received = false;
+uint64_t global_start_message_count = 0;
 
 // pull in mac2port array
 #define MACPORTSCONFIG
@@ -147,7 +148,7 @@ double SERVICE_HIGH_STDEV = 300;
 double SERVICE_LOW_MEAN = 500;
 double SERVICE_LOW_STDEV = 30;
 double FRACTION_HIGH = 0.5;
-uint64_t FIXED_SERVICE_CYCLES = 500;
+uint64_t FIXED_SERVICE_CYCLES = 800;
 
 
 class parsed_packet_t {
@@ -345,6 +346,34 @@ void print_packet(char* direction, parsed_packet_t* packet) {
             packet->lnic->toString().c_str(), packet->app->toString().c_str(), packet->tsp->amtwritten * sizeof(uint64_t));
 }
 
+bool count_start_message() {
+    global_start_message_count++;
+    if (strcmp(TEST_TYPE, "ONE_CONTEXT_FOUR_CORES") == 0) {
+        return global_start_message_count >= 4;
+    } else if (strcmp(TEST_TYPE, "FOUR_CONTEXTS_FOUR_CORES") == 0) {
+        return global_start_message_count >= 4;
+    } else if ((strcmp(TEST_TYPE, "TWO_CONTEXTS_FOUR_SHARED_CORES") == 0) ||
+            (strcmp(TEST_TYPE, "DIF_PRIORITY_LNIC_DRIVEN") == 0) ||
+            (strcmp(TEST_TYPE, "DIF_PRIORITY_TIMER_DRIVEN") == 0) ||
+            (strcmp(TEST_TYPE, "HIGH_PRIORITY_C1_STALL") == 0) ||
+            (strcmp(TEST_TYPE, "LOW_PRIORITY_C1_STALL") == 0)) {
+        return global_start_message_count >= 8;
+    } else {
+        fprintf(stdout, "Unknown test type: %s\n", TEST_TYPE);
+        exit(-1);
+    }
+}
+
+void log_packet_response_time(parsed_packet_t* packet) {
+    // TODO: We need to print a header as well to record what the parameters for this run were.
+    uint64_t service_time = be64toh(packet->app->getAppHeader()->service_time);
+    uint64_t sent_time = be64toh(packet->app->getAppHeader()->sent_time);
+    uint64_t recv_time = packet->tsp->timestamp; // TODO: This accounts for tokens, even though sends don't. Is that a problem?
+    uint64_t iter_time = this_iter_cycles_start;
+    uint64_t delta_time = (recv_time > sent_time) ? (recv_time - sent_time) : 0;
+    fprintf(stdout, "&&CSV&&ResponseTimes,%ld,%ld,%ld,%ld,%ld\n", service_time, delta_time, sent_time, recv_time, iter_time);
+}
+
 void handle_packet(switchpacket* tsp) {
     // Parse and log the incoming packet
     parsed_packet_t packet;
@@ -401,8 +430,14 @@ void handle_packet(switchpacket* tsp) {
         }
         print_packet("SEND", &sent_packet);
         send_with_priority(0, new_tsp);
+
+        // Check for nanoPU startup messages
         if (!start_message_received) {
-            start_message_received = true;
+            if(count_start_message()) {
+                start_message_received = true;
+            }
+        } else {
+            log_packet_response_time(&packet);
         }
     }
 }
