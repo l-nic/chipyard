@@ -36,6 +36,7 @@ PROGRAMS += lnic-incast-multi-service
 PROGRAMS += lnic-net-loopback
 PROGRAMS += lnic-ping-latency
 PROGRAMS += lnic-incast-nolock
+PROGRAMS += lnic-incast-single-core
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
