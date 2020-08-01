@@ -12,18 +12,14 @@
 // IP addr's are assigned by firesim starting at 10.0.0.2. Server will be the first one.
 uint64_t server_ip = 0x0a000002;
 
-uint64_t client_ips[NUM_CLIENTS] = {0x0a000003, 0x0a000004, 0x0a000005, 0x0a000006, 0x0a000007, 0x0a000008, 0x0a000009};
-
 // use the last byte of the IP address to compute a unique ID for each client
 uint8_t client_ip_to_id(uint32_t addr) {
   return ((uint8_t)addr) - 3;
 }
 
 bool is_client(uint32_t addr) {
-  for (int i = 0; i < NUM_CLIENTS; i++) {
-    if (addr == client_ips[i]) {
-      return true;
-    }
+  if ((addr > server_ip) && (addr <= (server_ip + NUM_CLIENTS))) {
+    return true;
   }
   return false;
 }
