@@ -40,6 +40,7 @@ PROGRAMS += lnic-incast-nolock
 PROGRAMS += lnic-evaluation
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
+PROGRAMS += lnic-multi-core-mica
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
