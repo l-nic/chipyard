@@ -352,12 +352,13 @@ bool count_start_message() {
         return global_start_message_count >= 4;
     } else if (strcmp(TEST_TYPE, "FOUR_CONTEXTS_FOUR_CORES") == 0) {
         return global_start_message_count >= 4;
-    } else if ((strcmp(TEST_TYPE, "TWO_CONTEXTS_FOUR_SHARED_CORES") == 0) ||
-            (strcmp(TEST_TYPE, "DIF_PRIORITY_LNIC_DRIVEN") == 0) ||
-            (strcmp(TEST_TYPE, "DIF_PRIORITY_TIMER_DRIVEN") == 0) ||
-            (strcmp(TEST_TYPE, "HIGH_PRIORITY_C1_STALL") == 0) ||
-            (strcmp(TEST_TYPE, "LOW_PRIORITY_C1_STALL") == 0)) {
+    } else if (strcmp(TEST_TYPE, "TWO_CONTEXTS_FOUR_SHARED_CORES") == 0) {
         return global_start_message_count >= 8;
+    } else if ((strcmp(TEST_TYPE, "DIF_PRIORITY_LNIC_DRIVEN") == 0) ||
+              (strcmp(TEST_TYPE, "DIF_PRIORITY_TIMER_DRIVEN") == 0) ||
+              (strcmp(TEST_TYPE, "HIGH_PRIORITY_C1_STALL") == 0) ||
+              (strcmp(TEST_TYPE, "LOW_PRIORITY_C1_STALL") == 0)) {
+        return global_start_message_count >= 2;
     } else {
         fprintf(stdout, "Unknown test type: %s\n", TEST_TYPE);
         exit(-1);
@@ -368,10 +369,11 @@ void log_packet_response_time(parsed_packet_t* packet) {
     // TODO: We need to print a header as well to record what the parameters for this run were.
     uint64_t service_time = be64toh(packet->app->getAppHeader()->service_time);
     uint64_t sent_time = be64toh(packet->app->getAppHeader()->sent_time);
+    uint16_t src_context = be16toh(packet->lnic->getLnicHeader()->src_context);
     uint64_t recv_time = packet->tsp->timestamp; // TODO: This accounts for tokens, even though sends don't. Is that a problem?
     uint64_t iter_time = this_iter_cycles_start;
     uint64_t delta_time = (recv_time > sent_time) ? (recv_time - sent_time) : 0;
-    fprintf(stdout, "&&CSV&&ResponseTimes,%ld,%ld,%ld,%ld,%ld\n", service_time, delta_time, sent_time, recv_time, iter_time);
+    fprintf(stdout, "&&CSV&&ResponseTimes,%ld,%ld,%ld,%ld,%ld,%d\n", service_time, delta_time, sent_time, recv_time, iter_time, src_context);
 }
 
 void handle_packet(switchpacket* tsp) {
