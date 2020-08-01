@@ -23,16 +23,16 @@ uint64_t load_gen_ip = 0x0a000001;
 bool c1_stall = false;
 
 // If context 1 stalls, it will stall for STALL_FACTOR times the message-specified stall duration
-#define STALL_FACTOR 100
+uint64_t c1_stall_factor = 0; // Default is 100
 
 // If context 1 stalls, it will do so every STALL_FREQ messages
-#define STALL_FREQ 10
+uint64_t c1_stall_freq = 0; // Default is 10
 
 // Types of tests to run
 enum test_type_t {
   ONE_CONTEXT_FOUR_CORES, FOUR_CONTEXTS_FOUR_CORES, TWO_CONTEXTS_FOUR_SHARED_CORES,
   DIF_PRIORITY_LNIC_DRIVEN, DIF_PRIORITY_TIMER_DRIVEN, HIGH_PRIORITY_C1_STALL,
-  LOW_PRIORITY_C1_STALL
+  LOW_PRIORITY_C1_STALL, UNKNOWN
 };
 
 char* name_for_test(enum test_type_t test_type) {
@@ -55,8 +55,25 @@ char* name_for_test(enum test_type_t test_type) {
   }
 }
 
-// The actual test to run
-enum test_type_t test_type = ONE_CONTEXT_FOUR_CORES;
+enum test_type_t test_for_name(char* test_type) {
+  if (strcmp(test_type, "ONE_CONTEXT_FOUR_CORES") == 0) {
+    return ONE_CONTEXT_FOUR_CORES;
+  } else if (strcmp(test_type, "FOUR_CONTEXTS_FOUR_CORES") == 0) {
+    return FOUR_CONTEXTS_FOUR_CORES;
+  } else if (strcmp(test_type, "TWO_CONTEXTS_FOUR_SHARED_CORES") == 0) {
+    return TWO_CONTEXTS_FOUR_SHARED_CORES;
+  } else if (strcmp(test_type, "DIF_PRIORITY_LNIC_DRIVEN") == 0) {
+    return DIF_PRIORITY_LNIC_DRIVEN;
+  } else if (strcmp(test_type, "DIF_PRIORITY_TIMER_DRIVEN") == 0) {
+    return DIF_PRIORITY_TIMER_DRIVEN;
+  } else if (strcmp(test_type, "HIGH_PRIORITY_C1_STALL") == 0) {
+    return HIGH_PRIORITY_C1_STALL;
+  } else if (strcmp(test_type, "LOW_PRIORITY_C1_STALL") == 0) {
+    return LOW_PRIORITY_C1_STALL;
+  } else {
+    return UNKNOWN;
+  }
+}
 
 int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, uint64_t priority);
 
@@ -66,8 +83,8 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
 
 int core_main(int argc, char** argv, int cid, int nc) {
     // Initialize variables and parse arguments
-    if (argc != 3) {
-        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+    if (argc != 6) {
+        printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address, followed by the test type, followed by the c1 stall factor, followed by the c1 stall frequency.\n");
         return -1;
     }
     char* nic_ip_str = argv[2];
@@ -80,6 +97,16 @@ int core_main(int argc, char** argv, int cid, int nc) {
         printf("Supplied NIC IP address is invalid.\n");
         return -1;
     }
+
+    char* test_type_str = argv[3];
+    enum test_type_t test_type = test_for_name(test_type_str);
+    if (test_type == UNKNOWN) {
+      printf("Unknown test type: %s\n", test_type_str);
+      return -1;
+    }
+
+    c1_stall_factor = atol(argv[4]);
+    c1_stall_freq = atol(argv[5]);
 
     // Start the test
     if (nic_ip_addr == root_addr) {
@@ -215,9 +242,9 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
 
       // Stall if enabled
       if (c1_stall && context_id == 1) {
-        if (msgs_since_last_stall >= STALL_FREQ) {
+        if (msgs_since_last_stall >= c1_stall_freq) {
           msgs_since_last_stall = 0;
-          service_time *= STALL_FACTOR;
+          service_time *= c1_stall_factor;
         } else {
           msgs_since_last_stall++;
         }
