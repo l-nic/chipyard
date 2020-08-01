@@ -23,10 +23,12 @@ Enable Password authentication for ssh:
 Create the logs directory:
 * mkdir -p ~/chipyard/software/local_firesim/logs
 
-To build the MIDAS-level simulator, run this:
+To build the MIDAS-level simulator with waveform logging enabled, run this:
 
     cd ~/chipyard/sims/firesim/sim
     make verilator-debug DESIGN=FireSim TARGET_CONFIG=DDR3FRFCFSLLC4MB_FireSimLNICQuadRocketConfig PLATFORM_CONFIG=F90MHz_BaseF1Config
+
+To build the MIDAS-level simulator _without_ waveform logging enabled, replace `verilator-debug` with `verilator` in the above command.
 
 To run the MIDAS-level simulator, run this:
 
