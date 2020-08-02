@@ -227,7 +227,6 @@ extern "C" {
 int inet_pton4(const char *src, const char *end, unsigned char *dst);
 uint32_t swap32(uint32_t in);
 
-
 bool is_single_core() { return false; }
 
 int core_main(int argc, char** argv, int cid, int nc) {
