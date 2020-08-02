@@ -1,28 +1,39 @@
 For initial setup (on top of the standard centos-chipyard VM setup and verilator installation), run this:
 
-sudo yum install libpcap-devel
-pip install 'fabric<2.0'
-cd ~
-git clone https://github.com/seladb/PcapPlusPlus
-cd PcapPlusPlus
-git checkout v19.12
-./configure-linux (Enter n for both options)
-make -j16
-sudo make install
-cd ~/chipyard/sims/firesim
-git submodule update --init sim/firesim-lib/src/main/cc/lib/libdwarf
-git submodule update --init sim/firesim-lib/src/main/cc/lib/elfutils
-./scripts/build-libelf.sh
-./scripts/build-libdwarf.sh
-sudo ldconfig
+    sudo yum install libpcap-devel
+    pip install 'fabric<2.0'
+    cd ~
+    git clone https://github.com/seladb/PcapPlusPlus
+    cd PcapPlusPlus
+    git checkout v19.12
+    ./configure-linux (Enter n for both options)
+    make -j16
+    sudo make install
+    cd ~/chipyard/sims/firesim
+    git submodule update --init sim/firesim-lib/src/main/cc/lib/libdwarf
+    git submodule update --init sim/firesim-lib/src/main/cc/lib/elfutils
+    ./scripts/build-libelf.sh
+    ./scripts/build-libdwarf.sh
+    sudo ldconfig
 
-To build the MIDAS-level simulator, run this:
-cd ~/chipyard/sims/firesim/sim
-make verilator-debug DESIGN=FireSim TARGET_CONFIG=DDR3FRFCFSLLC4MB_FireSimLNICQuadRocketConfig PLATFORM_CONFIG=F90MHz_BaseF1Config
+Enable Password authentication for ssh:
+* Open /etc/ssh/sshd_config and replace the line `PasswordAuthentication no` with `PasswordAuthentication yes` 
+* service sshd restart
+
+Create the logs directory:
+* mkdir -p ~/chipyard/software/local_firesim/logs
+
+To build the MIDAS-level simulator with waveform logging enabled, run this:
+
+    cd ~/chipyard/sims/firesim/sim
+    make verilator-debug DESIGN=FireSim TARGET_CONFIG=DDR3FRFCFSLLC4MB_FireSimLNICQuadRocketConfig PLATFORM_CONFIG=F90MHz_BaseF1Config
+
+To build the MIDAS-level simulator _without_ waveform logging enabled, replace `verilator-debug` with `verilator` in the above command.
 
 To run the MIDAS-level simulator, run this:
-cd ~/chipyard/software/local_firesim
-python local_firesim.py 4 ../../tests/lnic-ping-latency.riscv
+
+    cd ~/chipyard/software/local_firesim
+    python local_firesim.py 4 ../../tests/lnic-ping-latency.riscv
 
 Notes:
 If you want to change something that's normally a firesim param, modify the local_firesim.py script's invocation commands for the switch and MIDAS simulator.

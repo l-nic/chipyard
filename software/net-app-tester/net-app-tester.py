@@ -8,6 +8,7 @@ import NN_headers as NN
 import Othello_headers as Othello
 import NBody_headers as NBody
 import DummyApp_headers as DummyApp
+from ChainRep_headers import ChainRep, CHAINREP_OP_READ, CHAINREP_OP_WRITE
 import struct
 import pandas as pd
 import os
@@ -163,6 +164,103 @@ class LoadBalanceTest(unittest.TestCase):
         df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency), 'service_time': pd.Series(service_time)}, dtype=float)
         print df
         write_csv('load-balance', 'stats.csv', df)
+
+class Mica(unittest.TestCase):
+    def do_loopback(self, pkts):
+        print "*********** Request Pkts: ***********"
+        print_pkts(pkts)
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == DEFAULT_CONTEXT,
+                    prn=receiver.process_pkt, count=len(pkts), timeout=10)
+        sniffer.start()
+        # send in pkts
+        sendp(pkts, iface=TEST_IFACE)
+        # wait for all response pkts
+        sniffer.join()
+        self.assertEqual(len(pkts), len(sniffer.results))
+        print "*********** Response Pkts: ***********"
+        print_pkts(sniffer.results)
+        return receiver.msgs
+    def test_read(self):
+        msg_type_r = '\x00\x00\x00\x00\x00\x00\x00\x01'
+        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        payload = Raw(msg_type_r + msg_key)
+        dst_ctx = DST_CONTEXT
+        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
+        rx_msgs = self.do_loopback(pkts)
+    def test_write(self):
+        msg_type_w = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        msg_val    = '\x00\x00\x00\x00\x00\x00\x00\x07'
+        payload = Raw(msg_type_w + msg_key + msg_val)
+        dst_ctx = DST_CONTEXT
+        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
+        rx_msgs = self.do_loopback(pkts)
+
+class ChainReplication(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, ChainRep)
+
+    @staticmethod
+    def read_msg(nodes=[NIC_IP], key=0):
+        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_READ, seq=0, key=key, value=0)
+        return Ether(dst=NIC_MAC, src=MY_MAC) / \
+                IP(src=MY_IP, dst=nodes[0][0]) / \
+                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+    @staticmethod
+    def write_msg(nodes=[NIC_IP], seq=0, key=0, val=0):
+        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_WRITE, seq=seq, key=key, value=val)
+        return Ether(dst=NIC_MAC, src=MY_MAC) / \
+                IP(src=MY_IP, dst=nodes[0][0]) / \
+                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+
+    def stop_filter(self, p):
+        return p[IP].dst == MY_IP
+
+    def fwd_pkt(self, p):
+        self.assertTrue(p.haslayer(ChainRep))
+        if p[IP].dst == MY_IP: return
+        resp = p.copy()
+        resp[ChainRep].flags = 'FROM_TEST'
+        sendp([resp], iface=TEST_IFACE)
+
+    def test_write(self):
+        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
+                    prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
+        sniffer.start()
+        nodes = [(NIC_IP, 0), (NIC_IP, 1), (NIC_IP, 2)]
+        req = ChainReplication.write_msg(nodes=nodes, key=4, val=7, seq=0)
+        sendp([req], iface=TEST_IFACE)
+        sniffer.join()
+        self.assertEqual(len(sniffer.results), 3)
+        for i,resp in enumerate(sniffer.results):
+            self.assertEqual(resp[ChainRep].op, CHAINREP_OP_WRITE)
+            self.assertEqual(resp[ChainRep].key, req[ChainRep].key)
+            self.assertEqual(resp[ChainRep].value, req[ChainRep].value)
+            self.assertEqual(resp[ChainRep].seq, req[ChainRep].seq)
+            self.assertEqual(resp[ChainRep].node_cnt, max(len(nodes)-2-i, 0))
+        p1, p2, p3 = sniffer.results
+        self.assertEqual(p1[ChainRep].nodes, nodes[2:])
+        self.assertEqual(p1[IP].dst, nodes[1][0])
+        self.assertEqual(p2[IP].dst, nodes[2][0])
+        self.assertEqual(p3[IP].dst, req[ChainRep].client_ip)
+
+    def test_read(self):
+        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
+                    prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
+        sniffer.start()
+        req = ChainReplication.read_msg(nodes=[(NIC_IP, 2)], key=3)
+        sendp([req], iface=TEST_IFACE)
+        sniffer.join()
+        self.assertEqual(len(sniffer.results), 1)
+        resp = sniffer.results[0]
+        self.assertEqual(resp[IP].dst, MY_IP)
+        self.assertEqual(resp[ChainRep].key, 3)
+        self.assertEqual(resp[ChainRep].value, 0)
 
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkts):

@@ -2,6 +2,8 @@ GCC=riscv64-unknown-elf-gcc
 OBJDUMP=riscv64-unknown-elf-objdump
 CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
+CXX=riscv64-unknown-elf-g++
+CPPFLAGS=-mcmodel=medany -I. -Wall -Wextra -Werror -pedantic -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
 
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
 PROGRAMS += lnic-nic-loopback-gpr
@@ -37,6 +39,8 @@ PROGRAMS += lnic-net-loopback
 PROGRAMS += lnic-ping-latency
 PROGRAMS += lnic-incast-nolock
 PROGRAMS += lnic-load-balance
+PROGRAMS += lnic-incast-single-core
+PROGRAMS += lnic-multi-core-chain-rep
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
@@ -47,6 +51,18 @@ dumps: $(addsuffix .dump,$(PROGRAMS))
 
 %.o: %.c mmio.h
 	$(GCC) $(CFLAGS) -c $< -o $@
+
+%.o: %.cc
+	$(CXX) $(CPPFLAGS) -c $< -o $@
+
+city_mod.o: mica/util/cityhash/city_mod.cc
+	$(CXX) $(CPPFLAGS) -c $< -o $@
+
+lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o city_mod.o
+	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
+
+lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o city_mod.o
+	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 %.riscv: %.o crt.o syscalls.o link.ld
 	$(GCC) -T link.ld $(LDFLAGS) $< crt.o syscalls.o -o $@
