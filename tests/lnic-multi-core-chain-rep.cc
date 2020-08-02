@@ -116,8 +116,10 @@ int run_client(int cid) {
   uint32_t node_ips[] = {CLIENT_IP+1, CLIENT_IP+2, CLIENT_IP+3};
   uint8_t node_ctxs[] = {SERVER_CONTEXT, SERVER_CONTEXT, SERVER_CONTEXT};
 
-  uint64_t msg_key = 0x1;
+  uint64_t msg_key = 0x3;
   uint64_t msg_val = 0x7;
+
+  // WRITE
 
   uint8_t node_cnt = CHAIN_SIZE - 1;
   uint16_t msg_len = 8 + (node_cnt * 8) + 8 + 8;
@@ -154,7 +156,59 @@ int run_client(int cid) {
     lnic_read();
   msg_key = lnic_read();
   msg_val = lnic_read();
-  printf("[%d] flags=%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val);
+  printf("[%d] flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val);
+  if (flags != 0x20) printf("Error: got flags=0x%x (expected 0x%x)\n", flags, 0x20);
+  if (seq != 0) printf("Error: got seq=%d (expected %d)\n", seq, 0);
+  if (node_cnt != 0) printf("Error: got node_cnt=%d (expected %d)\n", node_cnt, 0);
+  if (client_ctx != CLIENT_CONTEXT) printf("Error: got node_ctx=%d (expected %d)\n", client_ctx, CLIENT_CONTEXT);
+  if (client_ip != CLIENT_IP) printf("Error: got node_ip=%d (expected %d)\n", client_ip, CLIENT_IP);
+  if (src_ip != node_ips[CHAIN_SIZE-1]) printf("Error: got src_ip=%d (expected %d)\n", src_ip, node_ips[CHAIN_SIZE-1]);
+  if (src_context != node_ctxs[CHAIN_SIZE-1]) printf("Error: got src_context=%d (expected %d)\n", src_context, node_ctxs[CHAIN_SIZE-1]);
+  if (msg_key != 0x3) printf("Error: got msg_key=%ld (expected %d)\n", msg_key, 0x3);
+  if (msg_val != 0x7) printf("Error: got msg_val=%ld (expected %d)\n", msg_val, 0x7);
+
+  // READ
+  node_cnt = 0;
+  msg_len = 8 + (node_cnt * 8) + 8 + 8;
+  app_hdr = ((uint64_t)node_ips[CHAIN_SIZE-1] << 32) | (node_ctxs[CHAIN_SIZE-1] << 16) | msg_len;
+  lnic_write_r(app_hdr);
+  client_ctx = cid;
+  client_ip = CLIENT_IP;
+
+  flags = CHAINREP_FLAGS_OP_READ;
+  seq = 0;
+  cr_meta_fields = ((uint64_t)flags << 56) | ((uint64_t)seq << 48) | ((uint64_t)node_cnt << 40) | ((uint64_t)client_ctx << 32) | client_ip;
+  lnic_write_r(cr_meta_fields);
+  lnic_write_r(msg_key);
+  lnic_write_r(msg_val);
+
+  lnic_wait();
+  app_hdr = lnic_read();
+  src_ip = (app_hdr & IP_MASK) >> 32;
+  src_context = (app_hdr & CONTEXT_MASK) >> 16;
+  rx_msg_len = app_hdr & LEN_MASK;
+  printf("[%d] --> Received from 0x%x:%d msg of length: %u bytes\n", cid, src_ip, src_context, rx_msg_len);
+
+  cr_meta_fields = lnic_read();
+  flags = (uint8_t) (cr_meta_fields >> 56);
+  seq = (uint8_t) (cr_meta_fields >> 48);
+  node_cnt = (uint8_t) (cr_meta_fields >> 40);
+  client_ctx = (uint8_t) (cr_meta_fields >> 32);
+  client_ip = (uint32_t) cr_meta_fields;
+  for (unsigned i = 0; i < node_cnt; i++)
+    lnic_read();
+  msg_key = lnic_read();
+  msg_val = lnic_read();
+  printf("[%d] flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val);
+  if (flags != 0x40) printf("Error: got flags=0x%x (expected 0x%x)\n", flags, 0x40);
+  if (seq != 0) printf("Error: got seq=%d (expected %d)\n", seq, 0);
+  if (node_cnt != 0) printf("Error: got node_cnt=%d (expected %d)\n", node_cnt, 0);
+  if (client_ctx != CLIENT_CONTEXT) printf("Error: got node_ctx=%d (expected %d)\n", client_ctx, CLIENT_CONTEXT);
+  if (client_ip != CLIENT_IP) printf("Error: got node_ip=%d (expected %d)\n", client_ip, CLIENT_IP);
+  if (src_ip != node_ips[CHAIN_SIZE-1]) printf("Error: got src_ip=%d (expected %d)\n", src_ip, node_ips[CHAIN_SIZE-1]);
+  if (src_context != node_ctxs[CHAIN_SIZE-1]) printf("Error: got src_context=%d (expected %d)\n", src_context, node_ctxs[CHAIN_SIZE-1]);
+  if (msg_key != 0x3) printf("Error: got msg_key=%ld (expected %d)\n", msg_key, 0x3);
+  if (msg_val != 0x7) printf("Error: got msg_val=%ld (expected %d)\n", msg_val, 0x7);
 
   return EXIT_SUCCESS;
 }
@@ -186,7 +240,7 @@ int run_server(int core_id) {
   server_up = true;
   arch_spin_unlock(&up_lock);
 
-	while (1) {
+  while (1) {
 		lnic_wait();
 		app_hdr = lnic_read();
 		msg_len = (uint16_t)app_hdr;
