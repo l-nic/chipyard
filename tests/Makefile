@@ -38,6 +38,7 @@ PROGRAMS += lnic-incast-multi-service
 PROGRAMS += lnic-net-loopback
 PROGRAMS += lnic-ping-latency
 PROGRAMS += lnic-incast-nolock
+PROGRAMS += lnic-load-balance
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
 

@@ -241,7 +241,7 @@ void scheduler_init() {
   csr_write(mscratch, &threads[read_csr(mhartid)][0]); // mscratch now holds thread base addr
 }
 
-void scheduler_run() {
+void scheduler_run_core(uint64_t int_type) {
   // Turn on the timer interrupts and wait for the scheduler to start
   csr_write(0x53, MAX_THREADS); // Set the main thread's id to an illegal value
 
@@ -256,8 +256,16 @@ void scheduler_run() {
   threads[read_csr(mhartid)][0].regs[3] = 0;
   csr_write(0x53, NANOKERNEL_CONTEXT); // Set the main thread's id to nanokernel context id
   csr_write(0x55, num_threads - 1); // Set the main thread's priority to a low value 
-  csr_set(mie, LNIC_INT_ENABLE);
+  csr_set(mie, int_type);
   asm volatile ("wfi");
+}
+
+void scheduler_run() {
+  scheduler_run_core(LNIC_INT_ENABLE); 
+}
+
+void scheduler_run_timer() {
+  scheduler_run_core(TIMER_INT_ENABLE);
 }
 
 void uart_init() {
