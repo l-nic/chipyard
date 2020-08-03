@@ -19,8 +19,6 @@ def build_components(num_sims, current_run):
         run("sudo make install")
     with cd("chipyard/software/local_firesim/switch"):
         run("make")
-    with cd("chipyard/software/local_firesim/load_generator"):
-        run("make")
     with cd("chipyard/software/local_firesim/logs/"):
         run("mkdir " + current_run)
         run("rm -f recent")
@@ -44,19 +42,6 @@ def main():
         exit(-1)
     num_sims = int(sys.argv[1])
     test_name = os.path.abspath(sys.argv[2])
-    use_load_gen = False
-    distribution_type = None
-    test_type = None
-    poisson_lambda = None
-    if len(sys.argv) >= 4:
-        if sys.argv[3] == "load_gen":
-            use_load_gen = True
-            if len(sys.argv) < 7:
-                print "The load generator requires passing in the number of simulations to run, the name of the test binary, the load_gen flag, the distribution type, the test type, and the mean time between generated requests (lambda)"
-                exit(-1)
-            distribution_type = sys.argv[4]
-            test_type = sys.argv[5]
-            poisson_lambda = sys.argv[6]
 
     env.password = "vagrant"
     current_run = "local_firesim_" + str(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")) + "/"
@@ -77,12 +62,12 @@ def main():
 
 
     @parallel
-    def launch_wrapper(local_addr_id_map, current_run, test_name, use_load_gen, distribution_type, test_type, poisson_lambda):
+    def launch_wrapper(local_addr_id_map, current_run, test_name):
         if env.host_string == "127.0.0.1":
-            launch_switch(local_addr_id_map[env.host_string], current_run, use_load_gen, distribution_type, test_type, poisson_lambda)
+            launch_switch(local_addr_id_map[env.host_string], current_run)
         else:
             launch_sim(local_addr_id_map[env.host_string], current_run, test_name)
-    execute(launch_wrapper, local_addr_id_map, current_run, test_name, use_load_gen, distribution_type, test_type, poisson_lambda, hosts=hosts)
+    execute(launch_wrapper, local_addr_id_map, current_run, test_name, hosts=hosts)
 
 
 
