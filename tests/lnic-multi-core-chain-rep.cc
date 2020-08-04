@@ -118,7 +118,6 @@ int do_read(int cid) {
   start_time = rdcycle();
   lnic_wait();
   stop_time = rdcycle();
-  printf("READ latency: %ld\n", stop_time-start_time);
 
   app_hdr = lnic_read();
   uint32_t src_ip = (app_hdr & IP_MASK) >> 32;
@@ -137,7 +136,7 @@ int do_read(int cid) {
     lnic_read();
   msg_key = lnic_read();
   msg_val = lnic_read();
-  //printf("[%d] flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val);
+  printf("[%d] READ flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx. Latency: %ld\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val, stop_time-start_time);
   if (flags != 0x40) printf("Error: got flags=0x%x (expected 0x%x)\n", flags, 0x40);
   if (seq != 0) printf("Error: got seq=%d (expected %d)\n", seq, 0);
   if (node_cnt != 0) printf("Error: got node_cnt=%d (expected %d)\n", node_cnt, 0);
@@ -184,7 +183,6 @@ int do_write(int cid) {
   start_time = rdcycle();
   lnic_wait();
   stop_time = rdcycle();
-  printf("WRITE latency: %ld\n", stop_time-start_time);
 
   app_hdr = lnic_read();
   uint32_t src_ip = (app_hdr & IP_MASK) >> 32;
@@ -203,7 +201,7 @@ int do_write(int cid) {
     lnic_read();
   msg_key = lnic_read();
   msg_val = lnic_read();
-  //printf("[%d] flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val);
+  printf("[%d] WRITE flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx. Latency: %ld\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val, stop_time-start_time);
   if (flags != 0x20) printf("Error: got flags=0x%x (expected 0x%x)\n", flags, 0x20);
   if (seq != 0) printf("Error: got seq=%d (expected %d)\n", seq, 0);
   if (node_cnt != 0) printf("Error: got node_cnt=%d (expected %d)\n", node_cnt, 0);

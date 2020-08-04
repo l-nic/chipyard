@@ -8,6 +8,7 @@
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 0
 
+#define CLIENT_IP 0x0a000003
 #define CLIENT_CONTEXT 1
 
 #define USE_MICA 1
@@ -262,9 +263,6 @@ int core_main(int argc, char** argv, int cid, int nc) {
       printf("Supplied NIC IP address is invalid.\n");
       return -1;
   }
-  if (nic_ip_addr != SERVER_IP) {
-    while(1);
-  }
 
   uint64_t priority = 0;
   lnic_add_context(cid, priority);
@@ -274,12 +272,13 @@ int core_main(int argc, char** argv, int cid, int nc) {
     asm volatile("nop");
   }
 
-  int ret = EXIT_SUCCESS;
-  if (cid == CLIENT_CONTEXT) {
+  int ret;
+  if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
     ret = run_client(cid);
-  } else if (cid == SERVER_CONTEXT) {
+  else if (cid == SERVER_CONTEXT)
     ret = run_server(cid);
-  }
+  else
+    ret = EXIT_SUCCESS;
 
   return ret;
 }
