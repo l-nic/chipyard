@@ -25,8 +25,8 @@ TIMEOUT_SEC = 7 # seconds
 NIC_MAC = "08:11:22:33:44:08"
 MY_MAC = "08:55:66:77:88:08"
 
-NIC_IP = "10.0.0.1"
-MY_IP = "10.0.0.3"
+NIC_IP = "10.0.0.2"
+MY_IP = "10.0.0.1"
 
 DST_CONTEXT = 0
 LATENCY_CONTEXT = 0x1234 # use this when we want the HW to insert timestamps into DATA pkts
@@ -70,47 +70,50 @@ class SchedulerTest(unittest.TestCase):
     def setUp(self):
         bind_layers(LNIC, DummyApp.DummyApp)
 
-    def app_msg(self, priority, service_time, pkt_len):
+    def app_msg(self, dst_context, service_time, pkt_len):
         msg_len = pkt_len - len(Ether()/IP()/LNIC())
-        return lnic_pkt(msg_len, 0, src_context=0, dst_context=priority) / DummyApp.DummyApp(service_time=service_time) / \
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
                Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
-        num_lp_msgs = 9
-        num_hp_msgs = 9
-        service_time = 500
+        num_c0_msgs = 30
+        num_c1_msgs = 30
+        service_time = 1600
         inputs = []
-        # add high priority msgs
-        inputs += [self.app_msg(0, service_time, 128) for i in range(num_hp_msgs)]
-        # add low priority msgs 
-        inputs += [self.app_msg(1, service_time, 128) for i in range(num_lp_msgs)]
+        # context 0 msgs
+        inputs += [self.app_msg(0, service_time, 80) for i in range(num_c0_msgs)]
+        # context 1 msgs
+        inputs += [self.app_msg(1, service_time, 80) for i in range(num_c1_msgs)]
         # shuffle pkts
         random.shuffle(inputs)
 
         receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
-                    prn=receiver.process_pkt, count=num_lp_msgs + num_hp_msgs, timeout=100)
+                    prn=receiver.process_pkt, count=num_c0_msgs + num_c1_msgs, timeout=200)
         sniffer.start()
         # send in pkts
         sendp(inputs, iface=TEST_IFACE, inter=1.1)
         # wait for all responses
         sniffer.join()
         # check responses
-        self.assertEqual(len(sniffer.results), num_lp_msgs + num_hp_msgs)
+        self.assertEqual(len(sniffer.results), num_c0_msgs + num_c1_msgs)
         time = []
         context = []
         latency = []
+        service_time = []
         for p in sniffer.results:
             self.assertTrue(p.haslayer(LNIC))
             l = struct.unpack('!L', str(p)[-4:])[0]
             t = struct.unpack('!L', str(p)[-8:-4])[0]
+            s = p[DummyApp.DummyApp].service_time
             self.assertTrue(p[LNIC].src_context in [0, 1])
             time.append(t)
             context.append(p[LNIC].src_context)
             latency.append(l)
+            service_time.append(s)
         # record latencies in a DataFrame
-        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency)}, dtype=float)
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency), 'service_time': pd.Series(service_time)}, dtype=float)
         print df
         write_csv('scheduler', 'stats.csv', df)
 

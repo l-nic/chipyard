@@ -218,12 +218,12 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
           printf("Root node received address not from load generator: %lx\n", rx_src_ip);
           return -1;
       }
-      // Check src context
-      rx_src_context = (app_hdr & CONTEXT_MASK) >> 16;
-      if (rx_src_context != 0) {
-          printf("Expected: src_context = %ld, Received: rx_src_context = %ld\n", 0, rx_src_context);
-          return -1;
-      }
+//      // Check src context
+//      rx_src_context = (app_hdr & CONTEXT_MASK) >> 16;
+//      if (rx_src_context != 0) {
+//          printf("Expected: src_context = %ld, Received: rx_src_context = %ld\n", 0, rx_src_context);
+//          return -1;
+//      }
       // Check msg length
       rx_msg_len = app_hdr & LEN_MASK;
       if (rx_msg_len != 2*8) {
