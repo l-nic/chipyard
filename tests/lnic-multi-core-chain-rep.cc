@@ -107,7 +107,7 @@ int do_read(int cid) {
   msg_val[0] = 0x7;
 
   uint8_t node_cnt = 0;
-  uint16_t msg_len = 8 + (node_cnt * 8) + 8 + (8 * VALUE_SIZE_WORDS);
+  uint16_t msg_len = 8 + (node_cnt * 8) + 8 + (8 * 0);
   app_hdr = ((uint64_t)(CLIENT_IP+3) << 32) | (SERVER_CONTEXT << 16) | msg_len;
   lnic_write_r(app_hdr);
   uint8_t client_ctx = cid;
@@ -118,8 +118,6 @@ int do_read(int cid) {
   uint64_t cr_meta_fields = ((uint64_t)flags << 56) | ((uint64_t)seq << 48) | ((uint64_t)node_cnt << 40) | ((uint64_t)client_ctx << 32) | client_ip;
   lnic_write_r(cr_meta_fields);
   lnic_write_r(msg_key);
-  for (int i = 0; i < VALUE_SIZE_WORDS; i++)
-    lnic_write_r(msg_val[i]);
 
   start_time = rdcycle();
   lnic_wait();
@@ -295,8 +293,6 @@ int run_server(int cid) {
       nodes[i] = lnic_read();
     }
     msg_key = lnic_read();
-    for (int i = 0; i < VALUE_SIZE_WORDS; i++)
-      msg_val[i] = lnic_read();
 
     unsigned new_node_head = 0;
     uint32_t dst_ip = 0;
@@ -321,7 +317,7 @@ int run_server(int cid) {
     }
     else {
       (void)last_seq;
-      // TODO: uncomment this to drop out-of-order:
+      // XXX uncomment this to drop out-of-order:
       //if (seq < last_seq) continue; // drop packet
       last_seq = seq;
       if (node_cnt == 0) { // we are at the tail
@@ -334,6 +330,8 @@ int run_server(int cid) {
         new_node_head = 1;
         node_cnt -= 1;
       }
+      for (int i = 0; i < VALUE_SIZE_WORDS; i++)
+        msg_val[i] = lnic_read();
 #if USE_MICA
       out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(&msg_val[0]));
       if (out_result != MicaResult::kSuccess) {
