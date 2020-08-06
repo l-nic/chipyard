@@ -12,6 +12,8 @@
 #define CLIENT_CONTEXT 1
 #define SERVER_CONTEXT 0
 
+#define VALUE_SIZE_WORDS 64
+
 
 bool server_up = false;
 
@@ -59,7 +61,7 @@ arch_spinlock_t up_lock;
 #include "mica/table/fixedtable.h"
 #include "mica/util/hash.h"
 
-static constexpr size_t kValSize = 8;
+static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
 struct MyFixedTableConfig {
   static constexpr size_t kBucketCap = 7;
@@ -80,7 +82,9 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  static constexpr size_t itemCount = 100000;
+  //static constexpr size_t itemCount = 100000;
+  //static constexpr size_t itemCount = 5000;
+  static constexpr size_t itemCount = 10;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
@@ -99,10 +103,11 @@ int do_read(int cid) {
   uint64_t start_time, stop_time;
 
   uint64_t msg_key = 0x3;
-  uint64_t msg_val = 0x7;
+  uint64_t msg_val[VALUE_SIZE_WORDS];
+  msg_val[0] = 0x7;
 
   uint8_t node_cnt = 0;
-  uint16_t msg_len = 8 + (node_cnt * 8) + 8 + 8;
+  uint16_t msg_len = 8 + (node_cnt * 8) + 8 + (8 * VALUE_SIZE_WORDS);
   app_hdr = ((uint64_t)(CLIENT_IP+3) << 32) | (SERVER_CONTEXT << 16) | msg_len;
   lnic_write_r(app_hdr);
   uint8_t client_ctx = cid;
@@ -113,7 +118,8 @@ int do_read(int cid) {
   uint64_t cr_meta_fields = ((uint64_t)flags << 56) | ((uint64_t)seq << 48) | ((uint64_t)node_cnt << 40) | ((uint64_t)client_ctx << 32) | client_ip;
   lnic_write_r(cr_meta_fields);
   lnic_write_r(msg_key);
-  lnic_write_r(msg_val);
+  for (int i = 0; i < VALUE_SIZE_WORDS; i++)
+    lnic_write_r(msg_val[i]);
 
   start_time = rdcycle();
   lnic_wait();
@@ -123,7 +129,7 @@ int do_read(int cid) {
   uint32_t src_ip = (app_hdr & IP_MASK) >> 32;
   uint16_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
   uint16_t rx_msg_len = app_hdr & LEN_MASK;
-  if (rx_msg_len != 24) printf("Error: got msg_len=%d (expected %d)\n", rx_msg_len, 24);
+  if (rx_msg_len != 8 + (0 * 8) + 8 + (8 * VALUE_SIZE_WORDS)) printf("Error: got msg_len=%d (expected %d)\n", rx_msg_len, 8 + (0 * 8) + 8 + (8 * VALUE_SIZE_WORDS));
   //printf("[%d] --> Received from 0x%x:%d msg of length: %u bytes\n", cid, src_ip, src_context, rx_msg_len);
 
   cr_meta_fields = lnic_read();
@@ -135,8 +141,9 @@ int do_read(int cid) {
   for (unsigned i = 0; i < node_cnt; i++)
     lnic_read();
   msg_key = lnic_read();
-  msg_val = lnic_read();
-  printf("[%d] READ flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx. Latency: %ld\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val, stop_time-start_time);
+  for (int i = 0; i < VALUE_SIZE_WORDS; i++)
+    msg_val[i] = lnic_read();
+  printf("[%d] READ flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx. Latency: %ld\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val[0], stop_time-start_time);
   if (flags != 0x40) printf("Error: got flags=0x%x (expected 0x%x)\n", flags, 0x40);
   if (seq != 0) printf("Error: got seq=%d (expected %d)\n", seq, 0);
   if (node_cnt != 0) printf("Error: got node_cnt=%d (expected %d)\n", node_cnt, 0);
@@ -145,7 +152,7 @@ int do_read(int cid) {
   if (src_ip != CLIENT_IP+3) printf("Error: got src_ip=%d (expected %d)\n", src_ip, CLIENT_IP+3);
   if (src_context != SERVER_CONTEXT) printf("Error: got src_context=%d (expected %d)\n", src_context, SERVER_CONTEXT);
   if (msg_key != 0x3) printf("Error: got msg_key=%ld (expected %d)\n", msg_key, 0x3);
-  if (msg_val != 0x7) printf("Error: got msg_val=%ld (expected %d)\n", msg_val, 0x7);
+  if (msg_val[0] != 0x7) printf("Error: got msg_val[0]=%ld (expected %d)\n", msg_val[0], 0x7);
   lnic_msg_done();
 
   return EXIT_SUCCESS;
@@ -160,10 +167,11 @@ int do_write(int cid) {
   uint8_t node_ctxs[] = {SERVER_CONTEXT, SERVER_CONTEXT, SERVER_CONTEXT};
 
   uint64_t msg_key = 0x3;
-  uint64_t msg_val = 0x7;
+  uint64_t msg_val[VALUE_SIZE_WORDS];
+  msg_val[0] = 0x7;
 
   uint8_t node_cnt = CHAIN_SIZE - 1;
-  uint16_t msg_len = 8 + (node_cnt * 8) + 8 + 8;
+  uint16_t msg_len = 8 + (node_cnt * 8) + 8 + (8 * VALUE_SIZE_WORDS);
   app_hdr = ((uint64_t)node_ips[0] << 32) | (node_ctxs[0] << 16) | msg_len;
   lnic_write_r(app_hdr);
   uint8_t client_ctx = cid;
@@ -178,7 +186,8 @@ int do_write(int cid) {
     lnic_write_r(((uint64_t)node_ctxs[i] << 32) | node_ips[i]);
 
   lnic_write_r(msg_key);
-  lnic_write_r(msg_val);
+  for (int i = 0; i < VALUE_SIZE_WORDS; i++)
+    lnic_write_r(msg_val[i]);
 
   start_time = rdcycle();
   lnic_wait();
@@ -188,7 +197,7 @@ int do_write(int cid) {
   uint32_t src_ip = (app_hdr & IP_MASK) >> 32;
   uint16_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
   uint16_t rx_msg_len = app_hdr & LEN_MASK;
-  if (rx_msg_len != 24) printf("Error: got msg_len=%d (expected %d)\n", rx_msg_len, 24);
+  if (rx_msg_len != 8 + (0 * 8) + 8 + (8 * VALUE_SIZE_WORDS)) printf("Error: got msg_len=%d (expected %d)\n", rx_msg_len, 8 + (0 * 8) + 8 + (8 * VALUE_SIZE_WORDS));
   //printf("[%d] --> Received from 0x%x:%d msg of length: %u bytes\n", cid, src_ip, src_context, rx_msg_len);
 
   cr_meta_fields = lnic_read();
@@ -200,8 +209,9 @@ int do_write(int cid) {
   for (unsigned i = 0; i < node_cnt; i++)
     lnic_read();
   msg_key = lnic_read();
-  msg_val = lnic_read();
-  printf("[%d] WRITE flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx. Latency: %ld\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val, stop_time-start_time);
+  for (int i = 0; i < VALUE_SIZE_WORDS; i++)
+    msg_val[i] = lnic_read();
+  printf("[%d] WRITE flags=0x%x seq=%d node_cnt=%d client_ctx=%d client_ip=%x key=0x%lx val=0x%lx. Latency: %ld\n", cid, flags, seq, node_cnt, client_ctx, client_ip, msg_key, msg_val[0], stop_time-start_time);
   if (flags != 0x20) printf("Error: got flags=0x%x (expected 0x%x)\n", flags, 0x20);
   if (seq != 0) printf("Error: got seq=%d (expected %d)\n", seq, 0);
   if (node_cnt != 0) printf("Error: got node_cnt=%d (expected %d)\n", node_cnt, 0);
@@ -210,7 +220,7 @@ int do_write(int cid) {
   if (src_ip != node_ips[CHAIN_SIZE-1]) printf("Error: got src_ip=%d (expected %d)\n", src_ip, node_ips[CHAIN_SIZE-1]);
   if (src_context != node_ctxs[CHAIN_SIZE-1]) printf("Error: got src_context=%d (expected %d)\n", src_context, node_ctxs[CHAIN_SIZE-1]);
   if (msg_key != 0x3) printf("Error: got msg_key=%ld (expected %d)\n", msg_key, 0x3);
-  if (msg_val != 0x7) printf("Error: got msg_val=%ld (expected %d)\n", msg_val, 0x7);
+  if (msg_val[0] != 0x7) printf("Error: got msg_val[0]=%ld (expected %d)\n", msg_val[0], 0x7);
   lnic_msg_done();
 
   return EXIT_SUCCESS;
@@ -242,7 +252,7 @@ int run_client(int cid) {
   return EXIT_SUCCESS;
 }
 
-int run_server(int core_id) {
+int run_server(int cid) {
   uint64_t app_hdr;
   uint64_t cr_meta_fields;
   uint32_t client_ip;
@@ -251,19 +261,19 @@ int run_server(int core_id) {
   uint8_t seq;
   uint8_t node_cnt;
   uint64_t msg_key;
-  uint64_t msg_val;
+  uint64_t msg_val[VALUE_SIZE_WORDS];
   uint64_t nodes[4];
   uint64_t start_time, stop_time;
 #if USE_MICA
   uint64_t key_hash;
   MicaResult out_result;
   FixedTable::ft_key_t ft_key;
-  FixedTable table(kValSize, core_id);
+  FixedTable table(kValSize, cid);
 #endif
 
   unsigned last_seq = 0;
 
-  printf("[%d] server ready.\n", core_id);
+  printf("[%d] server ready.\n", cid);
 
   arch_spin_lock(&up_lock);
   server_up = true;
@@ -285,7 +295,8 @@ int run_server(int core_id) {
       nodes[i] = lnic_read();
     }
     msg_key = lnic_read();
-    msg_val = lnic_read();
+    for (int i = 0; i < VALUE_SIZE_WORDS; i++)
+      msg_val[i] = lnic_read();
 
     unsigned new_node_head = 0;
     uint32_t dst_ip = 0;
@@ -298,12 +309,12 @@ int run_server(int core_id) {
 
     if (flags & CHAINREP_FLAGS_OP_READ) {
 #if USE_MICA
-      out_result = table.get(key_hash, ft_key, reinterpret_cast<char *>(&msg_val));
+      out_result = table.get(key_hash, ft_key, reinterpret_cast<char *>(&msg_val[0]));
       if (out_result != MicaResult::kSuccess) {
-        printf("[%d] GET failed for key %lu.\n", core_id, msg_key);
+        printf("[%d] GET failed for key %lu.\n", cid, msg_key);
       }
 #else
-      msg_val = test_kv[msg_key];
+      msg_val[0] = test_kv[msg_key];
 #endif
       dst_ip = client_ip;
       dst_context = client_ctx;
@@ -324,16 +335,16 @@ int run_server(int core_id) {
         node_cnt -= 1;
       }
 #if USE_MICA
-      out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(&msg_val));
+      out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(&msg_val[0]));
       if (out_result != MicaResult::kSuccess) {
-        printf("[%d] Inserting key %lu failed.\n", core_id, msg_key);
+        printf("[%d] Inserting key %lu failed.\n", cid, msg_key);
       }
 #else
-      test_kv[msg_key] = msg_val;
+      test_kv[msg_key] = msg_val[0];
 #endif
     }
 
-    unsigned msg_len = 8 + (node_cnt * 8) + 8 + 8;
+    uint16_t msg_len = 8 + (node_cnt * 8) + 8 + (8 * VALUE_SIZE_WORDS);
     app_hdr = ((uint64_t)dst_ip << 32) | (dst_context << 16) | msg_len;
     lnic_write_r(app_hdr);
 
@@ -346,13 +357,14 @@ int run_server(int core_id) {
     }
 
     lnic_write_r(msg_key);
-    lnic_write_r(msg_val);
+    for (int i = 0; i < VALUE_SIZE_WORDS; i++)
+      lnic_write_r(msg_val[i]);
 
     lnic_msg_done();
     stop_time = rdcycle();
 
-    printf("[%d] %s seq=%d, node_cnt=%d, key=0x%lx, val=0x%lx. Latency: %ld\n", core_id,
-        flags & CHAINREP_FLAGS_OP_WRITE ? "WRITE" : "READ", seq, node_cnt, msg_key, msg_val, stop_time-start_time);
+    printf("[%d] %s seq=%d, node_cnt=%d, key=0x%lx, val=0x%lx. Latency: %ld\n", cid,
+        flags & CHAINREP_FLAGS_OP_WRITE ? "WRITE" : "READ", seq, node_cnt, msg_key, msg_val[0], stop_time-start_time);
 	}
 
   return EXIT_SUCCESS;
@@ -376,7 +388,7 @@ int core_main(int argc, char** argv, int cid, int nc) {
   }
   printf("\n");
 
-  if (argc != 3) {
+  if (argc < 3) {
       printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
       return -1;
   }
