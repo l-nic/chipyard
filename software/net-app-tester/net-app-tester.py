@@ -87,6 +87,12 @@ class SchedulerTest(unittest.TestCase):
         # shuffle pkts
         random.shuffle(inputs)
 
+        # set tx_msg_ids
+        tx_msg_id = 0
+        for p in inputs:
+            p[LNIC].tx_msg_id = tx_msg_id % 128
+            tx_msg_id += 1
+
         receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
@@ -285,7 +291,7 @@ class Loopback(unittest.TestCase):
         return receiver.msgs
     def test_multi_host(self):
         num_hosts = 32
-        src_ips = ['10.0.0.{}'.format(i) for i in range(2, 2 + num_hosts)]
+        src_ips = ['10.0.0.{}'.format(i) for i in range(3, 3 + num_hosts)]
         src_contexts = range(num_hosts)
         tx_msgs = {}
         pkts = []
