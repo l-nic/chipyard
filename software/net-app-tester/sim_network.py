@@ -10,7 +10,7 @@ IFACE = "tap0"
 SWITCH_MAC = "08:55:66:77:88:08"
 NIC_MAC = "08:11:22:33:44:08"
 
-TRIM_FREQ = 0 # DATA pkts
+TRIM_FREQ = 4 # DATA pkts
 DATA_DROP_FREQ = 0 # DATA pkts
 CTRL_DROP_FREQ = 0 # Control pkts (not including trimmed pkts, just ACK, NACK, and PULL pkts)
 
