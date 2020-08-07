@@ -1,6 +1,6 @@
 
 #define MAX_THREADS 10
-#define TIME_SLICE_RTC_TICKS 150
+#define TIME_SLICE_RTC_TICKS 5
 
 #define NANOKERNEL_CONTEXT 0xffff
 
