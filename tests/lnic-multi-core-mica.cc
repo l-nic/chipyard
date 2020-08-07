@@ -5,6 +5,8 @@
 #define MICA_R_TYPE 1
 #define MICA_W_TYPE 2
 
+#define VALUE_SIZE_WORDS 64
+
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 0
 
@@ -58,7 +60,7 @@ arch_spinlock_t up_lock;
 #include "mica/table/fixedtable.h"
 #include "mica/util/hash.h"
 
-static constexpr size_t kValSize = 8;
+static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
 struct MyFixedTableConfig {
   static constexpr size_t kBucketCap = 7;
@@ -79,7 +81,8 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  static constexpr size_t itemCount = 100000;
+  //static constexpr size_t itemCount = 100000;
+  static constexpr size_t itemCount = 10;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
@@ -95,6 +98,7 @@ int run_client(int cid) {
 	uint64_t app_hdr;
   uint32_t src_ip;
   uint16_t src_context;
+  uint16_t msg_len;
   uint16_t rx_msg_len;
   uint64_t start_time, stop_time;
 
@@ -117,17 +121,20 @@ int run_client(int cid) {
   uint16_t dst_context = SERVER_CONTEXT;
 
   uint64_t msg_key = 0x1;
-  uint64_t msg_val = 0x7;
-  uint64_t recv_msg_val;
+  uint64_t msg_val[VALUE_SIZE_WORDS];
+  msg_val[0] = 0x7;
+  uint64_t ack;
 
 #define NUM_ITERS 1000
   for (int i = 0; i < NUM_ITERS; i++) {
     // SET
-    app_hdr = ((uint64_t)dst_ip << 32) | ((uint32_t)dst_context << 16) | (24);
+    msg_len = 8 + 8 + (8 * VALUE_SIZE_WORDS);
+    app_hdr = ((uint64_t)dst_ip << 32) | ((uint32_t)dst_context << 16) | msg_len;
     lnic_write_r(app_hdr);
     lnic_write_i(MICA_W_TYPE);
     lnic_write_r(msg_key);
-    lnic_write_r(msg_val);
+    for (int j = 0; j < VALUE_SIZE_WORDS; j++)
+      lnic_write_r(msg_val[j]);
     start_time = rdcycle();
     lnic_wait();
     stop_time = rdcycle();
@@ -138,10 +145,10 @@ int run_client(int cid) {
     if (src_ip != SERVER_IP) printf("CLIENT ERROR: Expected: correct_sender_ip = %x, Received: src_ip = %x\n", SERVER_IP, src_ip);
     if (src_context != SERVER_CONTEXT) printf("CLIENT ERROR: Expected: correct_src_context = %d, Received: src_context = %d\n", SERVER_CONTEXT, src_context);
     if (rx_msg_len != 8) printf("CLIENT ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", 8, rx_msg_len);
-    recv_msg_val = lnic_read();
-    if (recv_msg_val != msg_val) printf("CLIENT ERROR: Expected: msg_val = 0x%lx, Received: msg_val = 0x%lx\n", msg_val, recv_msg_val);
+    ack = lnic_read();
+    if (ack != 0x1) printf("CLIENT ERROR: Expected: ack = 0x%x, Received: ack = 0x%lx\n", 0x1, ack);
     lnic_msg_done();
-    printf("[%d] client SET key=%lx val=%lx. Latency: %ld\n", cid, msg_key, msg_val, stop_time-start_time);
+    printf("[%d] client SET key=%lx val=%lx. Latency: %ld\n", cid, msg_key, msg_val[0], stop_time-start_time);
 
     // GET
     app_hdr = ((uint64_t)dst_ip << 32) | ((uint32_t)dst_context << 16) | (16);
@@ -157,11 +164,12 @@ int run_client(int cid) {
     rx_msg_len = app_hdr & LEN_MASK;
     if (src_ip != SERVER_IP) printf("CLIENT ERROR: Expected: correct_sender_ip = %x, Received: src_ip = %x\n", SERVER_IP, src_ip);
     if (src_context != SERVER_CONTEXT) printf("CLIENT ERROR: Expected: correct_src_context = %d, Received: src_context = %d\n", SERVER_CONTEXT, src_context);
-    if (rx_msg_len != 8) printf("CLIENT ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", 8, rx_msg_len);
-    recv_msg_val = lnic_read();
-    if (recv_msg_val != msg_val) printf("CLIENT ERROR: Expected: msg_val = 0x%lx, Received: msg_val = 0x%lx\n", msg_val, recv_msg_val);
+    if (rx_msg_len != 8*VALUE_SIZE_WORDS) printf("CLIENT ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", 8*VALUE_SIZE_WORDS, rx_msg_len);
+    for (int j = 0; j < VALUE_SIZE_WORDS; j++)
+      msg_val[j] = lnic_read();
+    if (msg_val[0] != 0x7) printf("CLIENT ERROR: Expected: msg_val = 0x%x, Received: msg_val[0] = 0x%lx\n", 0x7, msg_val[0]);
     lnic_msg_done();
-    printf("[%d] client GET key=%lx val=%lx. Latency: %ld\n", cid, msg_key, recv_msg_val, stop_time-start_time);
+    printf("[%d] client GET key=%lx val=%lx. Latency: %ld\n", cid, msg_key, msg_val[0], stop_time-start_time);
   }
 
   return EXIT_SUCCESS;
@@ -169,10 +177,13 @@ int run_client(int cid) {
 
 int run_server(int cid) {
 	uint64_t app_hdr;
+  uint16_t msg_len;
   uint64_t msg_type;
   uint64_t msg_key;
-  uint64_t msg_val;
+  uint64_t msg_val[VALUE_SIZE_WORDS];
   uint64_t start_time, stop_time;
+  uint16_t write_value_words;
+  uint64_t t1, t2;
 #if USE_MICA
   uint64_t key_hash;
   MicaResult out_result;
@@ -201,30 +212,43 @@ int run_server(int cid) {
     ft_key.qword[0] = msg_key;
 #endif // USE_MICA
 
+    if (msg_type == MICA_W_TYPE) {
+      for (int j = 0; j < VALUE_SIZE_WORDS; j++)
+        msg_val[j] = lnic_read();
+    }
+
+    msg_len = msg_type == MICA_R_TYPE ? 8 * VALUE_SIZE_WORDS : 8;
+    lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | msg_len);
+
+    t1 = rdcycle();
     if (msg_type == MICA_R_TYPE) {
 #if USE_MICA
-      out_result = table.get(key_hash, ft_key, reinterpret_cast<char *>(&msg_val));
+      out_result = table.get(key_hash, ft_key, reinterpret_cast<char *>(&msg_val[0]));
       if (out_result != MicaResult::kSuccess) {
         printf("[%d] GET failed for key %lu.\n", cid, msg_key);
       }
 #endif // USE_MICA
+      write_value_words = VALUE_SIZE_WORDS;
     }
     else {
-      msg_val = lnic_read();
 #if USE_MICA
-      out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(&msg_val));
+      out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(&msg_val[0]));
       if (out_result != MicaResult::kSuccess) {
         printf("[%d] Inserting key %lu failed.\n", cid, msg_key);
       }
 #endif // USE_MICA
+      msg_val[0] = 0x1; // ACK
+      write_value_words = 1;
     }
+    t2 = rdcycle();
 
-    lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | 8);
-    lnic_write_r(msg_val);
+    for (int j = 0; j < write_value_words; j++)
+      lnic_write_r(msg_val[j]);
+
     lnic_msg_done();
     stop_time = rdcycle();
-    printf("[%d] %s key=%lu val=%lu. Latency: %ld\n", cid,
-        msg_type == MICA_R_TYPE ? "GET" : "SET", msg_key, msg_val, stop_time-start_time);
+    printf("[%d] %s key=%lu val=%lu. MICA latency: %ld, Total latency: %ld\n", cid,
+        msg_type == MICA_R_TYPE ? "GET" : "SET", msg_key, msg_val[0], t2-t1, stop_time-start_time);
 	}
 
   return EXIT_SUCCESS;
@@ -248,7 +272,7 @@ int core_main(int argc, char** argv, int cid, int nc) {
   }
   printf("\n");
 
-  if (argc != 3) {
+  if (argc < 3) {
       printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
       return -1;
   }
