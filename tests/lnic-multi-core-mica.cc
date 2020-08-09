@@ -6,6 +6,7 @@
 #define MICA_W_TYPE 2
 
 #define VALUE_SIZE_WORDS 64
+#define KEY_SIZE_WORDS   2
 
 #define SERVER_IP 0x0a000002
 #define SERVER_CONTEXT 0
@@ -76,7 +77,7 @@ struct MyFixedTableConfig {
   // reset_stats().
   static constexpr bool kCollectStats = false;
 
-  static constexpr size_t kKeySize = 8;
+  static constexpr size_t kKeySize = 8 * KEY_SIZE_WORDS;
 
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
@@ -89,8 +90,8 @@ typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
 typedef mica::table::Result MicaResult;
 
 template <typename T>
-static uint64_t mica_hash(const T *key, size_t key_length) {
-  return ::mica::util::hash(key, key_length);
+static uint64_t mica_hash(const T *key) {
+  return ::mica::util::hash(key, 8*KEY_SIZE_WORDS);
 }
 #endif // USE_MICA
 
@@ -120,21 +121,86 @@ int run_client(int cid) {
   uint32_t dst_ip = SERVER_IP;
   uint16_t dst_context = SERVER_CONTEXT;
 
-  uint64_t msg_key = 0x1;
   uint64_t msg_val[VALUE_SIZE_WORDS];
+  uint64_t msg_key[KEY_SIZE_WORDS];
+  msg_key[1] = 0;
   msg_val[0] = 0x7;
   uint64_t ack;
 
-#define NUM_ITERS 1000
+#define NUM_ITERS 16
   for (int i = 0; i < NUM_ITERS; i++) {
+    msg_key[0] = (i % 4) + 1;
     // SET
-    msg_len = 8 + 8 + (8 * VALUE_SIZE_WORDS);
+    msg_len = 8 + (8 * KEY_SIZE_WORDS) + (8 * VALUE_SIZE_WORDS);
     app_hdr = ((uint64_t)dst_ip << 32) | ((uint32_t)dst_context << 16) | msg_len;
     lnic_write_r(app_hdr);
     lnic_write_i(MICA_W_TYPE);
-    lnic_write_r(msg_key);
-    for (int j = 0; j < VALUE_SIZE_WORDS; j++)
-      lnic_write_r(msg_val[j]);
+    lnic_write_r(msg_key[0]);
+    lnic_write_r(msg_key[1]);
+    lnic_write_r(msg_val[0]);
+    lnic_write_r(msg_val[1]);
+    lnic_write_r(msg_val[2]);
+    lnic_write_r(msg_val[3]);
+    lnic_write_r(msg_val[4]);
+    lnic_write_r(msg_val[5]);
+    lnic_write_r(msg_val[6]);
+    lnic_write_r(msg_val[7]);
+    lnic_write_r(msg_val[8]);
+    lnic_write_r(msg_val[9]);
+    lnic_write_r(msg_val[10]);
+    lnic_write_r(msg_val[11]);
+    lnic_write_r(msg_val[12]);
+    lnic_write_r(msg_val[13]);
+    lnic_write_r(msg_val[14]);
+    lnic_write_r(msg_val[15]);
+    lnic_write_r(msg_val[16]);
+    lnic_write_r(msg_val[17]);
+    lnic_write_r(msg_val[18]);
+    lnic_write_r(msg_val[19]);
+    lnic_write_r(msg_val[20]);
+    lnic_write_r(msg_val[21]);
+    lnic_write_r(msg_val[22]);
+    lnic_write_r(msg_val[23]);
+    lnic_write_r(msg_val[24]);
+    lnic_write_r(msg_val[25]);
+    lnic_write_r(msg_val[26]);
+    lnic_write_r(msg_val[27]);
+    lnic_write_r(msg_val[28]);
+    lnic_write_r(msg_val[29]);
+    lnic_write_r(msg_val[30]);
+    lnic_write_r(msg_val[31]);
+    lnic_write_r(msg_val[32]);
+    lnic_write_r(msg_val[33]);
+    lnic_write_r(msg_val[34]);
+    lnic_write_r(msg_val[35]);
+    lnic_write_r(msg_val[36]);
+    lnic_write_r(msg_val[37]);
+    lnic_write_r(msg_val[38]);
+    lnic_write_r(msg_val[39]);
+    lnic_write_r(msg_val[40]);
+    lnic_write_r(msg_val[41]);
+    lnic_write_r(msg_val[42]);
+    lnic_write_r(msg_val[43]);
+    lnic_write_r(msg_val[44]);
+    lnic_write_r(msg_val[45]);
+    lnic_write_r(msg_val[46]);
+    lnic_write_r(msg_val[47]);
+    lnic_write_r(msg_val[48]);
+    lnic_write_r(msg_val[49]);
+    lnic_write_r(msg_val[50]);
+    lnic_write_r(msg_val[51]);
+    lnic_write_r(msg_val[52]);
+    lnic_write_r(msg_val[53]);
+    lnic_write_r(msg_val[54]);
+    lnic_write_r(msg_val[55]);
+    lnic_write_r(msg_val[56]);
+    lnic_write_r(msg_val[57]);
+    lnic_write_r(msg_val[58]);
+    lnic_write_r(msg_val[59]);
+    lnic_write_r(msg_val[60]);
+    lnic_write_r(msg_val[61]);
+    lnic_write_r(msg_val[62]);
+    lnic_write_r(msg_val[63]);
     start_time = rdcycle();
     lnic_wait();
     stop_time = rdcycle();
@@ -148,13 +214,14 @@ int run_client(int cid) {
     ack = lnic_read();
     if (ack != 0x1) printf("CLIENT ERROR: Expected: ack = 0x%x, Received: ack = 0x%lx\n", 0x1, ack);
     lnic_msg_done();
-    printf("[%d] client SET key=%lx val=%lx. Latency: %ld\n", cid, msg_key, msg_val[0], stop_time-start_time);
+    printf("[%d] client SET key=%lx val=%lx. Latency: %ld\n", cid, msg_key[0], msg_val[0], stop_time-start_time);
 
     // GET
-    app_hdr = ((uint64_t)dst_ip << 32) | ((uint32_t)dst_context << 16) | (16);
+    app_hdr = ((uint64_t)dst_ip << 32) | ((uint32_t)dst_context << 16) | (8 + (8 * KEY_SIZE_WORDS));
     lnic_write_r(app_hdr);
     lnic_write_i(MICA_R_TYPE);
-    lnic_write_r(msg_key);
+    lnic_write_r(msg_key[0]);
+    lnic_write_r(msg_key[1]);
     start_time = rdcycle();
     lnic_wait();
     stop_time = rdcycle();
@@ -165,11 +232,12 @@ int run_client(int cid) {
     if (src_ip != SERVER_IP) printf("CLIENT ERROR: Expected: correct_sender_ip = %x, Received: src_ip = %x\n", SERVER_IP, src_ip);
     if (src_context != SERVER_CONTEXT) printf("CLIENT ERROR: Expected: correct_src_context = %d, Received: src_context = %d\n", SERVER_CONTEXT, src_context);
     if (rx_msg_len != 8*VALUE_SIZE_WORDS) printf("CLIENT ERROR: Expected: msg_len = %d, Received: msg_len = %d\n", 8*VALUE_SIZE_WORDS, rx_msg_len);
-    for (int j = 0; j < VALUE_SIZE_WORDS; j++)
-      msg_val[j] = lnic_read();
+    msg_val[0] = lnic_read();
+    for (int j = 1; j < VALUE_SIZE_WORDS; j++)
+      lnic_read();
     if (msg_val[0] != 0x7) printf("CLIENT ERROR: Expected: msg_val = 0x%x, Received: msg_val[0] = 0x%lx\n", 0x7, msg_val[0]);
     lnic_msg_done();
-    printf("[%d] client GET key=%lx val=%lx. Latency: %ld\n", cid, msg_key, msg_val[0], stop_time-start_time);
+    printf("[%d] client GET key=%lx val=%lx. Latency: %ld\n", cid, msg_key[0], msg_val[0], stop_time-start_time);
   }
 
   return EXIT_SUCCESS;
@@ -179,11 +247,10 @@ int run_server(int cid) {
 	uint64_t app_hdr;
   uint16_t msg_len;
   uint64_t msg_type;
-  uint64_t msg_key;
+  uint64_t msg_key[KEY_SIZE_WORDS];
   uint64_t msg_val[VALUE_SIZE_WORDS];
   uint64_t start_time, stop_time;
-  uint16_t write_value_words;
-  uint64_t t1, t2;
+  uint64_t t1, t2, t3;
 #if USE_MICA
   uint64_t key_hash;
   MicaResult out_result;
@@ -204,51 +271,175 @@ int run_server(int cid) {
     app_hdr = lnic_read();
     //printf("[%d] --> Received msg of length: %u bytes\n", cid, (uint16_t)app_hdr);
     msg_type = lnic_read();
-    msg_key = lnic_read();
-
-    //printf("[%d] type=%lu, key=%lu\n", cid, msg_type, msg_key);
-#if USE_MICA
-    key_hash = mica_hash(&msg_key, sizeof(msg_key));
-    ft_key.qword[0] = msg_key;
-#endif // USE_MICA
+    msg_key[0] = lnic_read();
+    msg_key[1] = lnic_read();
 
     if (msg_type == MICA_W_TYPE) {
-      for (int j = 0; j < VALUE_SIZE_WORDS; j++)
-        msg_val[j] = lnic_read();
+      msg_val[0] = lnic_read();
+      msg_val[1] = lnic_read();
+      msg_val[2] = lnic_read();
+      msg_val[3] = lnic_read();
+      msg_val[4] = lnic_read();
+      msg_val[5] = lnic_read();
+      msg_val[6] = lnic_read();
+      msg_val[7] = lnic_read();
+      msg_val[8] = lnic_read();
+      msg_val[9] = lnic_read();
+      msg_val[10] = lnic_read();
+      msg_val[11] = lnic_read();
+      msg_val[12] = lnic_read();
+      msg_val[13] = lnic_read();
+      msg_val[14] = lnic_read();
+      msg_val[15] = lnic_read();
+      msg_val[16] = lnic_read();
+      msg_val[17] = lnic_read();
+      msg_val[18] = lnic_read();
+      msg_val[19] = lnic_read();
+      msg_val[20] = lnic_read();
+      msg_val[21] = lnic_read();
+      msg_val[22] = lnic_read();
+      msg_val[23] = lnic_read();
+      msg_val[24] = lnic_read();
+      msg_val[25] = lnic_read();
+      msg_val[26] = lnic_read();
+      msg_val[27] = lnic_read();
+      msg_val[28] = lnic_read();
+      msg_val[29] = lnic_read();
+      msg_val[30] = lnic_read();
+      msg_val[31] = lnic_read();
+      msg_val[32] = lnic_read();
+      msg_val[33] = lnic_read();
+      msg_val[34] = lnic_read();
+      msg_val[35] = lnic_read();
+      msg_val[36] = lnic_read();
+      msg_val[37] = lnic_read();
+      msg_val[38] = lnic_read();
+      msg_val[39] = lnic_read();
+      msg_val[40] = lnic_read();
+      msg_val[41] = lnic_read();
+      msg_val[42] = lnic_read();
+      msg_val[43] = lnic_read();
+      msg_val[44] = lnic_read();
+      msg_val[45] = lnic_read();
+      msg_val[46] = lnic_read();
+      msg_val[47] = lnic_read();
+      msg_val[48] = lnic_read();
+      msg_val[49] = lnic_read();
+      msg_val[50] = lnic_read();
+      msg_val[51] = lnic_read();
+      msg_val[52] = lnic_read();
+      msg_val[53] = lnic_read();
+      msg_val[54] = lnic_read();
+      msg_val[55] = lnic_read();
+      msg_val[56] = lnic_read();
+      msg_val[57] = lnic_read();
+      msg_val[58] = lnic_read();
+      msg_val[59] = lnic_read();
+      msg_val[60] = lnic_read();
+      msg_val[61] = lnic_read();
+      msg_val[62] = lnic_read();
+      msg_val[63] = lnic_read();
     }
 
     msg_len = msg_type == MICA_R_TYPE ? 8 * VALUE_SIZE_WORDS : 8;
     lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | msg_len);
 
     t1 = rdcycle();
+#if USE_MICA
+    key_hash = mica_hash(&msg_key);
+    ft_key.qword[0] = msg_key[0];
+    ft_key.qword[1] = msg_key[1];
+#endif // USE_MICA
+    t2 = rdcycle();
+
     if (msg_type == MICA_R_TYPE) {
 #if USE_MICA
       out_result = table.get(key_hash, ft_key, reinterpret_cast<char *>(&msg_val[0]));
       if (out_result != MicaResult::kSuccess) {
-        printf("[%d] GET failed for key %lu.\n", cid, msg_key);
+        printf("[%d] GET failed for key %lu.\n", cid, msg_key[0]);
       }
 #endif // USE_MICA
-      write_value_words = VALUE_SIZE_WORDS;
+      t3 = rdcycle();
+      lnic_write_r(msg_val[0]);
+      lnic_write_r(msg_val[1]);
+      lnic_write_r(msg_val[2]);
+      lnic_write_r(msg_val[3]);
+      lnic_write_r(msg_val[4]);
+      lnic_write_r(msg_val[5]);
+      lnic_write_r(msg_val[6]);
+      lnic_write_r(msg_val[7]);
+      lnic_write_r(msg_val[8]);
+      lnic_write_r(msg_val[9]);
+      lnic_write_r(msg_val[10]);
+      lnic_write_r(msg_val[11]);
+      lnic_write_r(msg_val[12]);
+      lnic_write_r(msg_val[13]);
+      lnic_write_r(msg_val[14]);
+      lnic_write_r(msg_val[15]);
+      lnic_write_r(msg_val[16]);
+      lnic_write_r(msg_val[17]);
+      lnic_write_r(msg_val[18]);
+      lnic_write_r(msg_val[19]);
+      lnic_write_r(msg_val[20]);
+      lnic_write_r(msg_val[21]);
+      lnic_write_r(msg_val[22]);
+      lnic_write_r(msg_val[23]);
+      lnic_write_r(msg_val[24]);
+      lnic_write_r(msg_val[25]);
+      lnic_write_r(msg_val[26]);
+      lnic_write_r(msg_val[27]);
+      lnic_write_r(msg_val[28]);
+      lnic_write_r(msg_val[29]);
+      lnic_write_r(msg_val[30]);
+      lnic_write_r(msg_val[31]);
+      lnic_write_r(msg_val[32]);
+      lnic_write_r(msg_val[33]);
+      lnic_write_r(msg_val[34]);
+      lnic_write_r(msg_val[35]);
+      lnic_write_r(msg_val[36]);
+      lnic_write_r(msg_val[37]);
+      lnic_write_r(msg_val[38]);
+      lnic_write_r(msg_val[39]);
+      lnic_write_r(msg_val[40]);
+      lnic_write_r(msg_val[41]);
+      lnic_write_r(msg_val[42]);
+      lnic_write_r(msg_val[43]);
+      lnic_write_r(msg_val[44]);
+      lnic_write_r(msg_val[45]);
+      lnic_write_r(msg_val[46]);
+      lnic_write_r(msg_val[47]);
+      lnic_write_r(msg_val[48]);
+      lnic_write_r(msg_val[49]);
+      lnic_write_r(msg_val[50]);
+      lnic_write_r(msg_val[51]);
+      lnic_write_r(msg_val[52]);
+      lnic_write_r(msg_val[53]);
+      lnic_write_r(msg_val[54]);
+      lnic_write_r(msg_val[55]);
+      lnic_write_r(msg_val[56]);
+      lnic_write_r(msg_val[57]);
+      lnic_write_r(msg_val[58]);
+      lnic_write_r(msg_val[59]);
+      lnic_write_r(msg_val[60]);
+      lnic_write_r(msg_val[61]);
+      lnic_write_r(msg_val[62]);
+      lnic_write_r(msg_val[63]);
     }
     else {
 #if USE_MICA
       out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(&msg_val[0]));
       if (out_result != MicaResult::kSuccess) {
-        printf("[%d] Inserting key %lu failed.\n", cid, msg_key);
+        printf("[%d] Inserting key %lu failed.\n", cid, msg_key[0]);
       }
 #endif // USE_MICA
-      msg_val[0] = 0x1; // ACK
-      write_value_words = 1;
+      t3 = rdcycle();
+      lnic_write_i(0x1); // ACK
     }
-    t2 = rdcycle();
-
-    for (int j = 0; j < write_value_words; j++)
-      lnic_write_r(msg_val[j]);
 
     lnic_msg_done();
     stop_time = rdcycle();
-    printf("[%d] %s key=%lu val=%lu. MICA latency: %ld, Total latency: %ld\n", cid,
-        msg_type == MICA_R_TYPE ? "GET" : "SET", msg_key, msg_val[0], t2-t1, stop_time-start_time);
+    printf("[%d] %s key=%lu val=%lu. Hash lat: %ld     MICA latency: %ld     Total latency: %ld\n", cid,
+        msg_type == MICA_R_TYPE ? "GET" : "SET", msg_key[0], msg_val[0], t2-t1, t3-t2, stop_time-start_time);
 	}
 
   return EXIT_SUCCESS;
