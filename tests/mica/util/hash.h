@@ -3,7 +3,7 @@
 #define MICA_UTIL_HASH_H_
 
 #include "mica/common.h"
-#include "mica/util/cityhash/citycrc_mod.h"
+#include "mica/util/cityhash/city.h"
 
 namespace mica {
 namespace util {

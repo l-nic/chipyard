@@ -30,7 +30,6 @@
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #pragma GCC diagnostic ignored "-Wconversion"
 
-//#include "config.h"
 #include "city.h"
 
 #include <algorithm>
@@ -93,25 +92,23 @@ static uint32 UNALIGNED_LOAD32(const char *p) {
 #else
 
 //#include <byteswap.h>
-//#define bswap_32(x) __builtin_bswap32(x)
-//#define bswap_64(x) __builtin_bswap64(x)
-static inline uint32_t bswap_32(uint32_t x) {
-  return ((x << 24) & 0xff000000 ) |
-  ((x << 8) & 0x00ff0000 ) |
-  ((x >> 8) & 0x0000ff00 ) |
-  ((x >> 24) & 0x000000ff );
-}
-static inline uint64_t bswap_64(uint64_t x) {
-  return
-    ((x & 0xFF00000000000000u) >> 56u) |
-    ((x & 0x00FF000000000000u) >> 40u) |
-    ((x & 0x0000FF0000000000u) >> 24u) |
-    ((x & 0x000000FF00000000u) >>  8u) |
-    ((x & 0x00000000FF000000u) <<  8u) |
-    ((x & 0x0000000000FF0000u) << 24u) |
-    ((x & 0x000000000000FF00u) << 40u) |
-    ((x & 0x00000000000000FFu) << 56u);
-}
+//static inline uint32_t bswap_32(uint32_t x) {
+//  return ((x << 24) & 0xff000000 ) |
+//  ((x << 8) & 0x00ff0000 ) |
+//  ((x >> 8) & 0x0000ff00 ) |
+//  ((x >> 24) & 0x000000ff );
+//}
+//static inline uint64_t bswap_64(uint64_t x) {
+//  return
+//    ((x & 0xFF00000000000000u) >> 56u) |
+//    ((x & 0x00FF000000000000u) >> 40u) |
+//    ((x & 0x0000FF0000000000u) >> 24u) |
+//    ((x & 0x000000FF00000000u) >>  8u) |
+//    ((x & 0x00000000FF000000u) <<  8u) |
+//    ((x & 0x0000000000FF0000u) << 24u) |
+//    ((x & 0x000000000000FF00u) << 40u) |
+//    ((x & 0x00000000000000FFu) << 56u);
+//}
 
 #endif
 
@@ -208,74 +205,74 @@ static uint32 Hash32Len5to12(const char *s, size_t len) {
   return fmix(Mur(c, Mur(b, Mur(a, d))));
 }
 
-uint32 CityHash32(const char *s, size_t len) {
-  if (len <= 24) {
-    return len <= 12 ?
-        (len <= 4 ? Hash32Len0to4(s, len) : Hash32Len5to12(s, len)) :
-        Hash32Len13to24(s, len);
-  }
-
-  // len > 24
-  uint32 h = len, g = c1 * len, f = g;
-  uint32 a0 = Rotate32(Fetch32(s + len - 4) * c1, 17) * c2;
-  uint32 a1 = Rotate32(Fetch32(s + len - 8) * c1, 17) * c2;
-  uint32 a2 = Rotate32(Fetch32(s + len - 16) * c1, 17) * c2;
-  uint32 a3 = Rotate32(Fetch32(s + len - 12) * c1, 17) * c2;
-  uint32 a4 = Rotate32(Fetch32(s + len - 20) * c1, 17) * c2;
-  h ^= a0;
-  h = Rotate32(h, 19);
-  h = h * 5 + 0xe6546b64;
-  h ^= a2;
-  h = Rotate32(h, 19);
-  h = h * 5 + 0xe6546b64;
-  g ^= a1;
-  g = Rotate32(g, 19);
-  g = g * 5 + 0xe6546b64;
-  g ^= a3;
-  g = Rotate32(g, 19);
-  g = g * 5 + 0xe6546b64;
-  f += a4;
-  f = Rotate32(f, 19);
-  f = f * 5 + 0xe6546b64;
-  size_t iters = (len - 1) / 20;
-  do {
-    uint32 a0 = Rotate32(Fetch32(s) * c1, 17) * c2;
-    uint32 a1 = Fetch32(s + 4);
-    uint32 a2 = Rotate32(Fetch32(s + 8) * c1, 17) * c2;
-    uint32 a3 = Rotate32(Fetch32(s + 12) * c1, 17) * c2;
-    uint32 a4 = Fetch32(s + 16);
-    h ^= a0;
-    h = Rotate32(h, 18);
-    h = h * 5 + 0xe6546b64;
-    f += a1;
-    f = Rotate32(f, 19);
-    f = f * c1;
-    g += a2;
-    g = Rotate32(g, 18);
-    g = g * 5 + 0xe6546b64;
-    h ^= a3 + a1;
-    h = Rotate32(h, 19);
-    h = h * 5 + 0xe6546b64;
-    g ^= a4;
-    g = bswap_32(g) * 5;
-    h += a4 * 5;
-    h = bswap_32(h);
-    f += a0;
-    PERMUTE3(f, h, g);
-    s += 20;
-  } while (--iters != 0);
-  g = Rotate32(g, 11) * c1;
-  g = Rotate32(g, 17) * c1;
-  f = Rotate32(f, 11) * c1;
-  f = Rotate32(f, 17) * c1;
-  h = Rotate32(h + g, 19);
-  h = h * 5 + 0xe6546b64;
-  h = Rotate32(h, 17) * c1;
-  h = Rotate32(h + f, 19);
-  h = h * 5 + 0xe6546b64;
-  h = Rotate32(h, 17) * c1;
-  return h;
-}
+//uint32 CityHash32(const char *s, size_t len) {
+//  if (len <= 24) {
+//    return len <= 12 ?
+//        (len <= 4 ? Hash32Len0to4(s, len) : Hash32Len5to12(s, len)) :
+//        Hash32Len13to24(s, len);
+//  }
+//
+//  // len > 24
+//  uint32 h = len, g = c1 * len, f = g;
+//  uint32 a0 = Rotate32(Fetch32(s + len - 4) * c1, 17) * c2;
+//  uint32 a1 = Rotate32(Fetch32(s + len - 8) * c1, 17) * c2;
+//  uint32 a2 = Rotate32(Fetch32(s + len - 16) * c1, 17) * c2;
+//  uint32 a3 = Rotate32(Fetch32(s + len - 12) * c1, 17) * c2;
+//  uint32 a4 = Rotate32(Fetch32(s + len - 20) * c1, 17) * c2;
+//  h ^= a0;
+//  h = Rotate32(h, 19);
+//  h = h * 5 + 0xe6546b64;
+//  h ^= a2;
+//  h = Rotate32(h, 19);
+//  h = h * 5 + 0xe6546b64;
+//  g ^= a1;
+//  g = Rotate32(g, 19);
+//  g = g * 5 + 0xe6546b64;
+//  g ^= a3;
+//  g = Rotate32(g, 19);
+//  g = g * 5 + 0xe6546b64;
+//  f += a4;
+//  f = Rotate32(f, 19);
+//  f = f * 5 + 0xe6546b64;
+//  size_t iters = (len - 1) / 20;
+//  do {
+//    uint32 a0 = Rotate32(Fetch32(s) * c1, 17) * c2;
+//    uint32 a1 = Fetch32(s + 4);
+//    uint32 a2 = Rotate32(Fetch32(s + 8) * c1, 17) * c2;
+//    uint32 a3 = Rotate32(Fetch32(s + 12) * c1, 17) * c2;
+//    uint32 a4 = Fetch32(s + 16);
+//    h ^= a0;
+//    h = Rotate32(h, 18);
+//    h = h * 5 + 0xe6546b64;
+//    f += a1;
+//    f = Rotate32(f, 19);
+//    f = f * c1;
+//    g += a2;
+//    g = Rotate32(g, 18);
+//    g = g * 5 + 0xe6546b64;
+//    h ^= a3 + a1;
+//    h = Rotate32(h, 19);
+//    h = h * 5 + 0xe6546b64;
+//    g ^= a4;
+//    g = bswap_32(g) * 5;
+//    h += a4 * 5;
+//    h = bswap_32(h);
+//    f += a0;
+//    PERMUTE3(f, h, g);
+//    s += 20;
+//  } while (--iters != 0);
+//  g = Rotate32(g, 11) * c1;
+//  g = Rotate32(g, 17) * c1;
+//  f = Rotate32(f, 11) * c1;
+//  f = Rotate32(f, 17) * c1;
+//  h = Rotate32(h + g, 19);
+//  h = h * 5 + 0xe6546b64;
+//  h = Rotate32(h, 17) * c1;
+//  h = Rotate32(h + f, 19);
+//  h = h * 5 + 0xe6546b64;
+//  h = Rotate32(h, 17) * c1;
+//  return h;
+//}
 
 // Bitwise right rotate.  Normally this will compile to a single
 // instruction, especially if the shift is a manifest constant.
@@ -364,26 +361,26 @@ static pair<uint64, uint64> WeakHashLen32WithSeeds(
 }
 
 // Return an 8-byte hash for 33 to 64 bytes.
-static uint64 HashLen33to64(const char *s, size_t len) {
-  uint64 mul = k2 + len * 2;
-  uint64 a = Fetch64(s) * k2;
-  uint64 b = Fetch64(s + 8);
-  uint64 c = Fetch64(s + len - 24);
-  uint64 d = Fetch64(s + len - 32);
-  uint64 e = Fetch64(s + 16) * k2;
-  uint64 f = Fetch64(s + 24) * 9;
-  uint64 g = Fetch64(s + len - 8);
-  uint64 h = Fetch64(s + len - 16) * mul;
-  uint64 u = Rotate(a + g, 43) + (Rotate(b, 30) + c) * 9;
-  uint64 v = ((a + g) ^ d) + f + 1;
-  uint64 w = bswap_64((u + v) * mul) + h;
-  uint64 x = Rotate(e + f, 42) + c;
-  uint64 y = (bswap_64((v + w) * mul) + g) * mul;
-  uint64 z = e + f + c;
-  a = bswap_64((x + z) * mul + y) + b;
-  b = ShiftMix((z + a) * mul + d + h) * mul;
-  return b + x;
-}
+//static uint64 HashLen33to64(const char *s, size_t len) {
+//  uint64 mul = k2 + len * 2;
+//  uint64 a = Fetch64(s) * k2;
+//  uint64 b = Fetch64(s + 8);
+//  uint64 c = Fetch64(s + len - 24);
+//  uint64 d = Fetch64(s + len - 32);
+//  uint64 e = Fetch64(s + 16) * k2;
+//  uint64 f = Fetch64(s + 24) * 9;
+//  uint64 g = Fetch64(s + len - 8);
+//  uint64 h = Fetch64(s + len - 16) * mul;
+//  uint64 u = Rotate(a + g, 43) + (Rotate(b, 30) + c) * 9;
+//  uint64 v = ((a + g) ^ d) + f + 1;
+//  uint64 w = bswap_64((u + v) * mul) + h;
+//  uint64 x = Rotate(e + f, 42) + c;
+//  uint64 y = (bswap_64((v + w) * mul) + g) * mul;
+//  uint64 z = e + f + c;
+//  a = bswap_64((x + z) * mul + y) + b;
+//  b = ShiftMix((z + a) * mul + d + h) * mul;
+//  return b + x;
+//}
 
 uint64 CityHash64(const char *s, size_t len) {
   if (len <= 32) {
@@ -393,7 +390,9 @@ uint64 CityHash64(const char *s, size_t len) {
       return HashLen17to32(s, len);
     }
   } else if (len <= 64) {
-    return HashLen33to64(s, len);
+    //printf("XXX Hash len >32 disabled\n");
+    return 0;
+    //return HashLen33to64(s, len);
   }
 
   // For strings over 64 bytes we hash the end first, and then as we
