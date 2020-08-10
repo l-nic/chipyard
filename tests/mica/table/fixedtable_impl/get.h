@@ -25,9 +25,7 @@ Result FixedTable<StaticConfig>::get(uint64_t key_hash, const ft_key_t& key,
       return Result::kNotFound;
     }
 
-    //uint8_t* _val = get_value(located_bucket, item_index);
-    //::mica::util::memcpy<8>(out_value, _val, val_size);
-    //memcpy(out_value, _val, val_size);
+#if USE_MICA_LNIC
     (void)out_value;
     uint64_t* _val = (uint64_t*)get_value(located_bucket, item_index);
     lnic_write_r(_val[0]);
@@ -96,6 +94,12 @@ Result FixedTable<StaticConfig>::get(uint64_t key_hash, const ft_key_t& key,
     lnic_write_r(_val[62]);
     lnic_write_r(_val[63]);
 #endif // VALUE_SIZE_WORDS > 8
+
+#else
+    uint8_t* _val = get_value(located_bucket, item_index);
+    //::mica::util::memcpy<8>(out_value, _val, val_size);
+    memcpy(out_value, _val, val_size);
+#endif // USE_MICA_LNIC
 
     if (version_start != read_version_end(bucket)) continue; /* Try again */
 

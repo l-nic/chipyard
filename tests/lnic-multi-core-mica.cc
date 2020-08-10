@@ -15,6 +15,8 @@
 #define CLIENT_CONTEXT 1
 
 #define USE_MICA 1
+// Instead of passing a pointer to MICA, MICA calls lnic_read/write() directly:
+#define USE_MICA_LNIC 0
 
 bool server_up = false;
 
@@ -272,7 +274,7 @@ int run_server(int cid) {
 
     t1 = rdcycle();
 #if USE_MICA
-    key_hash = mica_hash(&msg_key);
+    key_hash = mica_hash(msg_key);
     ft_key.qword[0] = msg_key[0];
     ft_key.qword[1] = msg_key[1];
 #endif // USE_MICA
