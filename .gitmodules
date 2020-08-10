@@ -37,7 +37,7 @@
 	url = https://github.com/sifive/block-inclusivecache-sifive.git
 [submodule "toolchains/riscv-tools/riscv-gnu-toolchain"]
 	path = toolchains/riscv-tools/riscv-gnu-toolchain
-	url = https://github.com/riscv/riscv-gnu-toolchain.git
+	url = https://github.com/l-nic/riscv-gnu-toolchain.git
 [submodule "toolchains/riscv-tools/riscv-gnu-toolchain-prebuilt"]
 	path = toolchains/riscv-tools/riscv-gnu-toolchain-prebuilt
 	url = https://github.com/ucb-bar/chipyard-toolchain-prebuilt.git
