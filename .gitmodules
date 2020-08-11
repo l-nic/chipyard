@@ -44,7 +44,7 @@
 	shallow = true
 [submodule "toolchains/riscv-tools/riscv-isa-sim"]
 	path = toolchains/riscv-tools/riscv-isa-sim
-	url = https://github.com/riscv/riscv-isa-sim.git
+	url = https://github.com/l-nic/riscv-isa-sim.git
 [submodule "toolchains/riscv-tools/riscv-pk"]
 	path = toolchains/riscv-tools/riscv-pk
 	url = https://github.com/riscv/riscv-pk.git
