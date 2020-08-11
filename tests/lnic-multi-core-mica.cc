@@ -14,9 +14,12 @@
 #define CLIENT_IP 0x0a000003
 #define CLIENT_CONTEXT 1
 
+#define PRINT_TIMING 0
+
 #define USE_MICA 1
-// Instead of passing a pointer to MICA, MICA calls lnic_read/write() directly:
-#define USE_MICA_LNIC 0
+
+// Expected address of the load generator
+uint64_t load_gen_ip = 0x0a000001;
 
 bool server_up = false;
 
@@ -61,7 +64,6 @@ arch_spinlock_t up_lock;
 #if USE_MICA
 
 #include "mica/table/fixedtable.h"
-#include "mica/util/hash.h"
 
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
@@ -84,17 +86,36 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  //static constexpr size_t itemCount = 100000;
-  static constexpr size_t itemCount = 10;
+  //static constexpr size_t itemCount = 10000;
+  static constexpr size_t itemCount = 1000;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
 typedef mica::table::Result MicaResult;
 
-template <typename T>
-static uint64_t mica_hash(const T *key) {
-  return ::mica::util::hash(key, 8*KEY_SIZE_WORDS);
+static inline uint64_t rotate(uint64_t val, int shift) {
+  // Avoid shifting by 64: doing so yields an undefined result.
+  return shift == 0 ? val : ((val >> shift) | (val << (64 - shift)));
 }
+static inline uint64_t HashLen16(uint64_t u, uint64_t v, uint64_t mul) {
+  // Murmur-inspired hashing.
+  uint64_t a = (u ^ v) * mul;
+  a ^= (a >> 47);
+  uint64_t b = (v ^ a) * mul;
+  b ^= (b >> 47);
+  b *= mul;
+  return b;
+}
+static inline uint64_t cityhash(const uint64_t *s) {
+  static const uint64_t k2 = 0x9ae16a3b2f90404fULL;
+  uint64_t mul = k2 + (KEY_SIZE_WORDS * 8) * 2;
+  uint64_t a = s[0] + k2;
+  uint64_t b = s[1];
+  uint64_t c = rotate(b, 37) * mul + a;
+  uint64_t d = (rotate(a, 25) + b) * mul;
+  return HashLen16(c, d, mul);
+}
+
 #endif // USE_MICA
 
 int run_client(int cid) {
@@ -245,12 +266,24 @@ int run_client(int cid) {
   return EXIT_SUCCESS;
 }
 
+void send_startup_msg(int cid, uint64_t context_id) {
+  uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
+  uint64_t cid_to_send = cid;
+  lnic_write_r(app_hdr);
+  lnic_write_r(cid_to_send);
+  lnic_write_r(context_id);
+}
+
+uint64_t empty_value[VALUE_SIZE_WORDS];
+
 int run_server(int cid) {
 	uint64_t app_hdr;
   uint64_t msg_type;
   uint64_t msg_key[KEY_SIZE_WORDS];
-  uint64_t start_time, stop_time;
-  uint64_t t1, t2, t3;
+#if PRINT_TIMING
+  uint64_t t0, t1, t2, t3;
+#endif // PRINT_TIMING
+  uint64_t service_time, sent_time;
 #if USE_MICA
   uint64_t key_hash;
   MicaResult out_result;
@@ -258,30 +291,54 @@ int run_server(int cid) {
   FixedTable table(kValSize, cid);
 #endif // USE_MICA
 
+  for (unsigned i = 1; i <= MyFixedTableConfig::itemCount; i++) {
+    ft_key.qword[0] = i;
+    ft_key.qword[1] = 0;
+    key_hash = cityhash(ft_key.qword);
+    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(empty_value));
+    if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
+    if (i % 100 == 0) printf("Inserted %u keys.\n", i);
+  }
+
   printf("[%d] Server ready.\n", cid);
   arch_spin_lock(&up_lock);
   server_up = true;
   arch_spin_unlock(&up_lock);
 
+  send_startup_msg(cid, cid);
+  send_startup_msg(cid, cid);
+  send_startup_msg(cid, cid);
+  send_startup_msg(cid, cid);
+
   while (1) {
     lnic_wait();
-    start_time = rdcycle();
+#if PRINT_TIMING
+    t0 = rdcycle();
+#endif // PRINT_TIMING
     app_hdr = lnic_read();
     //printf("[%d] --> Received msg of length: %u bytes\n", cid, (uint16_t)app_hdr);
+    service_time = lnic_read();
+    sent_time = lnic_read();
     msg_type = lnic_read();
     msg_key[0] = lnic_read();
     msg_key[1] = lnic_read();
 
+#if PRINT_TIMING
     t1 = rdcycle();
+#endif // PRINT_TIMING
 #if USE_MICA
-    key_hash = mica_hash(msg_key);
+    key_hash = cityhash(msg_key);
     ft_key.qword[0] = msg_key[0];
     ft_key.qword[1] = msg_key[1];
 #endif // USE_MICA
+#if PRINT_TIMING
     t2 = rdcycle();
+#endif // PRINT_TIMING
 
     if (msg_type == MICA_R_TYPE) {
-      lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | (8 * VALUE_SIZE_WORDS));
+      lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | (8 + 8 + (8 * VALUE_SIZE_WORDS)));
+      lnic_write_r(service_time);
+      lnic_write_r(sent_time);
 #if USE_MICA
       // XXX We don't pass a pointer to the value, because we moved lnic_write() into MICA:
       out_result = table.get(key_hash, ft_key, NULL);
@@ -289,7 +346,6 @@ int run_server(int cid) {
         printf("[%d] GET failed for key %lu.\n", cid, msg_key[0]);
       }
 #endif // USE_MICA
-      t3 = rdcycle();
     }
     else {
 #if USE_MICA
@@ -299,15 +355,18 @@ int run_server(int cid) {
         printf("[%d] Inserting key %lu failed.\n", cid, msg_key[0]);
       }
 #endif // USE_MICA
-      t3 = rdcycle();
-      lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | 8);
+      lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | (8 + 8 + 8));
+      lnic_write_r(service_time);
+      lnic_write_r(sent_time);
       lnic_write_i(0x1); // ACK
     }
 
     lnic_msg_done();
-    stop_time = rdcycle();
+#if PRINT_TIMING
+    t3 = rdcycle();
     printf("[%d] %s key=%lu. Hash lat: %ld     MICA latency: %ld     Total latency: %ld\n", cid,
-        msg_type == MICA_R_TYPE ? "GET" : "SET", msg_key[0], t2-t1, t3-t2, stop_time-start_time);
+        msg_type == MICA_R_TYPE ? "GET" : "SET", msg_key[0], t2-t1, t3-t2, t3-t0);
+#endif // PRINT_TIMING
 	}
 
   return EXIT_SUCCESS;
@@ -356,10 +415,14 @@ int core_main(int argc, char** argv, int cid, int nc) {
   }
 
   int ret;
-  if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
+  //if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
+  if (0 && nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
     ret = run_client(cid);
-  else if (cid == SERVER_CONTEXT)
+  else if (nic_ip_addr == SERVER_IP && cid == SERVER_CONTEXT)
     ret = run_server(cid);
+  else if (cid == SERVER_CONTEXT) {
+    while (1) { }
+  }
   else
     ret = EXIT_SUCCESS;
 

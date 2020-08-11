@@ -3,8 +3,6 @@
 #include "lnic.h"
 
 #define USE_MICA 1
-// Instead of passing a pointer to MICA, MICA calls lnic_read/write() directly:
-#define USE_MICA_LNIC 0
 
 #define CHAINREP_FLAGS_FROM_TESTER    (1 << 7)
 #define CHAINREP_FLAGS_OP_READ        (1 << 6)
