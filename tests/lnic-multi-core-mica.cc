@@ -279,7 +279,6 @@ uint64_t empty_value[VALUE_SIZE_WORDS];
 int run_server(int cid) {
 	uint64_t app_hdr;
   uint64_t msg_type;
-  uint64_t msg_key[KEY_SIZE_WORDS];
 #if PRINT_TIMING
   uint64_t t0, t1, t2, t3;
 #endif // PRINT_TIMING
@@ -320,16 +319,14 @@ int run_server(int cid) {
     service_time = lnic_read();
     sent_time = lnic_read();
     msg_type = lnic_read();
-    msg_key[0] = lnic_read();
-    msg_key[1] = lnic_read();
+    ft_key.qword[0] = lnic_read();
+    ft_key.qword[1] = lnic_read();
 
 #if PRINT_TIMING
     t1 = rdcycle();
 #endif // PRINT_TIMING
 #if USE_MICA
-    key_hash = cityhash(msg_key);
-    ft_key.qword[0] = msg_key[0];
-    ft_key.qword[1] = msg_key[1];
+    key_hash = cityhash(ft_key.qword);
 #endif // USE_MICA
 #if PRINT_TIMING
     t2 = rdcycle();
@@ -343,7 +340,7 @@ int run_server(int cid) {
       // XXX We don't pass a pointer to the value, because we moved lnic_write() into MICA:
       out_result = table.get(key_hash, ft_key, NULL);
       if (out_result != MicaResult::kSuccess) {
-        printf("[%d] GET failed for key %lu.\n", cid, msg_key[0]);
+        printf("[%d] GET failed for key %lu.\n", cid, ft_key.qword[0]);
       }
 #endif // USE_MICA
     }
@@ -352,7 +349,7 @@ int run_server(int cid) {
       // XXX We don't pass a pointer to the value, because we moved lnic_read() into MICA:
       out_result = table.set(key_hash, ft_key, NULL);
       if (out_result != MicaResult::kSuccess) {
-        printf("[%d] Inserting key %lu failed.\n", cid, msg_key[0]);
+        printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
       }
 #endif // USE_MICA
       lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | (8 + 8 + 8));
@@ -365,7 +362,7 @@ int run_server(int cid) {
 #if PRINT_TIMING
     t3 = rdcycle();
     printf("[%d] %s key=%lu. Hash lat: %ld     MICA latency: %ld     Total latency: %ld\n", cid,
-        msg_type == MICA_R_TYPE ? "GET" : "SET", msg_key[0], t2-t1, t3-t2, t3-t0);
+        msg_type == MICA_R_TYPE ? "GET" : "SET", ft_key.qword[0], t2-t1, t3-t2, t3-t0);
 #endif // PRINT_TIMING
 	}
 
