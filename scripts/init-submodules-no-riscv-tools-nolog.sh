@@ -69,6 +69,12 @@ git config submodule.sims/firesim.update none
 # Only shallow clone needed for basic SW tests
 git submodule update --init software/firemarshal
 
+# Clone the ray tracer and its dependencies
+git submodule update --init --recursive software/ray-tracing/host-driver
+git submodule update --init --recursive software/ray-tracing/riscv-tracer
+git submodule update --init --recursive software/ray-tracing/protobuf-tools/host-protobuf
+git submodule update --init --recursive software/ray-tracing/protobuf-tools/riscv-protobuf
+
 # Configure firemarshal to know where our firesim installation is
 if [ ! -f $RDIR/software/firemarshal/marshal-config.yaml ]; then
   echo "firesim-dir: '../../sims/firesim/'" > $RDIR/software/firemarshal/marshal-config.yaml

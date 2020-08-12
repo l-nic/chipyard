@@ -132,3 +132,15 @@
 [submodule "software/local_firesim/PcapPlusPlus"]
 	path = software/local_firesim/PcapPlusPlus
 	url = https://github.com/l-nic/PcapPlusPlus
+[submodule "software/ray-tracing/host-driver"]
+	path = software/ray-tracing/host-driver
+	url = https://github.com/l-nic/r2t2
+[submodule "software/ray-tracing/riscv-tracer"]
+	path = software/ray-tracing/riscv-tracer
+	url = https://github.com/l-nic/r2t2
+[submodule "software/ray-tracing/protobuf-tools/host-protobuf"]
+	path = software/ray-tracing/protobuf-tools/host-protobuf
+	url = https://github.com/l-nic/protobuf
+[submodule "software/ray-tracing/protobuf-tools/riscv-protobuf"]
+	path = software/ray-tracing/protobuf-tools/riscv-protobuf
+	url = https://github.com/l-nic/protobuf
