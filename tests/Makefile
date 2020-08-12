@@ -1,9 +1,11 @@
 GCC=riscv64-unknown-elf-gcc
 OBJDUMP=riscv64-unknown-elf-objdump
-CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31
+CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31 -fno-use-cxa-atexit
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
+LDFLAGS_RAY_TRACER=-static -nostartfiles -lgcc -fno-use-cxa-atexit
 CXX=riscv64-unknown-elf-g++
 CPPFLAGS=-mcmodel=medany -I. -Wall -Wextra -Werror -pedantic -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
+CPPFLAGS_RAY_TRACER=-mcmodel=medany -I. -Wall -Wextra -Werror -pedantic -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11  -ffixed-x30 -ffixed-x31
 
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
 PROGRAMS += lnic-nic-loopback-gpr
@@ -41,6 +43,7 @@ PROGRAMS += lnic-incast-nolock
 PROGRAMS += lnic-load-balance
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
+PROGRAMS += lnic-ray-tracer
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
@@ -55,8 +58,14 @@ dumps: $(addsuffix .dump,$(PROGRAMS))
 %.o: %.cc
 	$(CXX) $(CPPFLAGS) -c $< -o $@
 
+# lnic-ray-tracer.o: lnic-ray-tracer.c mmio.h /home/amallery/chipyard/software/ray-tracing/riscv-tracer/src/frontend/riscv-ray-library.h
+# 	$(CXX) $(CPPFLAGS_RAY_TRACER) -c $< -o $@
+
 city_mod.o: mica/util/cityhash/city_mod.cc
 	$(CXX) $(CPPFLAGS) -c $< -o $@
+
+lnic-ray-tracer.riscv: lnic-ray-tracer.o crt.o syscalls.o ../software/ray-tracing/riscv-tracer/build/libriscv-rays.a ../software/ray-tracing/riscv-tracer/build/libr2t2.a ../software/ray-tracing/riscv-tracer/build/lib/pbrt/libpbrt.a ../riscv-tools-install/riscv64-unknown-elf/lib/libprotobuf.a ../software/ray-tracing/riscv-tracer/build/lib/pbrt/src/ext/glog/libglog.a ../software/ray-tracing/riscv-tracer/build/lib/pbrt/src/ext/ptex/src/ptex/libPtex.a ../software/ray-tracing/riscv-tracer/build/lib/pbrt/src/messages/libpbrt_messages.a ../software/ray-tracing/riscv-tracer/build/lib/pbrt/src/ext/zlib/libzlibstatic.a
+	$(CXX) -T link.ld $(LDFLAGS_RAY_TRACER) $^ -o $@
 
 lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o city_mod.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@

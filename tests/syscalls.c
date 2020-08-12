@@ -60,6 +60,9 @@ uint64_t num_exited = 0;
 
 uint64_t num_threads_exited[NCORES];
 
+const void *const __dso_handle __attribute__ ((__visibility__ ("hidden")))
+  = &__dso_handle;
+
 bool __attribute__((weak)) is_single_core()
 {
   return true;
@@ -450,6 +453,7 @@ static void init_tls()
 
 void _init(int cid, int nc)
 {
+  printf("early init\n");
   init_tls();
   if (cid == 0) {
     uart_init();
