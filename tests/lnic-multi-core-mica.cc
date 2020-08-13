@@ -86,7 +86,6 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  //static constexpr size_t itemCount = 10000;
   static constexpr size_t itemCount = 1000;
 };
 
@@ -276,7 +275,7 @@ void send_startup_msg(int cid, uint64_t context_id) {
 
 uint64_t empty_value[VALUE_SIZE_WORDS];
 
-int run_server(int cid) {
+int run_server(int cid, uint64_t context_id) {
 	uint64_t app_hdr;
   uint64_t msg_type;
 #if PRINT_TIMING
@@ -296,7 +295,7 @@ int run_server(int cid) {
     key_hash = cityhash(ft_key.qword);
     out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(empty_value));
     if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
-    if (i % 100 == 0) printf("Inserted %u keys.\n", i);
+    if (i % 100 == 0) printf("[%d] Inserted %u keys.\n", cid, i);
   }
 
   printf("[%d] Server ready.\n", cid);
@@ -304,10 +303,7 @@ int run_server(int cid) {
   server_up = true;
   arch_spin_unlock(&up_lock);
 
-  send_startup_msg(cid, cid);
-  send_startup_msg(cid, cid);
-  send_startup_msg(cid, cid);
-  send_startup_msg(cid, cid);
+  send_startup_msg(cid, context_id);
 
   while (1) {
     lnic_wait();
@@ -403,8 +399,9 @@ int core_main(int argc, char** argv, int cid, int nc) {
       return -1;
   }
 
+  uint64_t context_id = 0;
   uint64_t priority = 0;
-  lnic_add_context(cid, priority);
+  lnic_add_context(context_id, priority);
 
   // wait for all cores to boot -- TODO: is there a better way than this?
   for (int i = 0; i < 1000; i++) {
@@ -413,15 +410,16 @@ int core_main(int argc, char** argv, int cid, int nc) {
 
   int ret;
   //if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
-  if (0 && nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
-    ret = run_client(cid);
-  else if (nic_ip_addr == SERVER_IP && cid == SERVER_CONTEXT)
-    ret = run_server(cid);
-  else if (cid == SERVER_CONTEXT) {
-    while (1) { }
-  }
-  else
-    ret = EXIT_SUCCESS;
+  //if (0 && nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
+  //  ret = run_client(cid);
+  //else if (nic_ip_addr == SERVER_IP && cid == SERVER_CONTEXT)
+  //  ret = run_server(cid);
+  //else if (cid == SERVER_CONTEXT) {
+  //  while (1) { }
+  //}
+  //else
+  //  ret = EXIT_SUCCESS;
+  ret = run_server(cid, context_id);
 
   return ret;
 }

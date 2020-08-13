@@ -2,7 +2,10 @@
 
 #define NCORES 4
 //#define MICA_SHM_BUFFER_SIZE (3 * 1024 * 1024)
-#define MICA_SHM_BUFFER_SIZE (2154600)
+//#define MICA_SHM_BUFFER_SIZE (8167320)
+//#define MICA_SHM_BUFFER_SIZE (2154600)
+#define MICA_SHM_BUFFER_SIZE (1003784)
+//#define MICA_SHM_BUFFER_SIZE (10000)
 char nanopu_mica_buffer[NCORES][MICA_SHM_BUFFER_SIZE];
 
 namespace mica {
