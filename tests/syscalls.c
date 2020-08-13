@@ -52,6 +52,8 @@ int thread_failed[NCORES];
 extern volatile uint64_t tohost;
 extern volatile uint64_t fromhost;
 
+volatile int wait = 1;
+
 uint32_t use_uart = 0;
 
 bool did_init = false;
@@ -456,7 +458,7 @@ void _init(int cid, int nc)
   printf("early init\n");
   init_tls();
   if (cid == 0) {
-    uart_init();
+    // uart_init();
     getmainvars(&mainvars[0], MAX_ARGS_BYTES);
     argc = mainvars[0];
     argv = mainvars + 1;

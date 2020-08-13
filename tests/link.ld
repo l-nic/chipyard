@@ -60,6 +60,7 @@ SECTIONS
   }
 
   /* End of uninitalized data segement */
-  _end = .;
+    . = ALIGN (4K);
+    PROVIDE (_end = .);
 }
 
