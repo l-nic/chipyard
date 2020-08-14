@@ -127,6 +127,16 @@ _start:
   li a1, 4
 1:bgeu a0, a1, 1b
 
+  bne zero, a0, 3f
+
+  la t0, __bss_start
+  la t1, __bss_end
+  bgeu t0, t1, 3f
+2: SREG zero, (t0)
+   addi t0, t0, REGBYTES
+   bltu t0, t1, 2b
+3:
+
   # give each core 128KB of stack + TLS, changed from 17 to 30 leftshift
 #define STKSHIFT 32
   sll a2, a0, STKSHIFT

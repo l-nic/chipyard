@@ -445,17 +445,20 @@ int __attribute__((weak)) main(int argc, char** argv)
 static void init_tls()
 {
   register void* thread_pointer asm("tp");
-  extern char _tls_data;
+  extern char __tdata_start;
   extern __thread char _tdata_begin, _tdata_end, _tbss_end;
   size_t tdata_size = &_tdata_end - &_tdata_begin;
-  memcpy(thread_pointer, &_tls_data, tdata_size);
+  memcpy(thread_pointer, &__tdata_start, tdata_size);
   size_t tbss_size = &_tbss_end - &_tdata_end;
   memset(thread_pointer + tdata_size, 0, tbss_size);
 }
 
+extern char* data_end;
+
 void _init(int cid, int nc)
 {
   printf("early init\n");
+  sbrk_init((long int*)data_end);
   init_tls();
   if (cid == 0) {
     // uart_init();

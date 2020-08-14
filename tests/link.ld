@@ -40,8 +40,10 @@ SECTIONS
 
   /* bss segment */
   .sbss : {
+    PROVIDE(__bss_start = .);
     *(.sbss .sbss.* .gnu.linkonce.sb.*)
     *(.scommon)
+    PROVIDE(__bss_end = .);
   }
   .bss ALIGN(0x40) : { *(.bss) }
 
