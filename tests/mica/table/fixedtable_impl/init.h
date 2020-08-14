@@ -1,11 +1,13 @@
 #pragma once
 
-#define NCORES 4
+#define NCORES 1
 //#define MICA_SHM_BUFFER_SIZE (3 * 1024 * 1024)
 //#define MICA_SHM_BUFFER_SIZE (8167320)
 //#define MICA_SHM_BUFFER_SIZE (2154600)
-#define MICA_SHM_BUFFER_SIZE (1003784)
+//#define MICA_SHM_BUFFER_SIZE (1003784)
+#define MICA_SHM_BUFFER_SIZE (153928)
 //#define MICA_SHM_BUFFER_SIZE (10000)
+//#define MICA_SHM_BUFFER_SIZE (1136)
 char nanopu_mica_buffer[NCORES][MICA_SHM_BUFFER_SIZE];
 
 namespace mica {
@@ -54,7 +56,7 @@ FixedTable<StaticConfig>::FixedTable(size_t val_size, int core_id)
 
   {
     size_t shm_size = bkt_size_with_val * (num_buckets_ + num_extra_buckets_);
-    printf("shm_size: %lu\n", shm_size);
+    printf("shm_size: %lu (MICA_SHM_BUFFER_SIZE=%d, NCORES=%d)\n", shm_size, MICA_SHM_BUFFER_SIZE, NCORES);
 
     // TODO: Extend num_extra_buckets_ to meet shm_size.
 

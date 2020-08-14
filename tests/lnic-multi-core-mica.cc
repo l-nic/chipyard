@@ -87,6 +87,7 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentWrite = false;
 
   static constexpr size_t itemCount = 1000;
+  //static constexpr size_t itemCount = 10;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
@@ -105,6 +106,8 @@ static inline uint64_t HashLen16(uint64_t u, uint64_t v, uint64_t mul) {
   b *= mul;
   return b;
 }
+// This was extracted from the cityhash library. It's the codepath for hashing
+// 16 byte values.
 static inline uint64_t cityhash(const uint64_t *s) {
   static const uint64_t k2 = 0x9ae16a3b2f90404fULL;
   uint64_t mul = k2 + (KEY_SIZE_WORDS * 8) * 2;
@@ -289,13 +292,15 @@ int run_server(int cid, uint64_t context_id) {
   FixedTable table(kValSize, cid);
 #endif // USE_MICA
 
-  for (unsigned i = 1; i <= MyFixedTableConfig::itemCount; i++) {
+  printf("[%d] Inserting keys from %ld to %ld.\n", cid, (MyFixedTableConfig::itemCount * context_id) + 1, (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount);
+  for (unsigned i = (MyFixedTableConfig::itemCount * context_id) + 1;
+      i <= (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount; i++) {
     ft_key.qword[0] = i;
     ft_key.qword[1] = 0;
     key_hash = cityhash(ft_key.qword);
     out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(empty_value));
     if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
-    if (i % 100 == 0) printf("[%d] Inserted %u keys.\n", cid, i);
+    if (i % 100 == 0) printf("[%d] Inserted keys up to %d.\n", cid, i);
   }
 
   printf("[%d] Server ready.\n", cid);
@@ -399,7 +404,7 @@ int core_main(int argc, char** argv, int cid, int nc) {
       return -1;
   }
 
-  uint64_t context_id = 0;
+  uint64_t context_id = cid;
   uint64_t priority = 0;
   lnic_add_context(context_id, priority);
 
@@ -407,6 +412,9 @@ int core_main(int argc, char** argv, int cid, int nc) {
   for (int i = 0; i < 1000; i++) {
     asm volatile("nop");
   }
+
+  if (nic_ip_addr == SERVER_IP && cid == SERVER_CONTEXT)
+    printf("Each core serving %ld items.\n", MyFixedTableConfig::itemCount);
 
   int ret;
   //if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)

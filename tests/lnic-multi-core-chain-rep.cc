@@ -15,6 +15,8 @@
 #define VALUE_SIZE_WORDS 8
 #define KEY_SIZE_WORDS 2
 
+// Expected address of the load generator
+uint64_t load_gen_ip = 0x0a000001;
 
 bool server_up = false;
 
@@ -60,7 +62,6 @@ arch_spinlock_t up_lock;
 #if USE_MICA
 
 #include "mica/table/fixedtable.h"
-#include "mica/util/hash.h"
 
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
@@ -84,15 +85,35 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentWrite = false;
 
   //static constexpr size_t itemCount = 5000;
-  static constexpr size_t itemCount = 10;
+  static constexpr size_t itemCount = 1000;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
 typedef mica::table::Result MicaResult;
 
-template <typename T>
-static uint64_t mica_hash(const T *key) {
-  return ::mica::util::hash(key, 8*KEY_SIZE_WORDS);
+static inline uint64_t rotate(uint64_t val, int shift) {
+  // Avoid shifting by 64: doing so yields an undefined result.
+  return shift == 0 ? val : ((val >> shift) | (val << (64 - shift)));
+}
+static inline uint64_t HashLen16(uint64_t u, uint64_t v, uint64_t mul) {
+  // Murmur-inspired hashing.
+  uint64_t a = (u ^ v) * mul;
+  a ^= (a >> 47);
+  uint64_t b = (v ^ a) * mul;
+  b ^= (b >> 47);
+  b *= mul;
+  return b;
+}
+// This was extracted from the cityhash library. It's the codepath for hashing
+// 16 byte values.
+static inline uint64_t cityhash(const uint64_t *s) {
+  static const uint64_t k2 = 0x9ae16a3b2f90404fULL;
+  uint64_t mul = k2 + (KEY_SIZE_WORDS * 8) * 2;
+  uint64_t a = s[0] + k2;
+  uint64_t b = s[1];
+  uint64_t c = rotate(b, 37) * mul + a;
+  uint64_t d = (rotate(a, 25) + b) * mul;
+  return HashLen16(c, d, mul);
 }
 #else
 uint64_t test_kv[32];
@@ -251,7 +272,17 @@ int run_client(int cid) {
   return EXIT_SUCCESS;
 }
 
-int run_server(int cid) {
+void send_startup_msg(int cid, uint64_t context_id) {
+  uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
+  uint64_t cid_to_send = cid;
+  lnic_write_r(app_hdr);
+  lnic_write_r(cid_to_send);
+  lnic_write_r(context_id);
+}
+
+uint64_t empty_value[VALUE_SIZE_WORDS];
+
+int run_server(int cid, uint64_t context_id) {
   uint64_t app_hdr;
   uint64_t cr_meta_fields;
   uint32_t client_ip;
@@ -262,13 +293,24 @@ int run_server(int cid) {
   uint64_t msg_key[KEY_SIZE_WORDS];
   uint64_t msg_val[VALUE_SIZE_WORDS];
   uint64_t nodes[4];
-  uint64_t start_time, stop_time;
+  uint64_t service_time, sent_time;
 #if USE_MICA
   uint64_t key_hash;
   MicaResult out_result;
   FixedTable::ft_key_t ft_key;
   FixedTable table(kValSize, cid);
 #endif
+
+  printf("[%d] Inserting keys from %ld to %ld.\n", cid, (MyFixedTableConfig::itemCount * context_id) + 1, (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount);
+  for (unsigned i = (MyFixedTableConfig::itemCount * context_id) + 1;
+      i <= (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount; i++) {
+    ft_key.qword[0] = i;
+    ft_key.qword[1] = 0;
+    key_hash = cityhash(ft_key.qword);
+    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(empty_value));
+    if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
+    if (i % 100 == 0) printf("[%d] Inserted keys up to %d.\n", cid, i);
+  }
 
   unsigned last_seq = 0;
 
@@ -278,11 +320,14 @@ int run_server(int cid) {
   server_up = true;
   arch_spin_unlock(&up_lock);
 
+  send_startup_msg(cid, context_id);
+
   while (1) {
     lnic_wait();
-    start_time = rdcycle();
     app_hdr = lnic_read();
     //printf("[%d] --> Received msg of length: %u bytes\n", cid, (uint16_t)app_hdr);
+    service_time = lnic_read();
+    sent_time = lnic_read();
 
     cr_meta_fields = lnic_read();
     flags = (uint8_t) (cr_meta_fields >> 56);
@@ -302,7 +347,7 @@ int run_server(int cid) {
     uint16_t dst_context = 0;
 
 #if USE_MICA
-    key_hash = mica_hash(msg_key);
+    key_hash = cityhash(msg_key);
     ft_key.qword[0] = msg_key[0];
     ft_key.qword[1] = msg_key[1];
 #endif
@@ -355,9 +400,11 @@ int run_server(int cid) {
 #endif
     }
 
-    uint16_t msg_len = 8 + (node_cnt * 8) + (KEY_SIZE_WORDS * 8) + (send_value ? (8 * VALUE_SIZE_WORDS) : 0);
+    uint16_t msg_len = 8 + 8 + 8 + (node_cnt * 8) + (KEY_SIZE_WORDS * 8) + (send_value ? (8 * VALUE_SIZE_WORDS) : 0);
     app_hdr = ((uint64_t)dst_ip << 32) | (dst_context << 16) | msg_len;
     lnic_write_r(app_hdr);
+    lnic_write_r(service_time);
+    lnic_write_r(sent_time);
 
     flags &= ~CHAINREP_FLAGS_FROM_TESTER;
     cr_meta_fields = ((uint64_t)flags << 56) | ((uint64_t)seq << 48) | ((uint64_t)node_cnt << 40) | ((uint64_t)client_ctx << 32) | client_ip;
@@ -380,10 +427,8 @@ int run_server(int cid) {
     }
 
     lnic_msg_done();
-    stop_time = rdcycle();
-
-    printf("[%d] %s seq=%d, node_cnt=%d, key=0x%lx, val=0x%lx. Latency: %ld\n", cid,
-        flags & CHAINREP_FLAGS_OP_WRITE ? "WRITE" : "READ", seq, node_cnt, msg_key[0], msg_val[0], stop_time-start_time);
+    //printf("[%d] %s seq=%d, node_cnt=%d, key=0x%lx, val=0x%lx\n", cid,
+    //    flags & CHAINREP_FLAGS_OP_WRITE ? "WRITE" : "READ", seq, node_cnt, msg_key[0], msg_val[0]);
 	}
 
   return EXIT_SUCCESS;
@@ -423,21 +468,27 @@ int core_main(int argc, char** argv, int cid, int nc) {
       return -1;
   }
 
+  uint64_t context_id = 0;
   uint64_t priority = 0;
-  lnic_add_context(cid, priority);
+  lnic_add_context(context_id, priority);
 
   // wait for all cores to boot -- TODO: is there a better way than this?
   for (int i = 0; i < 1000; i++) {
     asm volatile("nop");
   }
 
+  if (nic_ip_addr == CLIENT_IP && cid == SERVER_CONTEXT)
+    printf("Each core serving %ld items.\n", MyFixedTableConfig::itemCount);
+
   int ret;
-  if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
-    ret = run_client(cid);
-  else if (cid == SERVER_CONTEXT)
-    ret = run_server(cid);
-  else
+  if (cid == SERVER_CONTEXT)
+    ret = run_server(cid, context_id);
+  //else if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
+  //  ret = run_client(cid);
+  else {
+    send_startup_msg(cid, context_id);
     ret = EXIT_SUCCESS;
+  }
 
   return ret;
 }

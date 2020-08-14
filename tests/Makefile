@@ -55,13 +55,10 @@ dumps: $(addsuffix .dump,$(PROGRAMS))
 %.o: %.cc
 	$(CXX) $(CPPFLAGS) -c $< -o $@
 
-city_mod.o: mica/util/cityhash/city_mod.cc
-	$(CXX) $(CPPFLAGS) -c $< -o $@
-
-lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o city_mod.o
+lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
-lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o city_mod.o
+lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 %.riscv: %.o crt.o syscalls.o link.ld
