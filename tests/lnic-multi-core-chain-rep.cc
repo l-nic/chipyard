@@ -84,7 +84,7 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  //static constexpr size_t itemCount = 5000;
+  //static constexpr size_t itemCount = 10;
   static constexpr size_t itemCount = 1000;
 };
 
@@ -280,6 +280,51 @@ void send_startup_msg(int cid, uint64_t context_id) {
   lnic_write_r(context_id);
 }
 
+int run_proxy_client(int cid, uint64_t context_id) {
+  uint64_t app_hdr;
+  uint16_t msg_len;
+  uint32_t src_ip;
+  uint64_t recv_time;
+  uint64_t service_time, sent_time;
+  uint64_t payload[64];
+
+  send_startup_msg(cid, context_id);
+
+  printf("[%d] Proxy client ready.\n", cid);
+
+  while (1) {
+    lnic_wait();
+    recv_time = rdcycle();
+    app_hdr = lnic_read();
+    msg_len = (uint16_t)app_hdr;
+    src_ip = (app_hdr & IP_MASK) >> 32;
+    //printf("[%d] --> Received msg of length: %u bytes\n", cid, (uint16_t)app_hdr);
+    service_time = lnic_read();
+    sent_time = lnic_read();
+    for (int i = 0; i < (msg_len/8)-2; i++)
+      payload[i] = lnic_read(); // read the entire payload
+
+    if (src_ip == load_gen_ip) { // From the load generator
+      // Forward the packet to the first node in the chain
+      app_hdr = ((uint64_t)(CLIENT_IP+1) << 32) | (SERVER_CONTEXT << 16) | msg_len;
+      service_time = rdcycle(); // store start timestamp in the packet
+    }
+    else { // A response from the chain
+      // Forward the response back to the load generator
+      app_hdr = ((uint64_t)load_gen_ip << 32) | (0 << 16) | msg_len;
+      service_time = recv_time - service_time; // end-to-end latency
+    }
+
+    lnic_write_r(app_hdr);
+    lnic_write_r(service_time);
+    lnic_write_r(sent_time);
+    for (int i = 0; i < (msg_len/8)-2; i++)
+      lnic_write_r(payload[i]); // forward the payload
+    lnic_msg_done();
+  }
+}
+
+
 uint64_t empty_value[VALUE_SIZE_WORDS];
 
 int run_server(int cid, uint64_t context_id) {
@@ -314,7 +359,7 @@ int run_server(int cid, uint64_t context_id) {
 
   unsigned last_seq = 0;
 
-  printf("[%d] server ready.\n", cid);
+  printf("[%d] Chain replica ready.\n", cid);
 
   arch_spin_lock(&up_lock);
   server_up = true;
@@ -481,10 +526,10 @@ int core_main(int argc, char** argv, int cid, int nc) {
     printf("Each core serving %ld items.\n", MyFixedTableConfig::itemCount);
 
   int ret;
-  if (cid == SERVER_CONTEXT)
+  if (nic_ip_addr == CLIENT_IP)
+    ret = run_proxy_client(cid, context_id);
+  else if (cid == SERVER_CONTEXT)
     ret = run_server(cid, context_id);
-  //else if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
-  //  ret = run_client(cid);
   else {
     send_startup_msg(cid, context_id);
     ret = EXIT_SUCCESS;
