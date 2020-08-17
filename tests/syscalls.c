@@ -453,12 +453,9 @@ static void init_tls()
   memset(thread_pointer + tdata_size, 0, tbss_size);
 }
 
-extern char* data_end;
-
 void _init(int cid, int nc)
 {
   printf("early init\n");
-  sbrk_init((long int*)data_end);
   init_tls();
   if (cid == 0) {
     // uart_init();
