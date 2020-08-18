@@ -68,7 +68,7 @@ arch_spinlock_t up_lock;
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
 struct MyFixedTableConfig {
-  static constexpr size_t kBucketCap = 7;
+  static constexpr size_t kBucketCap = 16;
 
   // Support concurrent access. The actual concurrent access is enabled by
   // concurrent_read and concurrent_write in the configuration.
@@ -86,8 +86,7 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  static constexpr size_t itemCount = 1000;
-  //static constexpr size_t itemCount = 10;
+  static constexpr size_t itemCount = 10000;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
@@ -299,11 +298,11 @@ int run_server(int cid, uint64_t context_id) {
     ft_key.qword[1] = 0;
     key_hash = cityhash(ft_key.qword);
     out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(empty_value));
-    if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
+    if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed (%s).\n", cid, ft_key.qword[0], mica::table::cResultString(out_result));
     if (i % 100 == 0) printf("[%d] Inserted keys up to %d.\n", cid, i);
   }
 
-  printf("[%d] Server ready.\n", cid);
+  printf("[%d] Server listenning on context_id=%ld.\n", cid, context_id);
   arch_spin_lock(&up_lock);
   server_up = true;
   arch_spin_unlock(&up_lock);
@@ -389,9 +388,11 @@ int core_main(int argc, char** argv, int cid, int nc) {
   printf("\n");
 
   if (argc < 3) {
-      printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
-      return -1;
+    printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
+    return EXIT_FAILURE;
   }
+
+  printf("V6\n");
 
   char* nic_ip_str = argv[2];
   uint32_t nic_ip_addr_lendian = 0;
@@ -400,11 +401,19 @@ int core_main(int argc, char** argv, int cid, int nc) {
   // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
   uint32_t nic_ip_addr = swap32(nic_ip_addr_lendian);
   if (retval != 1 || nic_ip_addr == 0) {
-      printf("Supplied NIC IP address is invalid.\n");
-      return -1;
+    printf("Supplied NIC IP address is invalid.\n");
+    return EXIT_FAILURE;
   }
 
-  uint64_t context_id = cid;
+  uint64_t context_id;
+  if (strcmp(argv[3], "ONE_CONTEXT_FOUR_CORES") == 0)
+    context_id = 0;
+  else if (strcmp(argv[3], "FOUR_CONTEXTS_FOUR_CORES") == 0)
+    context_id = cid;
+  else {
+    printf("Unknown experiment type: %s\n", argv[3]);
+    return EXIT_FAILURE;
+  }
   uint64_t priority = 0;
   lnic_add_context(context_id, priority);
 
