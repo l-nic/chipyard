@@ -144,3 +144,9 @@
 [submodule "software/ray-tracing/protobuf-tools/riscv-protobuf"]
 	path = software/ray-tracing/protobuf-tools/riscv-protobuf
 	url = https://github.com/l-nic/protobuf
+[submodule "software/raft/host_raft"]
+	path = software/raft/host_raft
+	url = https://github.com/l-nic/raft.git
+[submodule "software/raft/riscv_raft"]
+	path = software/raft/riscv_raft
+	url = https://github.com/l-nic/raft
