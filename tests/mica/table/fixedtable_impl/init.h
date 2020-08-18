@@ -1,7 +1,8 @@
 #pragma once
 
-#define NCORES 4
-#define MICA_SHM_BUFFER_SIZE (9233952)
+#define NCORES 1
+//#define MICA_SHM_BUFFER_SIZE (9233952) // 10K 512B items
+#define MICA_SHM_BUFFER_SIZE (1406496) // 10K 64B items
 //#define MICA_SHM_BUFFER_SIZE (8167320)
 //#define MICA_SHM_BUFFER_SIZE (2154600)
 //#define MICA_SHM_BUFFER_SIZE (511560)
