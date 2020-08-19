@@ -138,7 +138,7 @@ _start:
 3:
 
   # give each core 128KB of stack + TLS, changed from 17 to 30 leftshift
-#define STKSHIFT 32
+#define STKSHIFT 29
   sll a2, a0, STKSHIFT
   add tp, tp, a2
   add sp, a0, 1
