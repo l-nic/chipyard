@@ -86,12 +86,17 @@ int accept_client_connections(uint32_t num_connections) {
     _ip_handles[ip_addr] = connectionfd;
     _send_mutex[ip_addr].lock();
     _send_mutex[ip_addr].unlock();
-    _all_threads.emplace_back(move(thread(handle_client_reads, i)));
+    _all_threads.emplace_back(move(thread(handle_client_reads, ip_addr)));
   }
   return 0;
 }
 
 void send_to_client(uint32_t dst_ip, char* buffer, uint64_t actual_len) {
+  printf("Writing to ip addr %#x\n", dst_ip);
+  if (_send_mutex.count(dst_ip) == 0) {
+      printf("Ip addr %x is not known to switch.\n", dst_ip);
+      return;
+  }
   _send_mutex.at(dst_ip).lock();
   int write_fd = _ip_handles[dst_ip];
   ssize_t total_len = 0;
@@ -110,6 +115,7 @@ void handle_client_reads(uint32_t ip_addr) {
   int ip_fd = _ip_handles[ip_addr];
   while (true) {
     // Wait for messages to arrive from a client, then read in the header
+    printf("Waiting for messages arriving from addr %x\n", ip_addr);
     uint64_t header;
     ssize_t total_len = 0;
     ssize_t actual_len = 0;
@@ -121,6 +127,7 @@ void handle_client_reads(uint32_t ip_addr) {
             return;
         }
     } while (total_len < sizeof(uint64_t));
+    printf("Read in message header\n");
 
     // Read in the rest of the message
     uint64_t msg_len = header & LEN_MASK;
@@ -150,7 +157,7 @@ int main( int argc, char* argv[] )
   if (_server_fd < 0) {
     return -1;
   }
-  int client_connections_retval = accept_client_connections(1);
+  int client_connections_retval = accept_client_connections(3);
   if (client_connections_retval < 0) {
     return -1;
   }
@@ -161,7 +168,7 @@ int main( int argc, char* argv[] )
   char* buffer = new char[2*sizeof(uint64_t)];
   memcpy(buffer, &header, sizeof(uint64_t));
   memcpy(buffer + sizeof(uint64_t), &msg_data, sizeof(uint64_t));
-  send_to_client(0xa000002, buffer, 2*sizeof(uint64_t));
+  //send_to_client(0xa000002, buffer, 2*sizeof(uint64_t));
 
   for (auto& t : _all_threads) {
     t.join();

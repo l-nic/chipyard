@@ -25,8 +25,8 @@ extern "C" {
 
 // Raft server constants
 const uint32_t kBaseClusterIpAddr = 0xa000002;
-const uint64_t kRaftElectionTimeoutMsec = 5;
-const uint64_t kCyclesPerMsec = 1000;
+const uint64_t kRaftElectionTimeoutMsec = 5000;
+const uint64_t kCyclesPerMsec = 10000;
 
 // Global data
 
@@ -50,34 +50,94 @@ typedef enum ClientRespType {
 };
 
 typedef enum ReqType {
-    kRequestVote, kAppendEntries, kClientReq
+    kRequestVote, kAppendEntries, kClientReq, kRequestVoteResponse, kAppendEntriesResponse
 };
 
 server_t server;
 server_t *sv = &server;
 
-int __raft_send_requestvote(raft_server_t* raft, void *user_data, raft_node_t *node, msg_requestvote_t* m) {
+void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words);
 
+int __raft_send_requestvote(raft_server_t* raft, void *user_data, raft_node_t *node, msg_requestvote_t* m) {
+    uint32_t dst_ip = raft_node_get_id(node);
+    printf("Requesting vote from %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
+    uint32_t buf_size = sizeof(msg_requestvote_t) + sizeof(uint64_t);
+    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    char* buffer = malloc(buf_size);
+    uint32_t msg_id = ReqType::kRequestVote;
+    uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
+    memcpy(buffer, &msg_id, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), &src_ip, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint64_t), m, sizeof(msg_requestvote_t));
+    send_message(dst_ip, (uint64_t*)buffer, buf_size);
+    free(buffer);
+    return 0;
 }
 
 int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t *node, msg_appendentries_t* m) {
+    printf("Sending append entries\n");
+    uint32_t buf_size = sizeof(msg_appendentries_t) + sizeof(uint64_t);
+    for (int i = 0; i < m->n_entries; i++) {
+        printf("Entry size is %d\n", m->entries[i].data.len);
+        buf_size += sizeof(msg_entry_t) + m->entries[i].data.len;
+    }
+    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    char* buffer = malloc(buf_size);
+    char* buf_now = buffer;
 
+    // Copy in extra header metadata
+    uint32_t msg_id = ReqType::kAppendEntries;
+    uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
+    memcpy(buf_now, &msg_id, sizeof(uint32_t));
+    buf_now += sizeof(uint32_t);
+    memcpy(buf_now, &src_ip, sizeof(uint32_t));
+    buf_now += sizeof(uint32_t);
+
+    // Copy in the appendentries structure, preserving the local entries pointer
+    memcpy(buf_now, m, sizeof(msg_appendentries_t));
+    msg_appendentries_t* buf_appendentries = (msg_appendentries_t*)buf_now;
+    buf_appendentries->entries = nullptr;
+    buf_now += sizeof(msg_appendentries_t);
+
+    // Copy in the per-entry information
+    for (int i = 0; i < m->n_entries; i++) {
+        msg_entry_t* current_entry = &m->entries[i];
+        memcpy(buf_now, current_entry, sizeof(msg_entry_t));
+        msg_entry_t* buf_entry = (msg_entry_t*)buf_now;
+        buf_entry->data.buf = nullptr;
+        buf_now += sizeof(msg_entry_t);
+        
+        // Copy in the entry data
+        // TODO: The entry data format should be more specifically defined
+        memcpy(buf_now, m->entries[i].data.buf, m->entries[i].data.len);
+        buf_now += m->entries[i].data.len;
+    }
+
+    uint32_t dst_ip = raft_node_get_id(node);
+    send_message(dst_ip, (uint64_t*)buffer, buf_size);
+    printf("Sent appendentries\n");
+
+    return 0;
 }
 
 int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
-
+    printf("Trying to apply log\n");
+    return 0;
 }
 
 int __raft_persist_vote(raft_server_t *raft, void *udata, const int voted_for) {
-
+    printf("Trying to persist vote\n");
+    return 0;
 }
 
 int __raft_persist_term(raft_server_t* raft, void* udata, const int current_term) {
-
+    printf("Trying to persist term\n"); // TODO: This should probably actually do something. 
+    return 0;
 }
 
 int __raft_logentry_offer(raft_server_t* raft, void *udata, raft_entry_t *ety, int ety_idx) {
-
+    printf("Trying to offer entry\n");
+    return 0;
 }
 
 int __raft_logentry_poll(raft_server_t* raft, void *udata, raft_entry_t *entry, int ety_idx) {
@@ -88,12 +148,13 @@ int __raft_logentry_pop(raft_server_t* raft, void *udata, raft_entry_t *entry, i
 
 }
 
-void __raft_node_has_sufficient_logs(raft_server_t* raft, void *user_data, raft_node_t* node) {
-
+int __raft_node_has_sufficient_logs(raft_server_t* raft, void *user_data, raft_node_t* node) {
+    printf("Checking sufficient logs\n");
+    return 0;
 }
 
 void __raft_log(raft_server_t* raft, raft_node_t* node, void *udata, const char *buf) {
-
+    printf("raft log: %s\n", buf);
 }
 
 raft_cbs_t raft_funcs = {
@@ -134,9 +195,20 @@ void periodic_raft_wrapper() {
     uint64_t msec_elapsed = cycles_elapsed / kCyclesPerMsec;
     if (msec_elapsed > 0) {
         sv->last_cycles = cycles_now;
+        //printf("elapsed %ld\n", msec_elapsed);
         raft_periodic(sv->raft, msec_elapsed);
     } else {
         raft_periodic(sv->raft, 0);
+    }
+}
+
+void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words) {
+    uint64_t header = 0;
+    header |= (uint64_t)dst_ip << 32;
+    header |= (uint16_t)buf_words * sizeof(uint64_t);
+    csr_write(0x51, header);
+    for (int i = 0; i < buf_words; i++) {
+        csr_write(0x51, buffer[i]);
     }
 }
 
@@ -145,7 +217,7 @@ void send_client_response(uint64_t header, ClientRespType resp_type, uint32_t le
 }
 
 uint32_t get_random() {
-    return 0; // TODO: Fix
+    return rand(); // TODO: Figure out what instruction this actually turns into
 }
 
 void service_client_message(uint64_t header, uint64_t start_word) {
@@ -201,6 +273,112 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     assert(raft_retval == 0);
 }
 
+void service_request_vote(uint64_t header, uint64_t start_word) {
+    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+    char* msg_buf = malloc(header & LEN_MASK);
+    char* msg_current = msg_buf;
+    memcpy(msg_current, &start_word, sizeof(uint64_t));
+    msg_current += sizeof(uint64_t);
+    for (int i = 0; i < msg_len_words_remaining; i++) {
+        uint64_t data = csr_read(0x50);
+        memcpy(msg_current, &data, sizeof(uint64_t));
+        msg_current += sizeof(uint64_t);
+    }
+
+    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
+    printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
+    msg_requestvote_response_t msg_response_buf;
+    int raft_retval = raft_recv_requestvote(sv->raft, raft_get_node(sv->raft, src_ip), (msg_requestvote_t*)(msg_buf + sizeof(uint64_t)), &msg_response_buf);
+    assert(raft_retval == 0);
+    printf("Received requestvote\n");
+    free(msg_buf);
+
+    // Send the response to the vote request
+    uint32_t buf_size = sizeof(msg_requestvote_response_t) + sizeof(uint64_t);
+    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    char* buffer = malloc(buf_size);
+    uint32_t msg_id = ReqType::kRequestVoteResponse;
+    memcpy(buffer, &msg_id, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), &sv->own_ip_addr, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint64_t), &msg_response_buf, sizeof(msg_requestvote_response_t));
+    send_message(src_ip, (uint64_t*)buffer, buf_size);
+    free(buffer);
+}
+
+void service_request_vote_response(uint64_t header, uint64_t start_word) {
+    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+    char* msg_buf = malloc(header & LEN_MASK);
+    char* msg_current = msg_buf;
+    memcpy(msg_current, &start_word, sizeof(uint64_t));
+    msg_current += sizeof(uint64_t);
+    for (int i = 0; i < msg_len_words_remaining; i++) {
+        uint64_t data = csr_read(0x50);
+        memcpy(msg_current, &data, sizeof(uint64_t));
+        msg_current += sizeof(uint64_t);
+    }
+
+    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
+    int raft_retval = raft_recv_requestvote_response(sv->raft, raft_get_node(sv->raft, src_ip), (msg_requestvote_response_t*)(msg_buf + sizeof(uint64_t)));
+    assert(raft_retval == 0);
+    printf("Received requestvote response\n");
+    free(msg_buf);
+}
+
+void service_append_entries(uint64_t header, uint64_t start_word) {
+    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+    char* msg_buf = malloc(header & LEN_MASK);
+    char* msg_current = msg_buf;
+    memcpy(msg_current, &start_word, sizeof(uint64_t));
+    msg_current += sizeof(uint64_t);
+    for (int i = 0; i < msg_len_words_remaining; i++) {
+        uint64_t data = csr_read(0x50);
+        memcpy(msg_current, &data, sizeof(uint64_t));
+        msg_current += sizeof(uint64_t);
+    }
+
+    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
+    printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
+    msg_appendentries_response_t msg_response_buf;
+    int raft_retval = raft_recv_appendentries(sv->raft, raft_get_node(sv->raft, src_ip), (msg_appendentries_t*)(msg_buf + sizeof(uint64_t)), &msg_response_buf);
+    assert(raft_retval == 0);
+    printf("Received appendentries\n");
+    free(msg_buf);
+
+    // Send the response to the appendentries request
+    uint32_t buf_size = sizeof(msg_appendentries_response_t) + sizeof(uint64_t);
+    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    char* buffer = malloc(buf_size);
+    uint32_t msg_id = ReqType::kAppendEntriesResponse;
+    memcpy(buffer, &msg_id, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), &sv->own_ip_addr, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint64_t), &msg_response_buf, sizeof(msg_appendentries_response_t));
+    send_message(src_ip, (uint64_t*)buffer, buf_size);
+    free(buffer);
+}
+
+void service_append_entries_response(uint64_t header, uint64_t start_word) {
+    printf("Receiving appendentries response\n");
+    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+    char* msg_buf = malloc(header & LEN_MASK);
+    char* msg_current = msg_buf;
+    memcpy(msg_current, &start_word, sizeof(uint64_t));
+    msg_current += sizeof(uint64_t);
+    for (int i = 0; i < msg_len_words_remaining; i++) {
+        uint64_t data = csr_read(0x50);
+        memcpy(msg_current, &data, sizeof(uint64_t));
+        msg_current += sizeof(uint64_t);
+    }
+
+    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
+    printf("Entering raft call with message of size %d\n", header & LEN_MASK);
+    int raft_retval = raft_recv_appendentries_response(sv->raft, raft_get_node(sv->raft, src_ip), (msg_appendentries_response_t*)(msg_buf + sizeof(uint64_t)));
+    printf("raft retval is %d\n", raft_retval);
+    assert(raft_retval == 0);// || raft_retval == RAFT_ERR_NOT_LEADER);
+    printf("Server received append entries but is not the leader\n");
+    printf("Received appendentries response\n");
+    free(msg_buf);
+}
+
 void service_pending_messages() {
     //lnic_wait();
     //uint64_t header = lnic_read();
@@ -212,13 +390,18 @@ void service_pending_messages() {
     uint64_t start_word = csr_read(0x50);
     uint16_t* start_word_arr = (uint16_t*)&start_word;
     uint16_t msg_type = start_word_arr[0];
+    printf("header is %#lx, start word is %#lx\n", header, start_word);
 
     if (msg_type == ReqType::kClientReq) {
         service_client_message(header, start_word);
     } else if (msg_type == ReqType::kAppendEntries) {
-
+        service_append_entries(header, start_word);
     } else if (msg_type == ReqType::kRequestVote) {
-
+        service_request_vote(header, start_word);
+    } else if (msg_type == ReqType::kRequestVoteResponse) {
+        service_request_vote_response(header, start_word);
+    } else if (msg_type == ReqType::kAppendEntriesResponse) {
+        service_append_entries_response(header, start_word);
     } else {
         printf("Received unknown message type %d\n", msg_type);
         exit(-1);
@@ -231,6 +414,12 @@ int server_main() {
     while (true) {
         periodic_raft_wrapper();
         service_pending_messages();
+        raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
+        if (leader_node == nullptr) {
+            continue;
+        }
+        uint32_t leader_ip = raft_node_get_id(leader_node);
+        printf("Current leader ip is %#x\n", leader_ip);
     }
 
     return 0;
