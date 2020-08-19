@@ -68,7 +68,7 @@ arch_spinlock_t up_lock;
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
 struct MyFixedTableConfig {
-  static constexpr size_t kBucketCap = 16;
+  static constexpr size_t kBucketCap = 7;
 
   // Support concurrent access. The actual concurrent access is enabled by
   // concurrent_read and concurrent_write in the configuration.
@@ -86,7 +86,7 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  static constexpr size_t itemCount = 10000;
+  static constexpr size_t itemCount = 500;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
@@ -391,8 +391,6 @@ int core_main(int argc, char** argv, int cid, int nc) {
     printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
     return EXIT_FAILURE;
   }
-
-  printf("V6\n");
 
   char* nic_ip_str = argv[2];
   uint32_t nic_ip_addr_lendian = 0;
