@@ -153,6 +153,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
     if (leader == nullptr) {
         // Cluster doesn't have a leader, reply with error.
+        printf("Cluster has no leader, replying with error\n");
         send_client_response(header, ClientRespType::kFailTryAgain);
         return;
     }
@@ -160,6 +161,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     uint32_t leader_ip = raft_node_get_id(leader);
     if (leader_ip != sv->own_ip_addr) {
         // This is not the cluster leader, reply with actual leader.
+        printf("This is not the cluster leader, redirecting to %#x\n", leader_ip);
         send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
@@ -170,7 +172,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
     char* msg_buf = malloc(header & LEN_MASK);
     char* msg_current = msg_buf;
-    memcpy(msg_current, start_word, sizeof(uint64_t));
+    memcpy(msg_current, &start_word, sizeof(uint64_t));
     msg_current += sizeof(uint64_t);
     for (int i = 0; i < msg_len_words_remaining; i++) {
         uint64_t data = csr_read(0x50);
@@ -194,6 +196,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     ent.data.len = header & LEN_MASK;
 
     // Send the entry into the raft library handlers
+    printf("Adding raft log entry\n");
     int raft_retval = raft_recv_entry(sv->raft, &ent, &leader_sav.msg_entry_response);
     assert(raft_retval == 0);
 }
