@@ -3,8 +3,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <cassert>
 #include <raft/raft.h>
 #include <set>
+
+#include "../../../tests/lnic.h"
+#include "../../../tests/lnic-scheduler.h"
 
 using namespace std;
 
@@ -22,13 +26,32 @@ extern "C" {
 // Raft server constants
 const uint32_t kBaseClusterIpAddr = 0xa000002;
 const uint64_t kRaftElectionTimeoutMsec = 5;
+const uint64_t kCyclesPerMsec = 1000;
 
 // Global data
+
+typedef struct {
+    bool in_use = false;
+    uint64_t header;
+    msg_entry_response_t msg_entry_response;
+} leader_saveinfo_t;
+
 typedef struct {
     set<uint32_t> peer_ip_addrs;
     uint32_t own_ip_addr;
+    uint32_t num_servers;
     raft_server_t *raft;
+    uint64_t last_cycles;
+    leader_saveinfo_t leader_saveinfo;
 } server_t;
+
+typedef enum ClientRespType {
+    kSuccess, kFailRedirect, kFailTryAgain
+};
+
+typedef enum ReqType {
+    kRequestVote, kAppendEntries, kClientReq
+};
 
 server_t server;
 server_t *sv = &server;
@@ -91,11 +114,122 @@ int client_main() {
     return 0;
 }
 
-int server_main() {
+void raft_init() {
     printf("Starting raft server at ip %#lx\n", sv->own_ip_addr);
     sv->raft = raft_new();
     raft_set_election_timeout(sv->raft, kRaftElectionTimeoutMsec);
     raft_set_callbacks(sv->raft, &raft_funcs, (void*)sv);
+    for (const auto& node_ip : sv->peer_ip_addrs) {
+        if (node_ip == sv->own_ip_addr) {
+            raft_add_node(sv->raft, nullptr, node_ip, 1);
+        } else {
+            raft_add_node(sv->raft, nullptr, node_ip, 0);
+        }
+    }
+}
+
+void periodic_raft_wrapper() {
+    uint64_t cycles_now = csr_read(mcycle);
+    uint64_t cycles_elapsed = cycles_now - sv->last_cycles;
+    uint64_t msec_elapsed = cycles_elapsed / kCyclesPerMsec;
+    if (msec_elapsed > 0) {
+        sv->last_cycles = cycles_now;
+        raft_periodic(sv->raft, msec_elapsed);
+    } else {
+        raft_periodic(sv->raft, 0);
+    }
+}
+
+void send_client_response(uint64_t header, ClientRespType resp_type, uint32_t leader_ip=0) {
+
+}
+
+uint32_t get_random() {
+    return 0; // TODO: Fix
+}
+
+void service_client_message(uint64_t header, uint64_t start_word) {
+    printf("Received client request\n");
+    raft_node_t* leader = raft_get_current_leader_node(sv->raft);
+    if (leader == nullptr) {
+        // Cluster doesn't have a leader, reply with error.
+        send_client_response(header, ClientRespType::kFailTryAgain);
+        return;
+    }
+
+    uint32_t leader_ip = raft_node_get_id(leader);
+    if (leader_ip != sv->own_ip_addr) {
+        // This is not the cluster leader, reply with actual leader.
+        send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
+        return;
+    }
+
+    // This is actually the leader
+
+    // Read in the rest of the message. TODO: This should eventually be brought into the raft library or at least not done with malloc
+    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+    char* msg_buf = malloc(header & LEN_MASK);
+    char* msg_current = msg_buf;
+    memcpy(msg_current, start_word, sizeof(uint64_t));
+    msg_current += sizeof(uint64_t);
+    for (int i = 0; i < msg_len_words_remaining; i++) {
+        uint64_t data = csr_read(0x50);
+        memcpy(msg_current, &data, sizeof(uint64_t));
+        msg_current += sizeof(uint64_t);
+    }
+
+    
+
+    // Set up saveinfo so that we can reply to the client later.
+    leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
+    assert(!leader_sav.in_use);
+    leader_sav.in_use = true;
+    leader_sav.header = header;
+
+    // Set up the raft entry
+    msg_entry_t ent;
+    ent.type = RAFT_LOGTYPE_NORMAL;
+    ent.id = get_random(); // TODO: Check this!
+    ent.data.buf = msg_buf;
+    ent.data.len = header & LEN_MASK;
+
+    // Send the entry into the raft library handlers
+    int raft_retval = raft_recv_entry(sv->raft, &ent, &leader_sav.msg_entry_response);
+    assert(raft_retval == 0);
+}
+
+void service_pending_messages() {
+    //lnic_wait();
+    //uint64_t header = lnic_read();
+    //while (csr_read(0x52) == 0); // Wait for a message to arrive
+    if (csr_read(0x52) == 0) {
+        return;
+    }
+    uint64_t header = csr_read(0x50);
+    uint64_t start_word = csr_read(0x50);
+    uint16_t* start_word_arr = (uint16_t*)&start_word;
+    uint16_t msg_type = start_word_arr[0];
+
+    if (msg_type == ReqType::kClientReq) {
+        service_client_message(header, start_word);
+    } else if (msg_type == ReqType::kAppendEntries) {
+
+    } else if (msg_type == ReqType::kRequestVote) {
+
+    } else {
+        printf("Received unknown message type %d\n", msg_type);
+        exit(-1);
+    }
+}
+
+int server_main() {
+    raft_init();
+
+    while (true) {
+        periodic_raft_wrapper();
+        service_pending_messages();
+    }
+
     return 0;
 }
 
@@ -132,6 +266,7 @@ int main(int argc, char** argv) {
         }
         sv->peer_ip_addrs.insert(peer_ip);
     }
+    sv->num_servers = sv->peer_ip_addrs.size();
 
     // Determine if client or server. Client will have an ip that is not a member of the peer ip set.
     if (sv->peer_ip_addrs.count(sv->own_ip_addr) == 0) {
