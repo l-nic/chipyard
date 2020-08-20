@@ -68,7 +68,7 @@ arch_spinlock_t up_lock;
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
 struct MyFixedTableConfig {
-  static constexpr size_t kBucketCap = 7;
+  static constexpr size_t kBucketCap = 16;
 
   // Support concurrent access. The actual concurrent access is enabled by
   // concurrent_read and concurrent_write in the configuration.
@@ -86,7 +86,7 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  static constexpr size_t itemCount = 500;
+  static constexpr size_t itemCount = 10000;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
@@ -326,7 +326,8 @@ int run_server(int cid, uint64_t context_id) {
     t1 = rdcycle();
 #endif // PRINT_TIMING
 #if USE_MICA
-    key_hash = cityhash(ft_key.qword);
+    //key_hash = cityhash(ft_key.qword);
+    key_hash = lnic_read();
 #endif // USE_MICA
 #if PRINT_TIMING
     t2 = rdcycle();
