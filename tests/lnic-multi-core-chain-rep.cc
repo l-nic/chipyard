@@ -61,6 +61,10 @@ arch_spinlock_t up_lock;
 
 #if USE_MICA
 
+#define NCORES 1
+//#define MICA_SHM_BUFFER_SIZE (1288) // 10 64B items
+#define MICA_SHM_BUFFER_SIZE (1406496) // 10K 64B items
+
 #include "mica/table/fixedtable.h"
 
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
@@ -305,12 +309,12 @@ int run_proxy_client(int cid, uint64_t context_id) {
 
     if (src_ip == load_gen_ip) { // From the load generator
       // Forward the packet to the first node in the chain
-      app_hdr = ((uint64_t)(CLIENT_IP+1) << 32) | (SERVER_CONTEXT << 16) | msg_len;
+      app_hdr = ((uint64_t)(CLIENT_IP+1) << 32) | ((uint64_t)SERVER_CONTEXT << 16) | (uint64_t)msg_len;
       service_time = rdcycle(); // store start timestamp in the packet
     }
     else { // A response from the chain
       // Forward the response back to the load generator
-      app_hdr = ((uint64_t)load_gen_ip << 32) | (0 << 16) | msg_len;
+      app_hdr = ((uint64_t)load_gen_ip << 32) | ((uint64_t)0 << 16) | (uint64_t)msg_len;
       service_time = recv_time - service_time; // end-to-end latency
     }
 
@@ -322,9 +326,6 @@ int run_proxy_client(int cid, uint64_t context_id) {
     lnic_msg_done();
   }
 }
-
-
-uint64_t empty_value[VALUE_SIZE_WORDS];
 
 int run_server(int cid, uint64_t context_id) {
   uint64_t app_hdr;
@@ -345,13 +346,19 @@ int run_server(int cid, uint64_t context_id) {
   FixedTable table(kValSize, cid);
 #endif
 
+  uint64_t init_value[VALUE_SIZE_WORDS];
+  memset(init_value, 0, VALUE_SIZE_WORDS*8);
+
   printf("[%d] Inserting keys from %ld to %ld.\n", cid, (MyFixedTableConfig::itemCount * context_id) + 1, (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount);
   for (unsigned i = (MyFixedTableConfig::itemCount * context_id) + 1;
       i <= (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount; i++) {
     ft_key.qword[0] = i;
     ft_key.qword[1] = 0;
+    init_value[0] = i;
+    init_value[1] = i + 1;
+    init_value[2] = i + 2;
     key_hash = cityhash(ft_key.qword);
-    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(empty_value));
+    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(init_value));
     if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
     if (i % 100 == 0) printf("[%d] Inserted keys up to %d.\n", cid, i);
   }
@@ -384,6 +391,7 @@ int run_server(int cid, uint64_t context_id) {
     }
     msg_key[0] = lnic_read();
     msg_key[1] = lnic_read();
+    key_hash = lnic_read();
 
     unsigned new_node_head = 0;
     bool send_value;
@@ -391,7 +399,7 @@ int run_server(int cid, uint64_t context_id) {
     uint16_t dst_context = 0;
 
 #if USE_MICA
-    key_hash = cityhash(msg_key);
+    //key_hash = cityhash(msg_key);
     ft_key.qword[0] = msg_key[0];
     ft_key.qword[1] = msg_key[1];
 #endif
@@ -444,8 +452,8 @@ int run_server(int cid, uint64_t context_id) {
 #endif
     }
 
-    uint16_t msg_len = 8 + 8 + 8 + (node_cnt * 8) + (KEY_SIZE_WORDS * 8) + (send_value ? (8 * VALUE_SIZE_WORDS) : 0);
-    app_hdr = ((uint64_t)dst_ip << 32) | (dst_context << 16) | msg_len;
+    uint16_t msg_len = 8 + 8 + 8 + (node_cnt * 8) + (KEY_SIZE_WORDS * 8) + 8 + (send_value ? (8 * VALUE_SIZE_WORDS) : 0);
+    app_hdr = ((uint64_t)dst_ip << 32) | ((uint64_t)dst_context << 16) | (uint64_t)msg_len;
     lnic_write_r(app_hdr);
     lnic_write_r(service_time);
     lnic_write_r(sent_time);
@@ -459,6 +467,7 @@ int run_server(int cid, uint64_t context_id) {
 
     lnic_write_r(msg_key[0]);
     lnic_write_r(msg_key[1]);
+    lnic_write_r(key_hash);
     if (send_value) {
       lnic_write_r(msg_val[0]);
       lnic_write_r(msg_val[1]);

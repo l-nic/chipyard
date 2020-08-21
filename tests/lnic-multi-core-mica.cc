@@ -63,6 +63,12 @@ arch_spinlock_t up_lock;
 
 #if USE_MICA
 
+#define NCORES 4
+#define MICA_SHM_BUFFER_SIZE (9233952) // 10K 512B items
+//#define MICA_SHM_BUFFER_SIZE (500040) // 500 512B items
+//#define MICA_SHM_BUFFER_SIZE (67648) // 100 512B items
+//#define MICA_SHM_BUFFER_SIZE (8456) // 100 512B items
+
 #include "mica/table/fixedtable.h"
 
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
@@ -146,6 +152,7 @@ int run_client(int cid) {
   uint16_t dst_context = SERVER_CONTEXT;
 
   uint64_t msg_val[VALUE_SIZE_WORDS];
+  memset(msg_val, 0, VALUE_SIZE_WORDS*8);
   uint64_t msg_key[KEY_SIZE_WORDS];
   msg_key[1] = 0;
   msg_val[0] = 0x7;
@@ -275,7 +282,6 @@ void send_startup_msg(int cid, uint64_t context_id) {
   lnic_write_r(context_id);
 }
 
-uint64_t empty_value[VALUE_SIZE_WORDS];
 
 int run_server(int cid, uint64_t context_id) {
 	uint64_t app_hdr;
@@ -291,13 +297,19 @@ int run_server(int cid, uint64_t context_id) {
   FixedTable table(kValSize, cid);
 #endif // USE_MICA
 
+  uint64_t init_value[VALUE_SIZE_WORDS];
+  memset(init_value, 0, VALUE_SIZE_WORDS*8);
+
   printf("[%d] Inserting keys from %ld to %ld.\n", cid, (MyFixedTableConfig::itemCount * context_id) + 1, (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount);
   for (unsigned i = (MyFixedTableConfig::itemCount * context_id) + 1;
       i <= (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount; i++) {
     ft_key.qword[0] = i;
     ft_key.qword[1] = 0;
+    init_value[0] = i;
+    init_value[1] = i + 1;
+    init_value[2] = i + 2;
     key_hash = cityhash(ft_key.qword);
-    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(empty_value));
+    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(init_value));
     if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed (%s).\n", cid, ft_key.qword[0], mica::table::cResultString(out_result));
     if (i % 100 == 0) printf("[%d] Inserted keys up to %d.\n", cid, i);
   }

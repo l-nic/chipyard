@@ -1,15 +1,5 @@
 #pragma once
 
-#define NCORES 4
-#define MICA_SHM_BUFFER_SIZE (9233952) // 10K 512B items
-//#define MICA_SHM_BUFFER_SIZE (1406496) // 10K 64B items
-//#define MICA_SHM_BUFFER_SIZE (8167320)
-//#define MICA_SHM_BUFFER_SIZE (2154600)
-//#define MICA_SHM_BUFFER_SIZE (511560)
-//#define MICA_SHM_BUFFER_SIZE (1003784)
-//#define MICA_SHM_BUFFER_SIZE (153928)
-//#define MICA_SHM_BUFFER_SIZE (500040) // 500 512B items
-//#define MICA_SHM_BUFFER_SIZE (67648) // 100 512B items
 char nanopu_mica_buffer[NCORES][MICA_SHM_BUFFER_SIZE];
 
 namespace mica {
