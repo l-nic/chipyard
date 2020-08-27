@@ -9,6 +9,7 @@ import Othello_headers as Othello
 import NBody_headers as NBody
 import DummyApp_headers as DummyApp
 from ChainRep_headers import ChainRep, CHAINREP_OP_READ, CHAINREP_OP_WRITE
+import Postcard_headers as Postcard
 import struct
 import pandas as pd
 import os
@@ -431,6 +432,56 @@ class ThroughputTest(unittest.TestCase):
         num_msgs = 100
         throughput = self.do_tx_test(num_msgs, msg_len)
         print 'TX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
+
+
+class INTCollectorSWTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, Postcard.RawPostcardSW, dst_context=0)
+        bind_layers(LNIC, Postcard.AggPostcard, dst_context=Postcard.UPSTREAM_COLLECTOR_PORT)
+        bind_layers(LNIC, Postcard.DoneMsg, dst_context=LATENCY_CONTEXT)
+
+    def raw_postcard(self, tx_msg_id, qtime):
+        msg_len = len(Postcard.RawPostcardSW())
+        pkt_offset = 0
+        src_context = LATENCY_CONTEXT
+        dst_context = 0
+        return lnic_pkt(msg_len, pkt_offset, src_context, dst_context) / \
+                 Postcard.RawPostcardSW(tx_msg_id=tx_msg_id, qtime=qtime)
+
+    def test_collector(self):
+        # NOTE: these params must match the constants defined in the collector src file
+        NUM_PKTS = 20
+        NUM_HOPS = 3
+        # Create raw postcards to send
+        inputs = []
+        for i in range(NUM_PKTS):
+            inputs += [self.raw_postcard(i, 1)]*NUM_HOPS
+        # assign a unique LNIC tx_msg_id to each postcard
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+
+        receiver = LNICReceiver(TEST_IFACE)
+        # Create two sniffers, one to listen for aggregated postcards
+        # and one to listen for the final done msg
+        # start sniffing for responses
+        postcard_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.AggPostcard) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=NUM_PKTS, timeout=200)
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.DoneMsg) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=1, timeout=200)
+        postcard_sniffer.start()
+        done_sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        postcard_sniffer.join()
+        done_sniffer.join()
+        # check responses
+        for p in postcard_sniffer.results:
+            self.assertEqual(p[Postcard.AggPostcard].total_qtime, NUM_HOPS)
+        total_latency = done_sniffer.results[0].latency / 3.2e9 # seconds
+        throughput = (NUM_PKTS * NUM_HOPS)/total_latency # postcards/second
+        print 'throughput = {} M postcards/sec'.format(throughput/1e6)
+
 
 class Stream(unittest.TestCase):
     def do_loopback(self, pkt_len):
