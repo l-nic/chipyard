@@ -160,12 +160,12 @@ int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
 }
 
 int __raft_persist_vote(raft_server_t *raft, void *udata, const int voted_for) {
-    printf("Trying to persist vote\n");
+    //printf("Trying to persist vote\n");
     return 0;
 }
 
 int __raft_persist_term(raft_server_t* raft, void* udata, const int current_term) {
-    printf("Trying to persist term\n"); // TODO: This should probably actually do something. 
+    //printf("Trying to persist term\n"); // TODO: This should probably actually do something. 
     return 0;
 }
 
@@ -221,6 +221,7 @@ int client_main() {
         uint32_t buf_size = sizeof(client_req_t) + sizeof(uint64_t);
         buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
         char* buffer = malloc(buf_size);
+        printf("Buf size is %d\n", buf_size);
         uint32_t msg_id = ReqType::kClientReq;
         uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
         memcpy(buffer, &msg_id, sizeof(uint32_t));
@@ -228,6 +229,7 @@ int client_main() {
         memcpy(buffer + sizeof(uint64_t), &client_req, sizeof(client_req_t));
         send_message(dst_ip, (uint64_t*)buffer, buf_size);
         free(buffer);
+        printf("Sent message\n");
 
         while (1);
     }
@@ -284,6 +286,10 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     if (leader == nullptr) {
         // Cluster doesn't have a leader, reply with error.
         printf("Cluster has no leader, replying with error\n");
+        uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+        for (int i = 0; i < msg_len_words_remaining; i++) {
+            volatile uint64_t dump = csr_read(0x50);
+        }
         send_client_response(header, ClientRespType::kFailTryAgain);
         return;
     }
@@ -292,6 +298,10 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     if (leader_ip != sv->own_ip_addr) {
         // This is not the cluster leader, reply with actual leader.
         printf("This is not the cluster leader, redirecting to %#x\n", leader_ip);
+        uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+        for (int i = 0; i < msg_len_words_remaining; i++) {
+            volatile uint64_t dump = csr_read(0x50);
+        }
         send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
@@ -344,11 +354,11 @@ void service_request_vote(uint64_t header, uint64_t start_word) {
     }
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
-    printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
+    //printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
     msg_requestvote_response_t msg_response_buf;
     int raft_retval = raft_recv_requestvote(sv->raft, raft_get_node(sv->raft, src_ip), (msg_requestvote_t*)(msg_buf + sizeof(uint64_t)), &msg_response_buf);
     assert(raft_retval == 0);
-    printf("Received requestvote\n");
+    //printf("Received requestvote\n");
     free(msg_buf);
 
     // Send the response to the vote request
@@ -378,7 +388,7 @@ void service_request_vote_response(uint64_t header, uint64_t start_word) {
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
     int raft_retval = raft_recv_requestvote_response(sv->raft, raft_get_node(sv->raft, src_ip), (msg_requestvote_response_t*)(msg_buf + sizeof(uint64_t)));
     assert(raft_retval == 0);
-    printf("Received requestvote response\n");
+    //printf("Received requestvote response\n");
     free(msg_buf);
 }
 
@@ -395,11 +405,11 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
     }
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
-    printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
+    //printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
     msg_appendentries_response_t msg_response_buf;
     int raft_retval = raft_recv_appendentries(sv->raft, raft_get_node(sv->raft, src_ip), (msg_appendentries_t*)(msg_buf + sizeof(uint64_t)), &msg_response_buf);
     assert(raft_retval == 0);
-    printf("Received appendentries\n");
+    //printf("Received appendentries\n");
     free(msg_buf);
 
     // Send the response to the appendentries request
@@ -448,7 +458,7 @@ void service_pending_messages() {
     uint64_t start_word = csr_read(0x50);
     uint16_t* start_word_arr = (uint16_t*)&start_word;
     uint16_t msg_type = start_word_arr[0];
-    printf("header is %#lx, start word is %#lx\n", header, start_word);
+    // printf("header is %#lx, start word is %#lx\n", header, start_word);
 
     if (msg_type == ReqType::kClientReq) {
         service_client_message(header, start_word);
