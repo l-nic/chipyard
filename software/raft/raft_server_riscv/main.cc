@@ -57,7 +57,7 @@ typedef enum ClientRespType {
 };
 
 typedef enum ReqType {
-    kRequestVote, kAppendEntries, kClientReq, kRequestVoteResponse, kAppendEntriesResponse
+    kRequestVote, kAppendEntries, kClientReq, kRequestVoteResponse, kAppendEntriesResponse, kClientReqResponse
 };
 
 typedef struct __attribute__((packed)) {
@@ -73,6 +73,11 @@ typedef struct __attribute__((packed)) {
         return ret.str();
     }
 } client_req_t;
+
+typedef struct __attribute__((packed)) {
+    ClientRespType resp_type;
+    uint32_t leader_ip;
+} client_resp_t;
 
 server_t server;
 server_t *sv = &server;
@@ -228,6 +233,45 @@ raft_cbs_t raft_funcs = {
 
 // TODO: Make sure all message structs are packed
 
+int client_send_request(client_req_t* client_req) {
+    // Send the request to the current raft leader
+    uint32_t dst_ip = sv->peer_ip_addrs[sv->client_current_leader_index];
+    printf("Client sending request to %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
+    uint32_t buf_size = sizeof(client_req_t) + sizeof(uint64_t);
+    if (buf_size % sizeof(uint64_t) != 0)
+        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    char* buffer = malloc(buf_size);
+    printf("Buf size is %d\n", buf_size);
+    uint32_t msg_id = ReqType::kClientReq;
+    uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
+    memcpy(buffer, &msg_id, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), &src_ip, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint64_t), client_req, sizeof(client_req_t));
+    send_message(dst_ip, (uint64_t*)buffer, buf_size);
+    free(buffer);
+    printf("Sent message\n");
+
+    // Receive the response from the cluster.
+    // TODO: A real version would really need a timeout.
+    while (csr_read(0x52) == 0);
+    uint64_t header = csr_read(0x50);
+    uint64_t start_word = csr_read(0x50);
+    uint16_t* start_word_arr = (uint16_t*)&start_word;
+    uint16_t msg_type = start_word_arr[0];
+    assert(msg_type == ReqType::kClientReqResponse);
+
+    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
+    char* msg_buf = malloc(header & LEN_MASK);
+    char* msg_current = msg_buf;
+    for (int i = 0; i < msg_len_words_remaining; i++) {
+        uint64_t data = csr_read(0x50);
+        memcpy(msg_current, &data, sizeof(uint64_t));
+        msg_current += sizeof(uint64_t);
+    }
+    client_resp_t* client_response = (client_resp_t*)msg_buf;
+    printf("Message response type is %d\n", client_response->resp_type);
+}
+
 int client_main() {
     sv->client_current_leader_index = 0;
     while (true) {
@@ -237,22 +281,12 @@ int client_main() {
         client_req.key[0] = rand_key;
         client_req.value[0] = rand_key;
 
-        // Send the request to the current raft leader
-        uint32_t dst_ip = sv->peer_ip_addrs[sv->client_current_leader_index];
-        printf("Client sending request to %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
-        uint32_t buf_size = sizeof(client_req_t) + sizeof(uint64_t);
-        if (buf_size % sizeof(uint64_t) != 0)
-            buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
-        char* buffer = malloc(buf_size);
-        printf("Buf size is %d\n", buf_size);
-        uint32_t msg_id = ReqType::kClientReq;
-        uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
-        memcpy(buffer, &msg_id, sizeof(uint32_t));
-        memcpy(buffer + sizeof(uint32_t), &src_ip, sizeof(uint32_t));
-        memcpy(buffer + sizeof(uint64_t), &client_req, sizeof(client_req_t));
-        send_message(dst_ip, (uint64_t*)buffer, buf_size);
-        free(buffer);
-        printf("Sent message\n");
+        int send_retval = 0;
+        do {
+            send_retval = client_send_request(&client_req);
+        } while (send_retval != 0);
+
+        
 
         while (1);
     }
@@ -296,8 +330,20 @@ void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words) {
     }
 }
 
-void send_client_response(uint64_t header, ClientRespType resp_type, uint32_t leader_ip=0) {
-
+void send_client_response(uint64_t header, uint64_t start_word, ClientRespType resp_type, uint32_t leader_ip=0) {
+    client_resp_t client_response;
+    client_response.resp_type = resp_type;
+    client_response.leader_ip = leader_ip;
+    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
+    uint32_t buf_size = sizeof(client_resp_t) + sizeof(uint64_t);
+    if (buf_size % sizeof(uint64_t) != 0)
+        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    char* buffer = malloc(buf_size);
+    uint32_t msg_id = ReqType::kClientReqResponse;
+    memcpy(buffer, &msg_id, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint32_t), &sv->own_ip_addr, sizeof(uint32_t));
+    memcpy(buffer + sizeof(uint64_t), &client_response, sizeof(client_resp_t));
+    send_message(src_ip, (uint64_t*)buffer, buf_size);
 }
 
 uint32_t get_random() {
@@ -314,7 +360,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         for (int i = 0; i < msg_len_words_remaining; i++) {
             volatile uint64_t dump = csr_read(0x50);
         }
-        send_client_response(header, ClientRespType::kFailTryAgain);
+        send_client_response(header, start_word, ClientRespType::kFailTryAgain);
         return;
     }
 
@@ -326,7 +372,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         for (int i = 0; i < msg_len_words_remaining; i++) {
             volatile uint64_t dump = csr_read(0x50);
         }
-        send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
+        send_client_response(header, start_word, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
 
