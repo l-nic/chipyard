@@ -38,6 +38,7 @@ const uint64_t kAppNumKeys = 8*1024; // 8K keys
 typedef struct {
     bool in_use = false;
     uint64_t header;
+    uint64_t start_word;
     msg_entry_response_t msg_entry_response;
 } leader_saveinfo_t;
 
@@ -83,18 +84,6 @@ server_t server;
 server_t *sv = &server;
 
 uint32_t get_random();
-
-void change_leader_to_any() {
-    if (sv->client_current_leader_index == sv->num_servers - 1) {
-        sv->client_current_leader_index = 0;
-    } else {
-        sv->client_current_leader_index++;
-    }
-}
-
-void change_leader_to_ip() {
-
-}
 
 void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words);
 
@@ -157,6 +146,7 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
 
     uint32_t dst_ip = raft_node_get_id(node);
     send_message(dst_ip, (uint64_t*)buffer, buf_size);
+    free(buffer);
     //printf("Sent appendentries\n");
 
     return 0;
@@ -270,6 +260,32 @@ int client_send_request(client_req_t* client_req) {
     }
     client_resp_t* client_response = (client_resp_t*)msg_buf;
     printf("Message response type is %d\n", client_response->resp_type);
+    if (client_response->resp_type == ClientRespType::kSuccess) {
+        printf("Request commited.\n");
+        return 0;
+    } else if (client_response->resp_type == ClientRespType::kFailRedirect) {
+        printf("Cached leader is %d is not correct. Redirecting to leader %d\n", sv->peer_ip_addrs[sv->client_current_leader_index], client_response->leader_ip);
+        for (int i = 0; i < sv->peer_ip_addrs.size(); i++) {
+            if (sv->peer_ip_addrs[i] == client_response->leader_ip) {
+                sv->client_current_leader_index = i;
+                return -1;
+            }
+        }
+        printf("New suggested leader not a known cluster ip.\n");
+        assert(false);
+    } else if (client_response->resp_type == ClientRespType::kFailTryAgain) {
+        printf("Request failed to commit. Trying again\n");
+        return -1;
+    }
+}
+
+// TODO: We don't use this right now, but it could still be useful for dealing with timeouts. We might want to make it more random though.
+void change_leader_to_any() {
+    if (sv->client_current_leader_index == sv->num_servers - 1) {
+        sv->client_current_leader_index = 0;
+    } else {
+        sv->client_current_leader_index++;
+    }
 }
 
 int client_main() {
@@ -397,6 +413,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     assert(!leader_sav.in_use);
     leader_sav.in_use = true;
     leader_sav.header = header;
+    leader_sav.start_word = start_word;
 
     // Set up the raft entry
     msg_entry_t ent;
@@ -479,15 +496,17 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
 
     msg_appendentries_t* append_entries = (msg_appendentries_t*)(msg_buf + sizeof(uint64_t));
-    char* per_entry_buf = msg_buf + sizeof(uint64_t) + sizeof(msg_appendentries_t);
-    append_entries->entries = malloc(sizeof(msg_entry_t)*append_entries->n_entries); // TODO: Get rid of these extra malloc's
-    for (int i = 0; i < append_entries->n_entries; i++) {
-        msg_entry_t* current_entry = &append_entries->entries[i];
-        memcpy(current_entry, per_entry_buf, sizeof(msg_entry_t));
-        per_entry_buf += sizeof(msg_entry_t);
-        current_entry->data.buf = malloc(current_entry->data.len);
-        memcpy(current_entry->data.buf, per_entry_buf, current_entry->data.len);
-        per_entry_buf += current_entry->data.len;
+    if (append_entries->n_entries > 0) {
+        char* per_entry_buf = msg_buf + sizeof(uint64_t) + sizeof(msg_appendentries_t);
+        append_entries->entries = malloc(sizeof(msg_entry_t)*append_entries->n_entries); // TODO: Get rid of these extra malloc's
+        for (int i = 0; i < append_entries->n_entries; i++) {
+            msg_entry_t* current_entry = &append_entries->entries[i];
+            memcpy(current_entry, per_entry_buf, sizeof(msg_entry_t));
+            per_entry_buf += sizeof(msg_entry_t);
+            current_entry->data.buf = malloc(current_entry->data.len);
+            memcpy(current_entry->data.buf, per_entry_buf, current_entry->data.len);
+            per_entry_buf += current_entry->data.len;
+        }
     }
 
     if (append_entries->n_entries != 0) {
@@ -572,11 +591,28 @@ int server_main() {
     while (true) {
         periodic_raft_wrapper();
         service_pending_messages();
-        raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
-        if (leader_node == nullptr) {
+
+        // Reply to clients if any entries have committed
+        leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
+        printf("Log has %d entries\n", sv->log_record.size());
+        if (!leader_sav.in_use) {
             continue;
         }
-        uint32_t leader_ip = raft_node_get_id(leader_node);
+        printf("Leader has saved a response\n");
+        int commit_status = raft_msg_entry_response_committed(sv->raft, &leader_sav.msg_entry_response);
+        assert(commit_status == 0 || commit_status == 1);
+        if (commit_status == 1) {
+            // We've already committed the entry
+            raft_apply_all(sv->raft);
+            leader_sav.in_use = false;
+            send_client_response(leader_sav.header, leader_sav.start_word, ClientRespType::kSuccess, 0);
+        }
+
+        // raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
+        // if (leader_node == nullptr) {
+        //     continue;
+        // }
+        // uint32_t leader_ip = raft_node_get_id(leader_node);
         //printf("Current leader ip is %#x\n", leader_ip);
     }
 
