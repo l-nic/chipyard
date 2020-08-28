@@ -422,9 +422,26 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
     }
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
+
+    msg_appendentries_t* append_entries = (msg_appendentries_t*)(msg_buf + sizeof(uint64_t));
+    char* per_entry_buf = msg_buf + sizeof(uint64_t) + sizeof(msg_appendentries_t);
+    append_entries->entries = malloc(sizeof(msg_entry_t)*append_entries->n_entries); // TODO: Get rid of these extra malloc's
+    for (int i = 0; i < append_entries->n_entries; i++) {
+        msg_entry_t* current_entry = &append_entries->entries[i];
+        memcpy(current_entry, per_entry_buf, sizeof(msg_entry_t));
+        per_entry_buf += sizeof(msg_entry_t);
+        current_entry->data.buf = malloc(current_entry->data.len);
+        memcpy(current_entry->data.buf, per_entry_buf, current_entry->data.len);
+        per_entry_buf += current_entry->data.len;
+    }
+
+    if (append_entries->n_entries != 0) {
+        printf("Received non-zero number of entries\n");
+    }
+
     //printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
     msg_appendentries_response_t msg_response_buf;
-    int raft_retval = raft_recv_appendentries(sv->raft, raft_get_node(sv->raft, src_ip), (msg_appendentries_t*)(msg_buf + sizeof(uint64_t)), &msg_response_buf);
+    int raft_retval = raft_recv_appendentries(sv->raft, raft_get_node(sv->raft, src_ip), append_entries, &msg_response_buf);
     assert(raft_retval == 0);
     //printf("Received appendentries\n");
     free(msg_buf);
