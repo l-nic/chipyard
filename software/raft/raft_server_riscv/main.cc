@@ -59,7 +59,7 @@ typedef enum ReqType {
     kRequestVote, kAppendEntries, kClientReq, kRequestVoteResponse, kAppendEntriesResponse
 };
 
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint64_t key[kAppKeySize / sizeof(uint64_t)];
     uint64_t value[kAppValueSize / sizeof(uint64_t)];
     string to_string() const {
@@ -96,7 +96,8 @@ int __raft_send_requestvote(raft_server_t* raft, void *user_data, raft_node_t *n
     uint32_t dst_ip = raft_node_get_id(node);
     printf("Requesting vote from %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
     uint32_t buf_size = sizeof(msg_requestvote_t) + sizeof(uint64_t);
-    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    if (buf_size % sizeof(uint64_t) != 0)
+        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
     char* buffer = malloc(buf_size);
     uint32_t msg_id = ReqType::kRequestVote;
     uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
@@ -115,7 +116,8 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
         //printf("Entry size is %d\n", m->entries[i].data.len);
         buf_size += sizeof(msg_entry_t) + m->entries[i].data.len;
     }
-    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    if (buf_size % sizeof(uint64_t) != 0)
+        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
     char* buffer = malloc(buf_size);
     char* buf_now = buffer;
 
@@ -170,16 +172,27 @@ int __raft_persist_term(raft_server_t* raft, void* udata, const int current_term
 }
 
 int __raft_logentry_offer(raft_server_t* raft, void *udata, raft_entry_t *ety, int ety_idx) {
-    printf("Trying to offer entry\n");
+    assert(!raft_entry_is_cfg_change(ety));
+    printf("Entry length is %d\n", ety->data.len);
+    printf("Struct length is %d\n", sizeof(client_req_t));
+    assert(ety->data.len == sizeof(client_req_t));
+
+    // TODO: erpc does some tricks here with persistent memory. Do we need to do that?
+
+    printf("Offered entry\n");
     return 0;
 }
 
 int __raft_logentry_poll(raft_server_t* raft, void *udata, raft_entry_t *entry, int ety_idx) {
-
+    printf("This application does not support log compaction.\n");
+    assert(false);
+    return -1;
 }
 
 int __raft_logentry_pop(raft_server_t* raft, void *udata, raft_entry_t *entry, int ety_idx) {
-
+    free(entry->data.buf); // TODO: This will only work as long as the data is heap-allocated
+    printf("Popped entry.\n");
+    return 0;
 }
 
 int __raft_node_has_sufficient_logs(raft_server_t* raft, void *user_data, raft_node_t* node) {
@@ -219,7 +232,8 @@ int client_main() {
         uint32_t dst_ip = sv->peer_ip_addrs[sv->client_current_leader_index];
         printf("Client sending request to %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
         uint32_t buf_size = sizeof(client_req_t) + sizeof(uint64_t);
-        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+        if (buf_size % sizeof(uint64_t) != 0)
+            buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
         char* buffer = malloc(buf_size);
         printf("Buf size is %d\n", buf_size);
         uint32_t msg_id = ReqType::kClientReq;
@@ -265,9 +279,10 @@ void periodic_raft_wrapper() {
 void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words) {
     uint64_t header = 0;
     header |= (uint64_t)dst_ip << 32;
-    header |= (uint16_t)buf_words * sizeof(uint64_t);
+    header |= (uint16_t)buf_words;// * sizeof(uint64_t);
+    //printf("Writing header %#lx\n", header);
     csr_write(0x51, header);
-    for (int i = 0; i < buf_words; i++) {
+    for (int i = 0; i < buf_words / sizeof(uint64_t); i++) {
         csr_write(0x51, buffer[i]);
     }
 }
@@ -281,7 +296,7 @@ uint32_t get_random() {
 }
 
 void service_client_message(uint64_t header, uint64_t start_word) {
-    printf("Received client request\n");
+    printf("Received client request with header %#lx\n", header);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
     if (leader == nullptr) {
         // Cluster doesn't have a leader, reply with error.
@@ -332,8 +347,9 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     msg_entry_t ent;
     ent.type = RAFT_LOGTYPE_NORMAL;
     ent.id = get_random(); // TODO: Check this!
-    ent.data.buf = msg_buf;
-    ent.data.len = header & LEN_MASK;
+    ent.data.buf = msg_buf + sizeof(uint64_t);
+    ent.data.len = (header & LEN_MASK) - sizeof(uint64_t);
+    printf("Header length is %d and entry length is %d\n", (header & LEN_MASK), ent.data.len);
 
     // Send the entry into the raft library handlers
     printf("Adding raft log entry\n");
@@ -363,7 +379,8 @@ void service_request_vote(uint64_t header, uint64_t start_word) {
 
     // Send the response to the vote request
     uint32_t buf_size = sizeof(msg_requestvote_response_t) + sizeof(uint64_t);
-    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    if (buf_size % sizeof(uint64_t) != 0)
+        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
     char* buffer = malloc(buf_size);
     uint32_t msg_id = ReqType::kRequestVoteResponse;
     memcpy(buffer, &msg_id, sizeof(uint32_t));
@@ -414,7 +431,8 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
 
     // Send the response to the appendentries request
     uint32_t buf_size = sizeof(msg_appendentries_response_t) + sizeof(uint64_t);
-    buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    if (buf_size % sizeof(uint64_t) != 0)
+        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
     char* buffer = malloc(buf_size);
     uint32_t msg_id = ReqType::kAppendEntriesResponse;
     memcpy(buffer, &msg_id, sizeof(uint32_t));
