@@ -5,7 +5,9 @@
 #include <string.h>
 #include <cassert>
 #include <raft/raft.h>
-#include <set>
+#include <vector>
+#include <string>
+#include <sstream>
 
 #include "../../../tests/lnic.h"
 #include "../../../tests/lnic-scheduler.h"
@@ -27,6 +29,9 @@ extern "C" {
 const uint32_t kBaseClusterIpAddr = 0xa000002;
 const uint64_t kRaftElectionTimeoutMsec = 5000;
 const uint64_t kCyclesPerMsec = 10000;
+const uint64_t kAppKeySize = 16;
+const uint64_t kAppValueSize = 64;
+const uint64_t kAppNumKeys = 8*1024; // 8K keys
 
 // Global data
 
@@ -37,12 +42,13 @@ typedef struct {
 } leader_saveinfo_t;
 
 typedef struct {
-    set<uint32_t> peer_ip_addrs;
+    vector<uint32_t> peer_ip_addrs;
     uint32_t own_ip_addr;
     uint32_t num_servers;
     raft_server_t *raft;
     uint64_t last_cycles;
     leader_saveinfo_t leader_saveinfo;
+    uint32_t client_current_leader_index;
 } server_t;
 
 typedef enum ClientRespType {
@@ -53,8 +59,36 @@ typedef enum ReqType {
     kRequestVote, kAppendEntries, kClientReq, kRequestVoteResponse, kAppendEntriesResponse
 };
 
+typedef struct {
+    uint64_t key[kAppKeySize / sizeof(uint64_t)];
+    uint64_t value[kAppValueSize / sizeof(uint64_t)];
+    string to_string() const {
+        ostringstream ret;
+        ret << "[Key (";
+        for (uint64_t k : key) ret << std::to_string(k) << ", ";
+        ret << "), Value (";
+        for (uint64_t v : value) ret << std::to_string(v) << ", ";
+        ret << ")]";
+        return ret.str();
+    }
+} client_req_t;
+
 server_t server;
 server_t *sv = &server;
+
+uint32_t get_random();
+
+void change_leader_to_any() {
+    if (sv->client_current_leader_index == sv->num_servers - 1) {
+        sv->client_current_leader_index = 0;
+    } else {
+        sv->client_current_leader_index++;
+    }
+}
+
+void change_leader_to_ip() {
+
+}
 
 void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words);
 
@@ -75,10 +109,10 @@ int __raft_send_requestvote(raft_server_t* raft, void *user_data, raft_node_t *n
 }
 
 int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t *node, msg_appendentries_t* m) {
-    printf("Sending append entries\n");
+    //printf("Sending append entries\n");
     uint32_t buf_size = sizeof(msg_appendentries_t) + sizeof(uint64_t);
     for (int i = 0; i < m->n_entries; i++) {
-        printf("Entry size is %d\n", m->entries[i].data.len);
+        //printf("Entry size is %d\n", m->entries[i].data.len);
         buf_size += sizeof(msg_entry_t) + m->entries[i].data.len;
     }
     buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
@@ -115,7 +149,7 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
 
     uint32_t dst_ip = raft_node_get_id(node);
     send_message(dst_ip, (uint64_t*)buffer, buf_size);
-    printf("Sent appendentries\n");
+    //printf("Sent appendentries\n");
 
     return 0;
 }
@@ -154,7 +188,7 @@ int __raft_node_has_sufficient_logs(raft_server_t* raft, void *user_data, raft_n
 }
 
 void __raft_log(raft_server_t* raft, raft_node_t* node, void *udata, const char *buf) {
-    printf("raft log: %s\n", buf);
+    //printf("raft log: %s\n", buf);
 }
 
 raft_cbs_t raft_funcs = {
@@ -170,9 +204,33 @@ raft_cbs_t raft_funcs = {
     .log                         = __raft_log,
 };
 
+// TODO: Make sure all message structs are packed
 
 int client_main() {
-    return 0;
+    sv->client_current_leader_index = 0;
+    while (true) {
+        // Create a client request
+        client_req_t client_req;
+        uint64_t rand_key = get_random() & (kAppNumKeys - 1);
+        client_req.key[0] = rand_key;
+        client_req.value[0] = rand_key;
+
+        // Send the request to the current raft leader
+        uint32_t dst_ip = sv->peer_ip_addrs[sv->client_current_leader_index];
+        printf("Client sending request to %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
+        uint32_t buf_size = sizeof(client_req_t) + sizeof(uint64_t);
+        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+        char* buffer = malloc(buf_size);
+        uint32_t msg_id = ReqType::kClientReq;
+        uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
+        memcpy(buffer, &msg_id, sizeof(uint32_t));
+        memcpy(buffer + sizeof(uint32_t), &src_ip, sizeof(uint32_t));
+        memcpy(buffer + sizeof(uint64_t), &client_req, sizeof(client_req_t));
+        send_message(dst_ip, (uint64_t*)buffer, buf_size);
+        free(buffer);
+
+        while (1);
+    }
 }
 
 void raft_init() {
@@ -357,7 +415,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
 }
 
 void service_append_entries_response(uint64_t header, uint64_t start_word) {
-    printf("Receiving appendentries response\n");
+    //printf("Receiving appendentries response\n");
     uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
     char* msg_buf = malloc(header & LEN_MASK);
     char* msg_current = msg_buf;
@@ -370,12 +428,12 @@ void service_append_entries_response(uint64_t header, uint64_t start_word) {
     }
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
-    printf("Entering raft call with message of size %d\n", header & LEN_MASK);
+    //printf("Entering raft call with message of size %d\n", header & LEN_MASK);
     int raft_retval = raft_recv_appendentries_response(sv->raft, raft_get_node(sv->raft, src_ip), (msg_appendentries_response_t*)(msg_buf + sizeof(uint64_t)));
-    printf("raft retval is %d\n", raft_retval);
-    assert(raft_retval == 0);// || raft_retval == RAFT_ERR_NOT_LEADER);
-    printf("Server received append entries but is not the leader\n");
-    printf("Received appendentries response\n");
+    //printf("raft retval is %d\n", raft_retval);
+    assert(raft_retval == 0 || raft_retval == RAFT_ERR_NOT_LEADER);
+    //printf("Server received append entries but is not the leader\n");
+    //printf("Received appendentries response\n");
     free(msg_buf);
 }
 
@@ -419,7 +477,7 @@ int server_main() {
             continue;
         }
         uint32_t leader_ip = raft_node_get_id(leader_node);
-        printf("Current leader ip is %#x\n", leader_ip);
+        //printf("Current leader ip is %#x\n", leader_ip);
     }
 
     return 0;
@@ -447,6 +505,7 @@ int main(int argc, char** argv) {
         return -1;
     }
     sv->own_ip_addr = nic_ip_addr;
+    bool is_server = false;
     for (int i = 3; i < argc; i++) {
         char* ip_str = argv[i];
         uint32_t ip_lendian = 0;
@@ -456,12 +515,15 @@ int main(int argc, char** argv) {
             printf("Peer IP address is invalid.\n");
             return -1;
         }
-        sv->peer_ip_addrs.insert(peer_ip);
+        sv->peer_ip_addrs.push_back(peer_ip);
+        if (peer_ip == sv->own_ip_addr) {
+            is_server = true;
+        }
     }
     sv->num_servers = sv->peer_ip_addrs.size();
 
     // Determine if client or server. Client will have an ip that is not a member of the peer ip set.
-    if (sv->peer_ip_addrs.count(sv->own_ip_addr) == 0) {
+    if (!is_server) {
         // This is a client
         return client_main();
     } else {
