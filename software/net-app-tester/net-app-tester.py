@@ -37,10 +37,10 @@ LOG_DIR = '/vagrant/logs'
 
 NUM_SAMPLES = 1
 
-def lnic_pkt(msg_len, pkt_offset, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=MY_IP):
+def lnic_pkt(msg_len, pkt_offset, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=MY_IP, tx_msg_id=0):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=src_ip, dst=NIC_IP) / \
-            LNIC(flags='DATA', src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset)
+            LNIC(flags='DATA', src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset, tx_msg_id=tx_msg_id)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -436,17 +436,17 @@ class ThroughputTest(unittest.TestCase):
 
 class INTCollectorSWTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, Postcard.RawPostcardSW, dst_context=0)
+        bind_layers(LNIC, Postcard.RawPostcard, dst_context=0)
         bind_layers(LNIC, Postcard.AggPostcard, dst_context=Postcard.UPSTREAM_COLLECTOR_PORT)
         bind_layers(LNIC, Postcard.DoneMsg, dst_context=LATENCY_CONTEXT)
 
     def raw_postcard(self, tx_msg_id, qtime):
-        msg_len = len(Postcard.RawPostcardSW())
+        msg_len = len(Postcard.RawPostcard())
         pkt_offset = 0
         src_context = LATENCY_CONTEXT
         dst_context = 0
         return lnic_pkt(msg_len, pkt_offset, src_context, dst_context) / \
-                 Postcard.RawPostcardSW(tx_msg_id=tx_msg_id, qtime=qtime)
+                 Postcard.RawPostcard(tx_msg_id=tx_msg_id, qtime=qtime)
 
     def test_collector(self):
         # NOTE: these params must match the constants defined in the collector src file
@@ -459,6 +459,53 @@ class INTCollectorSWTest(unittest.TestCase):
         # assign a unique LNIC tx_msg_id to each postcard
         for p, i in zip(inputs, range(len(inputs))):
             p[LNIC].tx_msg_id = i
+
+        receiver = LNICReceiver(TEST_IFACE)
+        # Create two sniffers, one to listen for aggregated postcards
+        # and one to listen for the final done msg
+        # start sniffing for responses
+        postcard_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.AggPostcard) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=NUM_PKTS, timeout=200)
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.DoneMsg) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=1, timeout=200)
+        postcard_sniffer.start()
+        done_sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        postcard_sniffer.join()
+        done_sniffer.join()
+        # check responses
+        for p in postcard_sniffer.results:
+            self.assertEqual(p[Postcard.AggPostcard].total_qtime, NUM_HOPS)
+        total_latency = done_sniffer.results[0].latency / 3.2e9 # seconds
+        throughput = (NUM_PKTS * NUM_HOPS)/total_latency # postcards/second
+        print 'throughput = {} M postcards/sec'.format(throughput/1e6)
+
+
+class INTCollectorOptTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, Postcard.RawPostcard, dst_context=0)
+        bind_layers(LNIC, Postcard.AggPostcard, dst_context=Postcard.UPSTREAM_COLLECTOR_PORT)
+        bind_layers(LNIC, Postcard.DoneMsg, dst_context=LATENCY_CONTEXT)
+
+    def raw_postcard(self, num_hops, pkt_offset, tx_msg_id):
+        msg_len = len(Postcard.RawPostcard())*num_hops
+        src_context = LATENCY_CONTEXT
+        dst_context = 0
+        return lnic_pkt(msg_len, pkt_offset, src_context, dst_context, tx_msg_id=tx_msg_id) / \
+                 Postcard.RawPostcard(tx_msg_id=tx_msg_id, qtime=1)
+
+    def test_collector(self):
+        # NOTE: these params must match the constants defined in the collector src file
+        NUM_PKTS = 20
+        NUM_HOPS = 3
+        # Create raw postcards to send
+        inputs = []
+        for i in range(NUM_PKTS):
+            # All postcards corresponding to the same pkt must use the same tx_msg_id so they can
+            # be reassembled by the NIC.
+            inputs += [self.raw_postcard(NUM_HOPS, pkt_offset=j, tx_msg_id=i) for j in range(NUM_HOPS)]
 
         receiver = LNICReceiver(TEST_IFACE)
         # Create two sniffers, one to listen for aggregated postcards

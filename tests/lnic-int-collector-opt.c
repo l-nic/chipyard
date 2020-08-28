@@ -5,6 +5,10 @@
 
 #include "lnic.h"
 
+// This program assumes that the LNIC HW has been generated using
+// MAX_SEG_LEN_BYTES = 64
+#define MAX_SEG_LEN_BYTES 64
+
 #define UPSTREAM_COLLECTOR_IP 0x0a000006
 #define UPSTREAM_COLLECTOR_PORT 0x1111
 // Use this dst port to have the HW compute latency
@@ -17,26 +21,15 @@
 // Hence the number of raw postcards = NUM_PKTS * NUM_HOPS
 #define NUM_PKTS 20
 
-/* Software Only INT Collector:
- *   - Collect Packet Postcards from each switch for each packet
- *   - Aggregate the postcard info for each packet
+/* Optimized INT Collector:
+ *   - Aggregate postcards using LNIC msg reassembly layer
  *   - Compute the total delay for each packet
  */
 
-/* State:
- *   - Need an array that maps: txMsgID => {cardCount, queueingTime}
- *   - Should ideally use {srcIP, txMsgID, pktOffset} as the key, but that
- *     array would take a long time to initialize. So we just use txMsgID for now
- */
-
-typedef struct {
-    int cardCount;
-    uint64_t queueingTime;
-} pkt_state_t;
-
-#define RAW_POSTCARD_LEN 64
-/* Input raw postcard message format:
- *   - word 0: srcIP, srcPort, RAW_POSTCARD_LEN
+#define RAW_POSTCARD_LEN NUM_HOPS*MAX_SEG_LEN_BYTES
+/* Input postcard message format:
+ *   - app_hdr: srcIP, srcPort, RAW_POSTCARD_LEN
+ *   One of these 64B payloads for each hop:
  *   - word 1: dstIP, dstPort, txMsgID
  *   - word 2: pktOffset
  *   - word 3: packet queueing time
@@ -66,9 +59,7 @@ void process_msgs() {
   uint64_t word1;
   uint64_t pkt_offset;
   uint64_t ts;
-  uint16_t txMsgID;
   uint16_t msg_len;
-  int num_words;
   int i;
 
   bool first_recvd = false;
@@ -76,11 +67,6 @@ void process_msgs() {
 
   // initialize state
   int total_card_count = 0;
-  pkt_state_t pktState[NUM_PKTS];
-  for (i = 0; i < NUM_PKTS; i++) {
-    pktState[i].cardCount = 0;
-    pktState[i].queueingTime = 0;
-  }
 
   while (1) {
     // wait for a postcard to arrive
@@ -94,49 +80,62 @@ void process_msgs() {
       return -1;
     } 
 
-    // extract txMsgID from word 1
+    uint64_t total_qtime = 0;
+
+    // process first postcard in message
     word1 = lnic_read();
-    txMsgID = (uint16_t)word1;
-    // read pktOffset
     pkt_offset = lnic_read();
-
-    // update state
-    total_card_count += 1;
-    pktState[txMsgID].cardCount += 1;
-    pktState[txMsgID].queueingTime += lnic_read();
-
-    // read unused data
+    total_qtime += lnic_read();
+//    printf("total_qtime = %ld\n", total_qtime);
     lnic_read();
     lnic_read();
     lnic_read();
     lnic_read();
-
-    // read NIC timestamp
+    // read NIC timestamp of first postcard
     ts = lnic_read();
     if (!first_recvd) {
       start_time = ts;
       first_recvd = true;
     }
 
-    // Check if all postcards have been received for this packet
-    if (pktState[txMsgID].cardCount >= NUM_HOPS) {
-      // send aggregated postcard
-      tx_app_hdr = (UPSTREAM_COLLECTOR_IP << 32)
-                   | (UPSTREAM_COLLECTOR_PORT << 16)
-                   | AGG_POSTCARD_LEN;
-      lnic_write_r(tx_app_hdr);
-      lnic_write_r(word1);
-      uint32_t src_ip = rx_app_hdr >> 32;
-      uint16_t src_port = (rx_app_hdr & CONTEXT_MASK) >> 16;
-      lnic_write_r((src_ip << 32) | (src_port << 16) | (0xffff & pkt_offset));
-      lnic_write_r(pktState[txMsgID].queueingTime);
-      // reset state for this pkt
-      pktState[txMsgID].cardCount = 0;
-      pktState[txMsgID].queueingTime = 0;
-    }
+    // process second postcard in message
+    lnic_read();
+    lnic_read();
+    total_qtime += lnic_read();
+//    printf("total_qtime = %ld\n", total_qtime);
+    lnic_read();
+    lnic_read();
+    lnic_read();
+    lnic_read();
+    lnic_read();
+
+    // process third postcard in message
+    lnic_read();
+    lnic_read();
+    total_qtime += lnic_read();
+//    printf("total_qtime = %ld\n", total_qtime);
+    lnic_read();
+    lnic_read();
+    lnic_read();
+    lnic_read();
+    lnic_read();
+
+    // update state
+    total_card_count += 1;
+
+    // send aggregated postcard
+    tx_app_hdr = (UPSTREAM_COLLECTOR_IP << 32)
+                 | (UPSTREAM_COLLECTOR_PORT << 16)
+                 | AGG_POSTCARD_LEN;
+    lnic_write_r(tx_app_hdr);
+    lnic_write_r(word1);
+    uint32_t src_ip = rx_app_hdr >> 32;
+    uint16_t src_port = (rx_app_hdr & CONTEXT_MASK) >> 16;
+    lnic_write_r((src_ip << 32) | (src_port << 16) | (0xffff & pkt_offset));
+    lnic_write_r(total_qtime);
 
     // Check if all postcards have been received for all packets
-    if (total_card_count >= NUM_PKTS * NUM_HOPS) {
+    if (total_card_count >= NUM_PKTS) {
       // send DONE msg
       tx_app_hdr = (UPSTREAM_COLLECTOR_IP << 32)
                    | (LATENCY_PORT << 16)

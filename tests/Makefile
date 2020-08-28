@@ -41,6 +41,7 @@ PROGRAMS += lnic-evaluation
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
 PROGRAMS += lnic-int-collector-sw
+PROGRAMS += lnic-int-collector-opt
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
