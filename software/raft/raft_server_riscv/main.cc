@@ -49,6 +49,7 @@ typedef struct {
     uint64_t last_cycles;
     leader_saveinfo_t leader_saveinfo;
     uint32_t client_current_leader_index;
+    vector<raft_entry_t*> log_record;
 } server_t;
 
 typedef enum ClientRespType {
@@ -157,6 +158,10 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
 }
 
 int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
+    assert(!raft_entry_is_cfg_change(ety));
+    assert(ety->data.len == sizeof(client_req_t));
+    client_req_t* client_req = (client_req_t*)ety->data.buf;
+    assert(client_req->key[0] == client_req->value[0]); // This isn't a requirement. It's just how the test is currently set up.
     printf("Trying to apply log\n");
     return 0;
 }
@@ -177,6 +182,9 @@ int __raft_logentry_offer(raft_server_t* raft, void *udata, raft_entry_t *ety, i
     printf("Struct length is %d\n", sizeof(client_req_t));
     assert(ety->data.len == sizeof(client_req_t));
 
+    // Not truly persistent, but at least allows us to track an easily accessible log record
+    sv->log_record.push_back(ety);
+
     // TODO: erpc does some tricks here with persistent memory. Do we need to do that?
 
     printf("Offered entry\n");
@@ -192,6 +200,7 @@ int __raft_logentry_poll(raft_server_t* raft, void *udata, raft_entry_t *entry, 
 int __raft_logentry_pop(raft_server_t* raft, void *udata, raft_entry_t *entry, int ety_idx) {
     free(entry->data.buf); // TODO: This will only work as long as the data is heap-allocated
     printf("Popped entry.\n");
+    sv->log_record.pop_back();
     return 0;
 }
 
