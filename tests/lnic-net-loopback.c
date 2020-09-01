@@ -5,7 +5,7 @@
 
 #include "lnic.h"
 
-#define NIC_IP 0x0a000001
+#define NIC_IP 0x0a000002
 #define NUM_CORES 4
 #define NUM_MSG_WORDS 8
 

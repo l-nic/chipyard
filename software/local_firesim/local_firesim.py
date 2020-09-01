@@ -12,6 +12,24 @@ timeout_cycles = 2240
 enable_waveforms = True
 simulator = 'VFireSim-debug' if enable_waveforms else 'VFireSim'
 
+# cmdline args for load generator RISC-V program
+# NOTE: the test type must match what is specified in switchconfig1.h!
+
+#test_type = "ONE_CONTEXT_FOUR_CORES"
+#test_type = "FOUR_CONTEXTS_FOUR_CORES"
+
+test_type = "DIF_PRIORITY_LNIC_DRIVEN"
+#test_type = "DIF_PRIORITY_TIMER_DRIVEN"
+
+#test_type = "HIGH_PRIORITY_C1_STALL"
+#test_type = "LOW_PRIORITY_C1_STALL"
+c1_stall_factor = 10
+c1_stall_freq = 5
+
+# NOTE: if use_load_prog is set then MUST pass in the lnic-evaluation.riscv binary
+use_load_prog = True
+load_gen_args = "{} {} {}".format(test_type, c1_stall_factor, c1_stall_freq) if use_load_prog else ""
+
 # Note that this doesn't rebuild the simulator by default, since that can be pretty slow even when nothing has changed.
 def build_components(num_sims, current_run):
     with cd("chipyard/software/local_firesim/PcapPlusPlus"):
@@ -34,7 +52,7 @@ def launch_switch(num_sims, current_run):
 def launch_sim(sim, current_run, test_name):
     time.sleep(1)
     with cd("chipyard/sims/firesim/sim/generated-src/f1/FireSim-DDR3FRFCFSLLC4MB_FireSimLNICQuadRocketConfig-F90MHz_BaseF1Config"):
-        run("script -f -c \'sudo ./" + simulator + " +permissive +vcs+initreg+0 +vcs+initmem+0 +fesvr-step-size=128 +mm_relaxFunctionalModel=0 +mm_openPagePolicy=1 +mm_backendLatency=2 +mm_schedulerWindowSize=8 +mm_transactionQueueDepth=8 +mm_dramTimings_tAL=0 +mm_dramTimings_tCAS=14 +mm_dramTimings_tCMD=1 +mm_dramTimings_tCWD=10 +mm_dramTimings_tCCD=4 +mm_dramTimings_tFAW=25 +mm_dramTimings_tRAS=33 +mm_dramTimings_tREFI=7800 +mm_dramTimings_tRC=47 +mm_dramTimings_tRCD=14 +mm_dramTimings_tRFC=160 +mm_dramTimings_tRRD=8 +mm_dramTimings_tRP=14 +mm_dramTimings_tRTP=8 +mm_dramTimings_tRTRS=2 +mm_dramTimings_tWR=15 +mm_dramTimings_tWTR=8 +mm_rowAddr_offset=18 +mm_rowAddr_mask=65535 +mm_rankAddr_offset=16 +mm_rankAddr_mask=3 +mm_bankAddr_offset=13 +mm_bankAddr_mask=7 +mm_llc_wayBits=3 +mm_llc_setBits=12 +mm_llc_blockBits=7 +mm_llc_activeMSHRs=8 +shmemportname0=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" + str(sim + 2) + " +nic_mac_addr0=00:26:E1:00:00:0" + str(sim + 2) + " +switch_mac_addr0=08:55:66:77:88:08 +nic_ip_addr0=10.0.0." + str(sim + 2) + "  +timeout_cycles0=" + str(timeout_cycles) + "  +rtt_pkts0=2 +niclog0=../../../../../../software/local_firesim/logs/" + current_run + "niclog" + str(sim) + " +linklatency0=" + str(link_latency) + " +waveform=../../../../../../software/local_firesim/logs/" + current_run + "wavelog" + str(sim) + " +netbw0=200 +netburst0=8 +tracefile0=TRACEFILE0 +blkdev-in-mem0=128 +blkdev-log0=blkdev-log0 +autocounter-readrate0=1000 +autocounter-filename0=AUTOCOUNTERFILE0 +dramsim +permissive-off " + test_name + " 1 10.0.0." + str(sim + 2) + " 3>&1 1>&2 2>&3 | ~/chipyard/riscv-tools-install/bin/spike-dasm > ../../../../../../software/local_firesim/logs/" + current_run + "simlog" + str(sim) + "\' ../../../../../../software/local_firesim/logs/" + current_run + "uartlog" + str(sim) + " > /dev/null")
+        run("script -f -c \'sudo ./" + simulator + " +permissive +vcs+initreg+0 +vcs+initmem+0 +fesvr-step-size=128 +mm_relaxFunctionalModel=0 +mm_openPagePolicy=1 +mm_backendLatency=2 +mm_schedulerWindowSize=8 +mm_transactionQueueDepth=8 +mm_dramTimings_tAL=0 +mm_dramTimings_tCAS=14 +mm_dramTimings_tCMD=1 +mm_dramTimings_tCWD=10 +mm_dramTimings_tCCD=4 +mm_dramTimings_tFAW=25 +mm_dramTimings_tRAS=33 +mm_dramTimings_tREFI=7800 +mm_dramTimings_tRC=47 +mm_dramTimings_tRCD=14 +mm_dramTimings_tRFC=160 +mm_dramTimings_tRRD=8 +mm_dramTimings_tRP=14 +mm_dramTimings_tRTP=8 +mm_dramTimings_tRTRS=2 +mm_dramTimings_tWR=15 +mm_dramTimings_tWTR=8 +mm_rowAddr_offset=18 +mm_rowAddr_mask=65535 +mm_rankAddr_offset=16 +mm_rankAddr_mask=3 +mm_bankAddr_offset=13 +mm_bankAddr_mask=7 +mm_llc_wayBits=3 +mm_llc_setBits=12 +mm_llc_blockBits=7 +mm_llc_activeMSHRs=8 +shmemportname0=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" + str(sim + 2) + " +nic_mac_addr0=00:26:E1:00:00:0" + str(sim + 2) + " +switch_mac_addr0=08:55:66:77:88:08 +nic_ip_addr0=10.0.0." + str(sim + 2) + "  +timeout_cycles0=" + str(timeout_cycles) + "  +rtt_pkts0=2 +niclog0=../../../../../../software/local_firesim/logs/" + current_run + "niclog" + str(sim) + " +linklatency0=" + str(link_latency) + " +waveform=../../../../../../software/local_firesim/logs/" + current_run + "wavelog" + str(sim) + " +netbw0=200 +netburst0=8 +tracefile0=TRACEFILE0 +blkdev-in-mem0=128 +blkdev-log0=blkdev-log0 +autocounter-readrate0=1000 +autocounter-filename0=AUTOCOUNTERFILE0 +dramsim +permissive-off " + test_name + " 1 10.0.0." + str(sim + 2) + " " + load_gen_args + " 3>&1 1>&2 2>&3 | ~/chipyard/riscv-tools-install/bin/spike-dasm > ../../../../../../software/local_firesim/logs/" + current_run + "simlog" + str(sim) + "\' ../../../../../../software/local_firesim/logs/" + current_run + "uartlog" + str(sim) + " > /dev/null")
 
 def main():
     if len(sys.argv) < 3:

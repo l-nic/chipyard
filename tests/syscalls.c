@@ -221,6 +221,7 @@ void app_wrapper(uint64_t argc, char** argv, int cid, int nc, uint64_t context_i
 void start_thread(int (*target)(void), uint64_t id, uint64_t priority) {
   struct thread_t* thread = new_thread();
   thread->epc = app_wrapper;
+  lnic_start_timer(); // reset timer so priority is not immediately lowered
   lnic_add_context(id, priority);
   volatile uint64_t sp, gp, tp;
   asm volatile("mv %0, sp" : "=r"(sp));

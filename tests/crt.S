@@ -152,7 +152,6 @@ _start:
 
   .align 2
 trap_entry:
-  csrci mstatus, MSTATUS_MIE
   addi sp, sp, -272
 
   # Calculate the base and current thread struct addr
@@ -270,7 +269,6 @@ valid:
   LREG x1, 1*REGBYTES(x1)
 
   addi sp, sp, 272
-  csrsi mstatus, MSTATUS_MIE
   mret
 
 .section ".tdata.begin"

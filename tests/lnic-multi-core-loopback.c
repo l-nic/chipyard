@@ -5,7 +5,7 @@
 
 #include "lnic.h"
 
-// #define MSG_LEN 8
+#define MSG_LEN 8
 
 bool is_single_core() { return false; }
 
