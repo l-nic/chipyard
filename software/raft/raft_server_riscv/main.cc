@@ -12,6 +12,9 @@
 #include "../../../tests/lnic.h"
 #include "../../../tests/lnic-scheduler.h"
 
+#include "mica/table/fixedtable.h"
+#include "mica/util/hash.h"
+
 using namespace std;
 
 // Utility symbols linked into the binary
@@ -33,6 +36,38 @@ const uint64_t kAppKeySize = 16;
 const uint64_t kAppValueSize = 64;
 const uint64_t kAppNumKeys = 8*1024; // 8K keys
 
+struct MyFixedTableConfig {
+  static constexpr size_t kBucketCap = 7;
+
+  // Support concurrent access. The actual concurrent access is enabled by
+  // concurrent_read and concurrent_write in the configuration.
+  static constexpr bool kConcurrent = false;
+
+  // Be verbose.
+  static constexpr bool kVerbose = false;
+
+  // Collect fine-grained statistics accessible via print_stats() and
+  // reset_stats().
+  static constexpr bool kCollectStats = false;
+
+  static constexpr size_t kKeySize = 8;
+
+  //static std::string tableName = "test_table";
+  static constexpr bool concurrentRead = false;
+  static constexpr bool concurrentWrite = false;
+  //static constexpr size_t itemCount = 640000;
+  //static constexpr size_t itemCount = 16000;
+  static constexpr size_t itemCount = 8*1024;
+};
+
+typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
+typedef mica::table::Result MicaResult;
+
+template <typename T>
+static uint64_t mica_hash(const T* key, size_t key_length) {
+    return ::mica::util::hash(key, key_length);
+}
+
 // Global data
 
 typedef struct {
@@ -51,6 +86,7 @@ typedef struct {
     leader_saveinfo_t leader_saveinfo;
     uint32_t client_current_leader_index;
     vector<raft_entry_t*> log_record;
+    FixedTable *table;
 } server_t;
 
 typedef enum ClientRespType {
@@ -158,6 +194,11 @@ int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
     client_req_t* client_req = (client_req_t*)ety->data.buf;
     assert(client_req->key[0] == client_req->value[0]); // This isn't a requirement. It's just how the test is currently set up.
     printf("Trying to apply log\n");
+    uint64_t key_hash = mica_hash(&client_req->key[0], sizeof(uint64_t));
+    FixedTable::ft_key_t ft_key;
+    ft_key.qword[0] = client_req->key[0];
+    MicaResult out_result = sv->table->set(key_hash, ft_key, (char*)(&client_req->value[0]));
+    assert(out_result == MicaResult::kSuccess);
     return 0;
 }
 
@@ -311,6 +352,7 @@ int client_main() {
 void raft_init() {
     printf("Starting raft server at ip %#lx\n", sv->own_ip_addr);
     sv->raft = raft_new();
+    sv->table = new FixedTable(kAppValueSize, 0);
     raft_set_election_timeout(sv->raft, kRaftElectionTimeoutMsec);
     raft_set_callbacks(sv->raft, &raft_funcs, (void*)sv);
     for (const auto& node_ip : sv->peer_ip_addrs) {
@@ -594,7 +636,7 @@ int server_main() {
 
         // Reply to clients if any entries have committed
         leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
-        printf("Log has %d entries\n", sv->log_record.size());
+        //printf("Log has %d entries\n", sv->log_record.size());
         if (!leader_sav.in_use) {
             continue;
         }
