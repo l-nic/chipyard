@@ -668,6 +668,7 @@ int main(int argc, char** argv) {
     __libc_init_array();
 
     // Initialize variables and parse arguments
+    printf("Started raft main\n");
     if (argc < 3) {
         printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
         return -1;
