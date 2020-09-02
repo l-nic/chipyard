@@ -40,8 +40,9 @@ PROGRAMS += lnic-incast-nolock
 PROGRAMS += lnic-evaluation
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
-PROGRAMS += lnic-int-collector-sw
-PROGRAMS += lnic-int-collector-opt
+PROGRAMS += lnic-postcard-agg-sw
+PROGRAMS += lnic-postcard-agg-opt
+PROGRAMS += lnic-int-collector
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
