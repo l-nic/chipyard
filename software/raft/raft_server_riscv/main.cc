@@ -284,9 +284,9 @@ int client_send_request(client_req_t* client_req) {
 
     // Receive the response from the cluster.
     // TODO: A real version would really need a timeout.
-    while (csr_read(0x52) == 0);
-    uint64_t header = csr_read(0x50);
-    uint64_t start_word = csr_read(0x50);
+    while (!lnic_ready());
+    uint64_t header = lnic_read();
+    uint64_t start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
     uint16_t msg_type = start_word_arr[0];
     assert(msg_type == ReqType::kClientReqResponse);
@@ -295,7 +295,7 @@ int client_send_request(client_req_t* client_req) {
     char* msg_buf = malloc(header & LEN_MASK);
     char* msg_current = msg_buf;
     for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = csr_read(0x50);
+        uint64_t data = lnic_read();
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
@@ -382,9 +382,9 @@ void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words) {
     header |= (uint64_t)dst_ip << 32;
     header |= (uint16_t)buf_words;// * sizeof(uint64_t);
     //printf("Writing header %#lx\n", header);
-    csr_write(0x51, header);
+    lnic_write_r(header);
     for (int i = 0; i < buf_words / sizeof(uint64_t); i++) {
-        csr_write(0x51, buffer[i]);
+        lnic_write_r(buffer[i]);
     }
 }
 
@@ -416,7 +416,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         printf("Cluster has no leader, replying with error\n");
         uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
         for (int i = 0; i < msg_len_words_remaining; i++) {
-            volatile uint64_t dump = csr_read(0x50);
+            volatile uint64_t dump = lnic_read();
         }
         send_client_response(header, start_word, ClientRespType::kFailTryAgain);
         return;
@@ -428,7 +428,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         printf("This is not the cluster leader, redirecting to %#x\n", leader_ip);
         uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
         for (int i = 0; i < msg_len_words_remaining; i++) {
-            volatile uint64_t dump = csr_read(0x50);
+            volatile uint64_t dump = lnic_read();
         }
         send_client_response(header, start_word, ClientRespType::kFailRedirect, leader_ip);
         return;
@@ -443,7 +443,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     memcpy(msg_current, &start_word, sizeof(uint64_t));
     msg_current += sizeof(uint64_t);
     for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = csr_read(0x50);
+        uint64_t data = lnic_read();
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
@@ -478,7 +478,7 @@ void service_request_vote(uint64_t header, uint64_t start_word) {
     memcpy(msg_current, &start_word, sizeof(uint64_t));
     msg_current += sizeof(uint64_t);
     for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = csr_read(0x50);
+        uint64_t data = lnic_read();
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
@@ -511,7 +511,7 @@ void service_request_vote_response(uint64_t header, uint64_t start_word) {
     memcpy(msg_current, &start_word, sizeof(uint64_t));
     msg_current += sizeof(uint64_t);
     for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = csr_read(0x50);
+        uint64_t data = lnic_read();
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
@@ -530,7 +530,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
     memcpy(msg_current, &start_word, sizeof(uint64_t));
     msg_current += sizeof(uint64_t);
     for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = csr_read(0x50);
+        uint64_t data = lnic_read();
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
@@ -583,7 +583,7 @@ void service_append_entries_response(uint64_t header, uint64_t start_word) {
     memcpy(msg_current, &start_word, sizeof(uint64_t));
     msg_current += sizeof(uint64_t);
     for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = csr_read(0x50);
+        uint64_t data = lnic_read();
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
@@ -601,12 +601,11 @@ void service_append_entries_response(uint64_t header, uint64_t start_word) {
 void service_pending_messages() {
     //lnic_wait();
     //uint64_t header = lnic_read();
-    //while (csr_read(0x52) == 0); // Wait for a message to arrive
-    if (csr_read(0x52) == 0) {
+    if (!lnic_ready()) {
         return;
     }
-    uint64_t header = csr_read(0x50);
-    uint64_t start_word = csr_read(0x50);
+    uint64_t header = lnic_read();
+    uint64_t start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
     uint16_t msg_type = start_word_arr[0];
     // printf("header is %#lx, start word is %#lx\n", header, start_word);
