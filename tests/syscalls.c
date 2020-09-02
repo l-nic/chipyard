@@ -456,7 +456,7 @@ static void init_tls()
 
 void _init(int cid, int nc)
 {
-  printf("early init\n");
+  //printf("early init\n");
   init_tls();
   if (cid == 0) {
     // uart_init();
