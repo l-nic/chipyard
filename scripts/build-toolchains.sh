@@ -110,7 +110,7 @@ else
         esac; ) || die 'obsolete make version; need GNU make 4.x or later'
 
     module_prepare riscv-gnu-toolchain qemu
-    module_build riscv-gnu-toolchain --prefix="${RISCV}" --with-cmodel=medany
+    module_build riscv-gnu-toolchain --prefix="${RISCV}" --with-cmodel=medany CFLAGS='-O2 -ffixed-x30 -ffixed-x31' CXXFLAGS='-O2 -ffixed-x30 -ffixed-x31'
     echo '==>  Building GNU/Linux toolchain'
     module_make riscv-gnu-toolchain linux
 fi
