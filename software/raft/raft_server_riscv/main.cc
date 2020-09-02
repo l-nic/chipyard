@@ -386,6 +386,7 @@ void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words) {
     for (int i = 0; i < buf_words / sizeof(uint64_t); i++) {
         lnic_write_r(buffer[i]);
     }
+    lnic_msg_done();
 }
 
 void send_client_response(uint64_t header, uint64_t start_word, ClientRespType resp_type, uint32_t leader_ip=0) {
@@ -665,6 +666,8 @@ int main(int argc, char** argv) {
     sbrk_init((long int*)data_end);
     atexit(__libc_fini_array);
     __libc_init_array();
+
+    lnic_add_context(0, 1);
 
     // Initialize variables and parse arguments
     printf("Started raft main\n");
