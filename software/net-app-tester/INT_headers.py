@@ -62,7 +62,7 @@ class NetworkEvent(Packet):
     fields_desc = [
         # word 1
         BitField("pad0", 0, 56),
-        ByteEnumField("event_type", 4, {0:"PATH",
+        ByteEnumField("event_type", 0, {0:"PATH",
                                         1:"PATH_LATENCY",
                                         2:"HOP_LATENCY",
                                         3:"QSIZE",

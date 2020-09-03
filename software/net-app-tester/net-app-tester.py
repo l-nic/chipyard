@@ -459,8 +459,35 @@ class INTCollectorTest(unittest.TestCase):
         return [swid, l1_ingress_port<<16 | l1_egress_port, hop_latency, qid<<24 | qsize,
                 ingress_time, egress_time, l2_ingress_port<<16 | l2_egress_port, tx_utilization]
 
-    def test_send_report(self):
-        swid = 1
+#    def test_send_report(self):
+#        swid = 1
+#        l1_ingress_port = 2
+#        l1_egress_port = 3
+#        hop_latency = 400
+#        qid = 0
+#        qsize = 600
+#        ingress_time = 700
+#        egress_time = 800
+#        l2_ingress_port = 5
+#        l2_egress_port = 1000
+#        tx_utilization = 1
+#        int_metadata = self.INT_metadata(swid, l1_ingress_port, l1_egress_port, hop_latency, qid, qsize,
+#                         ingress_time, egress_time, l2_ingress_port, l2_egress_port, tx_utilization)
+#        #NOTE: we will use the flow_dst_port to index the flow state for now ...
+#        report = self.INT_report(flow_dst_port=0, tx_msg_id=0, int_metadata=int_metadata)
+#
+#        print "Sending report pkt:"
+#        report.show()
+#        hexdump(report)
+#
+#        sendp(report, iface=TEST_IFACE)
+
+    def test_collector(self):
+        # NOTE: this param must match the constants defined in the collector src file
+        NUM_REPORTS = 100
+
+        NUM_HOPS = 6
+        # Create INT reports to send
         l1_ingress_port = 2
         l1_egress_port = 3
         hop_latency = 400
@@ -471,50 +498,42 @@ class INTCollectorTest(unittest.TestCase):
         l2_ingress_port = 5
         l2_egress_port = 1000
         tx_utilization = 1
-        int_metadata = self.INT_metadata(swid, l1_ingress_port, l1_egress_port, hop_latency, qid, qsize,
-                         ingress_time, egress_time, l2_ingress_port, l2_egress_port, tx_utilization)
+        int_metadata = []
+        for i in range(NUM_HOPS):
+            swid = i
+            int_metadata += self.INT_metadata(swid, l1_ingress_port, l1_egress_port, hop_latency, qid, qsize,
+                             ingress_time, egress_time, l2_ingress_port, l2_egress_port, tx_utilization)
         #NOTE: we will use the flow_dst_port to index the flow state for now ...
         report = self.INT_report(flow_dst_port=0, tx_msg_id=0, int_metadata=int_metadata)
+        inputs = [report.copy() for i in range(NUM_REPORTS)]
+        # assign a unique LNIC tx_msg_id to each report so that the NIC can properly reassemble
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i % 128
 
-        print "Sending report pkt:"
-        report.show()
-        hexdump(report)
-
-        sendp(report, iface=TEST_IFACE)
-
-#    def test_collector(self):
-#        # NOTE: these params must match the constants defined in the collector src file
-#        NUM_PKTS = 20
-#        NUM_HOPS = 3
-#        # Create raw postcards to send
-#        inputs = []
-#        for i in range(NUM_PKTS):
-#            inputs += [self.raw_postcard(i, 1)]*NUM_HOPS
-#        # assign a unique LNIC tx_msg_id to each postcard
-#        for p, i in zip(inputs, range(len(inputs))):
-#            p[LNIC].tx_msg_id = i
-#
-#        receiver = LNICReceiver(TEST_IFACE)
-#        # Create two sniffers, one to listen for aggregated postcards
-#        # and one to listen for the final done msg
-#        # start sniffing for responses
-#        postcard_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.AggPostcard) and x[LNIC].flags.DATA,
-#                    prn=receiver.process_pkt, count=NUM_PKTS, timeout=200)
-#        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.DoneMsg) and x[LNIC].flags.DATA,
-#                    prn=receiver.process_pkt, count=1, timeout=200)
-#        postcard_sniffer.start()
-#        done_sniffer.start()
-#        # send in pkts
-#        sendp(inputs, iface=TEST_IFACE)
-#        # wait for all responses
-#        postcard_sniffer.join()
-#        done_sniffer.join()
-#        # check responses
-#        for p in postcard_sniffer.results:
-#            self.assertEqual(p[Postcard.AggPostcard].total_qtime, NUM_HOPS)
-#        total_latency = done_sniffer.results[0].latency / 3.2e9 # seconds
-#        throughput = (NUM_PKTS * NUM_HOPS)/total_latency # postcards/second
-#        print 'throughput = {} M postcards/sec'.format(throughput/1e6)
+        receiver = LNICReceiver(TEST_IFACE)
+        # Create two sniffers, one to listen for NetworkEvents
+        # and one to listen for the final done msg
+        # start sniffing for responses
+        exp_num_events = 2 + 3*NUM_HOPS
+        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.NetworkEvent) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=exp_num_events, timeout=200)
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=1, timeout=200)
+        event_sniffer.start()
+        done_sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        event_sniffer.join()
+        done_sniffer.join()
+#        print "-------- Events: ---------"
+#        for p in event_sniffer.results:
+#            p.show()
+#            print '================================'
+#            print '================================'
+        total_latency = done_sniffer.results[0].latency / 3.2e9 # seconds
+        throughput = NUM_REPORTS/total_latency # postcards/second
+        print 'throughput = {} M reports/sec'.format(throughput/1e6)
 
 
 class INTCollectorOptTest(unittest.TestCase):
