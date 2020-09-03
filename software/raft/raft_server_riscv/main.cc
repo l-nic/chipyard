@@ -330,6 +330,7 @@ void change_leader_to_any() {
 }
 
 int client_main() {
+    printf("Starting client main\n");
     sv->client_current_leader_index = 0;
     while (true) {
         // Create a client request
@@ -370,7 +371,7 @@ void periodic_raft_wrapper() {
     uint64_t msec_elapsed = cycles_elapsed / kCyclesPerMsec;
     if (msec_elapsed > 0) {
         sv->last_cycles = cycles_now;
-        //printf("elapsed %ld\n", msec_elapsed);
+        printf("elapsed %ld\n", msec_elapsed);
         raft_periodic(sv->raft, msec_elapsed);
     } else {
         raft_periodic(sv->raft, 0);
@@ -628,6 +629,7 @@ void service_pending_messages() {
 }
 
 int server_main() {
+    printf("Starting server main\n");
     raft_init();
 
     while (true) {
@@ -685,6 +687,7 @@ int main(int argc, char** argv) {
         printf("Supplied NIC IP address is invalid.\n");
         return -1;
     }
+    printf("1\n");
     sv->own_ip_addr = nic_ip_addr;
     bool is_server = false;
     for (int i = 3; i < argc; i++) {
@@ -701,6 +704,7 @@ int main(int argc, char** argv) {
             is_server = true;
         }
     }
+    printf("2\n");
     sv->num_servers = sv->peer_ip_addrs.size();
 
     // Determine if client or server. Client will have an ip that is not a member of the peer ip set.
