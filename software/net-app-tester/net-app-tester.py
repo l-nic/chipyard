@@ -454,6 +454,21 @@ class INTCollectorTest(unittest.TestCase):
         p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
         return p
 
+    def INT_opt_report(self, flow_dst_port, tx_msg_id, int_metadata):
+        p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
+            IP(src=MY_IP, dst=NIC_IP, tos=0x17<<2)/ \
+            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=tx_msg_id)/ \
+            INT.Padding()/ \
+            INT.TelemetryReport_v1(ingressTimestamp=1524138290)/ \
+            Ether()/ \
+            IP(src="10.1.2.3", dst='10.4.5.6')/ \
+            UDP(sport=5000, dport=flow_dst_port)/ \
+            INT.INT_opt(length=3 + len(int_metadata)*2, hopMLen=16, ins=(1<<7|1<<6|1<<5|1<<4|1<<3|1<<2|1<<1|1)<<8,
+                INTMetadata=int_metadata)/ \
+            ('\x00'*8) # padding so the HW can insert a timestamp
+        p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        return p
+
     def INT_metadata(self, swid, l1_ingress_port, l1_egress_port, hop_latency, qid, qsize,
                            ingress_time, egress_time, l2_ingress_port, l2_egress_port, tx_utilization):
         return [swid, l1_ingress_port<<16 | l1_egress_port, hop_latency, qid<<24 | qsize,
@@ -484,7 +499,7 @@ class INTCollectorTest(unittest.TestCase):
 
     def test_collector(self):
         # NOTE: this param must match the constants defined in the collector src file
-        NUM_REPORTS = 20
+        NUM_REPORTS = 50
 
         NUM_HOPS = 6
         # Create INT reports to send
@@ -504,7 +519,7 @@ class INTCollectorTest(unittest.TestCase):
             int_metadata += self.INT_metadata(swid, l1_ingress_port, l1_egress_port, hop_latency, qid, qsize,
                              ingress_time, egress_time, l2_ingress_port, l2_egress_port, tx_utilization)
         #NOTE: we will use the flow_dst_port to index the flow state for now ...
-        report = self.INT_report(flow_dst_port=0, tx_msg_id=0, int_metadata=int_metadata)
+        report = self.INT_opt_report(flow_dst_port=0, tx_msg_id=0, int_metadata=int_metadata)
         inputs = [report.copy() for i in range(NUM_REPORTS)]
         # assign a unique LNIC tx_msg_id to each report so that the NIC can properly reassemble
         for p, i in zip(inputs, range(len(inputs))):
@@ -516,9 +531,9 @@ class INTCollectorTest(unittest.TestCase):
         # start sniffing for responses
         exp_num_events = 2 + 3*NUM_HOPS
         event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.NetworkEvent) and x[LNIC].flags.DATA,
-                    prn=receiver.process_pkt, count=exp_num_events, timeout=200)
+                    prn=receiver.process_pkt, count=exp_num_events, timeout=300)
         done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
-                    prn=receiver.process_pkt, count=1, timeout=200)
+                    prn=receiver.process_pkt, count=1, timeout=300)
         event_sniffer.start()
         done_sniffer.start()
         # send in pkts

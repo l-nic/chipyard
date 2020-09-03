@@ -49,6 +49,31 @@ class INT_v1(Packet):
         FieldListField("INTMetadata", [], XIntField("", None), count_from=lambda p:(p.length-3)/p.hopMLen)
     ]
 
+class INT_opt(Packet):
+    name = "INT Optimized"
+    fields_desc = [
+        ByteField("type", 1),
+        ByteField("shimRsvd1", 0),
+        ByteField("length", 0),
+        BitField("dscp", 0, 6),
+        BitField("shimRsvd2", 0, 2),
+
+        BitField("ver", 0, 4),
+        BitField("rep", 0, 2),
+        BitField("c", 0, 1),
+        BitField("e", 0, 1),
+        BitField("m", 0, 1),
+        BitField("rsvd1", 0, 7),
+        BitField("rsvd2", 0, 3),
+        BitField("hopMLen", 1, 5),
+        ByteField("remainHopCnt", 0),
+
+        XShortField("ins", 0),
+        ShortField("res", 0),
+
+        FieldListField("INTMetadata", [], XLongField("", None), count_from=lambda p:(p.length-3)/p.hopMLen)
+    ]
+
 class Padding(Packet):
     name = "Padding"
     fields_desc = [

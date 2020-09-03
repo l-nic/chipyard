@@ -6,7 +6,7 @@
 #include "mica/util/hash.h"
 #include "lnic.h"
 
-#define NUM_REPORTS 2
+#define NUM_REPORTS 50
 
 #define UPSTREAM_COLLECTOR_IP 0x0a000006
 #define UPSTREAM_COLLECTOR_PORT 0x1111
@@ -111,18 +111,6 @@ typedef struct {
   int tx_utilization;
 } link_state_t;
 
-uint32_t get_next_word(uint64_t *msg_word, int *rem_words) {
-  uint32_t next_word = (*msg_word) >> 32;
-  (*rem_words)--;
-  if ((*rem_words) > 0) {
-    *msg_word = (*msg_word) << 32;
-  } else {
-    *msg_word = lnic_read();
-    *rem_words = 2;
-  }
-  return next_word;
-}
-
 void process_msgs() {
   uint64_t upstream_collector_ip = UPSTREAM_COLLECTOR_IP;
 
@@ -147,7 +135,6 @@ void process_msgs() {
 
   int num_hops;
 
-  uint32_t meta_word;
   uint32_t swID;
   uint16_t l1_ingress_port;
   uint16_t l1_egress_port;
@@ -193,8 +180,8 @@ void process_msgs() {
     // wait for a report to arrive
     lnic_wait();
 
-    hash_cycles = 0;
-    PROFILE_POINT
+//    hash_cycles = 0;
+//    PROFILE_POINT
 
     // process app header
     lnic_read();
@@ -223,7 +210,7 @@ void process_msgs() {
     int_ins = (msg_word & 0xff000000) >> 24;
 
 //    printf("report_timestamp = %d\nsrc_ip = %x\ndst_ip = %x\nsrc_port = %d\ndst_port = %d\nint_hdr_len = %d\nhopMLen = %d\nint_ins = %x\n",
-//           report_timestamp, src_ip, dst_ip, src_port, dst_port, int_hdr_len, hopMLen, int_ins);
+//            report_timestamp, src_ip, dst_ip, src_port, dst_port, int_hdr_len, hopMLen, int_ins);
 
     // Compute flow_hash - NOTE: currently just using the dst_port. Should be a hash of the 5-tuple eventually
     flow_key.src_ip = src_ip;
@@ -261,24 +248,22 @@ void process_msgs() {
     uint8_t has_utilization = int_ins & UTILIZATION_MASK;
 
     num_hops = (hopMLen > 0) ? (int_hdr_len - 3)/hopMLen : 0;
-    msg_word = lnic_read();
-    int rem_words = 2; // # of words remaining in the current msg_word
 
-    PROFILE_POINT
+//    PROFILE_POINT
 
     for (i = 0; i < num_hops; i++) {
 //      printf("--- Hop %d ---\n", i);
       if (has_swID) {
-        swID = get_next_word(&msg_word, &rem_words);
+        swID = lnic_read();
         // detect path change & update flow path
         path_change |= (flowState[flow_hash].path[i] != swID);
         flowState[flow_hash].path[i] = swID;
 //        printf("swID = %d\n", swID);
       } 
       if (has_l1_ports) {
-        meta_word = get_next_word(&msg_word, &rem_words);
-        l1_ingress_port = (meta_word & 0xffff0000) >> 16;
-        l1_egress_port = meta_word & 0xffff;
+        msg_word = lnic_read();
+        l1_ingress_port = (msg_word & 0xffff0000) >> 16;
+        l1_egress_port = msg_word & 0xffff;
         // Compute link_hash - NOTE: currently just switch ID, should eventually be hash of switch ID ++ l1_egress_port
         link_key.swID = swID;
         link_key.portID = l1_egress_port;
@@ -290,7 +275,7 @@ void process_msgs() {
 //        printf("l1_ingress_port = %d\nl1_egress_port = %d\n", l1_ingress_port, l1_egress_port);
       }
       if (has_hop_latency) {
-        hop_latency = get_next_word(&msg_word, &rem_words);
+        hop_latency = lnic_read();
         path_latency += hop_latency;
         // Detect hop latency change & update state
         bool hop_latency_change = (flowState[flow_hash].hop_latency[i] != hop_latency);
@@ -314,9 +299,9 @@ void process_msgs() {
 //        printf("hop_latency = %d\n", hop_latency);
       }
       if (has_q_info) {
-        meta_word = get_next_word(&msg_word, &rem_words);
-        qID = (meta_word & 0xff000000) >> 24;
-        q_size = meta_word & 0xffffff;
+        msg_word = lnic_read();
+        qID = (msg_word & 0xff000000) >> 24;
+        q_size = msg_word & 0xffffff;
         // Compute q_hash - NOTE: currently just switch ID, should eventually be hash of switch ID ++ qID
         q_key.swID = swID;
         q_key.qID = qID;
@@ -349,21 +334,21 @@ void process_msgs() {
 //        printf("qID = %d\nq_size = %d\n", qID, q_size);
       }
       if (has_ingress_ts) {
-        ingress_timestamp = get_next_word(&msg_word, &rem_words);
+        ingress_timestamp = lnic_read();
 //        printf("ingress_timestamp = %d\n", ingress_timestamp);
       }
       if (has_egress_ts) {
-        egress_timestamp = get_next_word(&msg_word, &rem_words);
+        egress_timestamp = lnic_read();
 //        printf("egress_timestamp = %d\n", egress_timestamp);
       }
       if (has_l2_ports) {
-        meta_word = get_next_word(&msg_word, &rem_words);
-        l2_ingress_port = (meta_word & 0xffff0000) >> 16;
-        l2_egress_port = meta_word & 0xffff;
+        msg_word = lnic_read();
+        l2_ingress_port = (msg_word & 0xffff0000) >> 16;
+        l2_egress_port = msg_word & 0xffff;
 //        printf("l2_ingress_port = %d\nl2_egress_port = %d\n", l2_ingress_port, l2_egress_port);
       }
       if (has_utilization) {
-        tx_utilization = get_next_word(&msg_word, &rem_words);
+        tx_utilization = lnic_read();
 
         // Update linkState / Fire LinkUtilEvent
         if (linkState[link_hash].valid && (linkState[link_hash].link_key != link_key)) {
@@ -430,7 +415,7 @@ void process_msgs() {
 
     // NOTE: this assumes that the metadata words are 64-bit aligned.
     // read NIC timestamp
-    nic_ts = msg_word;
+    nic_ts = lnic_read();
 //    printf("nic_ts = %ld\n", nic_ts);
 
     // read NIC timestamp
@@ -439,16 +424,16 @@ void process_msgs() {
       first_recvd = true;
     }
 
-    PROFILE_POINT
-
-    // TODO(sibanez): print profile results
-    if (total_report_count == 1) {
-      printf("Profile Results:\n");
-      for (i = 0 ; i < prof_count-1; i++) {
-        printf("Points %d -> %d: %ld cycles\n", i, i+1, prof_cycles[i+1] - prof_cycles[i]);
-      }
-      printf("Hash cycles = %ld cycles\n", hash_cycles);
-    }
+//    PROFILE_POINT
+//
+//    // TODO(sibanez): print profile results
+//    if (total_report_count == 1) {
+//      printf("Profile Results:\n");
+//      for (i = 0 ; i < prof_count-1; i++) {
+//        printf("Points %d -> %d: %ld cycles\n", i, i+1, prof_cycles[i+1] - prof_cycles[i]);
+//      }
+//      printf("Hash cycles = %ld cycles\n", hash_cycles);
+//    }
 
     total_report_count++;
     // Check if all reports have been processed

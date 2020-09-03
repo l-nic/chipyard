@@ -43,6 +43,7 @@ PROGRAMS += lnic-multi-core-chain-rep
 PROGRAMS += lnic-postcard-agg-sw
 PROGRAMS += lnic-postcard-agg-opt
 PROGRAMS += lnic-int-collector
+PROGRAMS += lnic-int-collector-opt
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
@@ -67,6 +68,9 @@ lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o ci
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 lnic-int-collector.riscv: lnic-int-collector.o crt.o syscalls.o link.ld city_mod.o
+	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
+
+lnic-int-collector-opt.riscv: lnic-int-collector-opt.o crt.o syscalls.o link.ld city_mod.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 %.riscv: %.o crt.o syscalls.o link.ld
