@@ -3,9 +3,10 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "mica/util/hash.h"
 #include "lnic.h"
 
-#define NUM_REPORTS 100
+#define NUM_REPORTS 20
 
 #define UPSTREAM_COLLECTOR_IP 0x0a000006
 #define UPSTREAM_COLLECTOR_PORT 0x1111
@@ -13,9 +14,9 @@
 #define LATENCY_PORT 0x1234
 
 #define MAX_NUM_HOPS 8
-#define MAX_NUM_FLOWS 10
-#define MAX_NUM_QUEUES 10
-#define MAX_NUM_LINKS 10
+#define MAX_NUM_FLOWS 256
+#define MAX_NUM_QUEUES 256
+#define MAX_NUM_LINKS 256
 
 #define SWID_MASK 0x80
 #define L1_PORT_MASK 0x40
@@ -43,14 +44,48 @@
  *   - When an event is detected, send an event message upstream
  */
 
-/* State */
+template <typename T>
+static uint64_t mica_hash(const T *key, size_t key_length) {
+  return ::mica::util::hash(key, key_length);
+}
 
 typedef struct {
-  bool valid;
   uint32_t src_ip;
   uint32_t dst_ip;
   uint16_t src_port;
   uint16_t dst_port;
+} flow_key_t;
+
+bool operator!=(const flow_key_t& lhs, const flow_key_t& rhs)
+{
+    return (lhs.src_ip != rhs.src_ip) || (lhs.dst_ip != rhs.dst_ip) || (lhs.src_port != rhs.src_port) || (lhs.dst_port != rhs.dst_port);
+}
+
+typedef struct {
+  uint32_t swID;
+  uint16_t qID;
+} q_key_t;
+
+bool operator!=(const q_key_t& lhs, const q_key_t& rhs)
+{
+    return (lhs.swID != rhs.swID) || (lhs.qID != rhs.qID);
+}
+
+typedef struct {
+  uint32_t swID;
+  uint16_t portID;
+} link_key_t;
+
+bool operator!=(const link_key_t& lhs, const link_key_t& rhs)
+{
+    return (lhs.swID != rhs.swID) || (lhs.portID != rhs.portID);
+}
+
+/* State */
+
+typedef struct {
+  bool valid;
+  flow_key_t flow_key;
   int num_hops;
   int path[MAX_NUM_HOPS];
   uint64_t path_latency;
@@ -59,15 +94,13 @@ typedef struct {
 
 typedef struct {
   bool valid;
-  int swID;
-  uint16_t qID;
+  q_key_t q_key;
   int q_size;
 } q_state_t;
 
 typedef struct {
   bool valid;
-  int swID;
-  uint16_t portID;
+  link_key_t link_key;
   int tx_utilization;
 } link_state_t;
 
@@ -91,6 +124,10 @@ void process_msgs() {
   uint64_t nic_ts;
   uint64_t tx_msg_word;
   int i;
+
+  flow_key_t flow_key;
+  q_key_t q_key;
+  link_key_t link_key;
 
   uint32_t report_timestamp;
   uint32_t src_ip;
@@ -171,26 +208,24 @@ void process_msgs() {
 //    printf("report_timestamp = %d\nsrc_ip = %x\ndst_ip = %x\nsrc_port = %d\ndst_port = %d\nint_hdr_len = %d\nhopMLen = %d\nint_ins = %x\n",
 //           report_timestamp, src_ip, dst_ip, src_port, dst_port, int_hdr_len, hopMLen, int_ins);
 
-    // Compute flow key - NOTE: currently just using the dst_port. Should be a hash of the 5-tuple eventually
-    uint8_t flow_key = (uint8_t)dst_port;
-    uint8_t link_key;
-    uint8_t q_key;
+    // Compute flow_hash - NOTE: currently just using the dst_port. Should be a hash of the 5-tuple eventually
+    flow_key.src_ip = src_ip;
+    flow_key.dst_ip = dst_ip;
+    flow_key.src_port = src_port;
+    flow_key.dst_port = dst_port;
+    uint8_t flow_hash = mica_hash(&flow_key, sizeof(flow_key));
+    uint8_t link_hash;
+    uint8_t q_hash;
 
     // Detect flow hash collisions
-    if (flowState[flow_key].valid && (flowState[flow_key].src_ip != src_ip ||
-                                      flowState[flow_key].dst_ip != dst_ip ||
-                                      flowState[flow_key].src_port != src_port ||
-                                      flowState[flow_key].dst_port != dst_port)) {
+    if (flowState[flow_hash].valid && (flowState[flow_hash].flow_key != flow_key)) {
       printf("ERROR: hash collision on flow state!\n");
       return;
     }
-    bool is_new_flow = !flowState[flow_key].valid;
+    bool is_new_flow = !flowState[flow_hash].valid;
     // insert flow
-    flowState[flow_key].valid = true;
-    flowState[flow_key].src_ip = src_ip;
-    flowState[flow_key].dst_ip = dst_ip;
-    flowState[flow_key].src_port = src_port;
-    flowState[flow_key].dst_port = dst_port;
+    flowState[flow_hash].valid = true;
+    flowState[flow_hash].flow_key = flow_key;
 
     bool path_change = false;
     uint64_t path_latency = 0;
@@ -203,24 +238,26 @@ void process_msgs() {
       if (int_ins & SWID_MASK) {
         swID = get_next_word(&msg_word, &rem_words);
         // detect path change & update flow path
-        path_change = (flowState[flow_key].path[i] != swID);
-        flowState[flow_key].path[i] = swID;
+        path_change = (flowState[flow_hash].path[i] != swID);
+        flowState[flow_hash].path[i] = swID;
 //        printf("swID = %d\n", swID);
       } 
       if (int_ins & L1_PORT_MASK) {
         meta_word = get_next_word(&msg_word, &rem_words);
         l1_ingress_port = (meta_word & 0xffff0000) >> 16;
         l1_egress_port = meta_word & 0xffff;
-        // Compute link_key - NOTE: currently just switch ID, should eventually be hash of switch ID ++ l1_egress_port
-        link_key = (uint8_t)swID;
+        // Compute link_hash - NOTE: currently just switch ID, should eventually be hash of switch ID ++ l1_egress_port
+        link_key.swID = swID;
+        link_key.portID = l1_egress_port;
+        link_hash = mica_hash(&link_key, sizeof(link_key));
 //        printf("l1_ingress_port = %d\nl1_egress_port = %d\n", l1_ingress_port, l1_egress_port);
       }
       if (int_ins & HOP_LATENCY_MASK) {
         hop_latency = get_next_word(&msg_word, &rem_words);
         path_latency += hop_latency;
         // Detect hop latency change & update state
-        bool hop_latency_change = (flowState[flow_key].hop_latency[i] != hop_latency);
-        flowState[flow_key].hop_latency[i] = hop_latency;
+        bool hop_latency_change = (flowState[flow_hash].hop_latency[i] != hop_latency);
+        flowState[flow_hash].hop_latency[i] = hop_latency;
         if (is_new_flow || hop_latency_change) {
           // Fire HopLatencyEvent
           tx_app_hdr = (upstream_collector_ip << 32)
@@ -243,19 +280,20 @@ void process_msgs() {
         meta_word = get_next_word(&msg_word, &rem_words);
         qID = (meta_word & 0xff000000) >> 24;
         q_size = meta_word & 0xffffff;
-        // Compute q_key - NOTE: currently just switch ID, should eventually be hash of switch ID ++ qID
-        q_key = (uint8_t)swID;
+        // Compute q_hash - NOTE: currently just switch ID, should eventually be hash of switch ID ++ qID
+        q_key.swID = swID;
+        q_key.qID = qID;
+        q_hash = mica_hash(&q_key, sizeof(q_key));
         // Update qState / Fire QueueSize event
-        if (qState[q_key].valid && (qState[q_key].swID != swID || qState[q_key].qID != qID)) {
-          printf("ERROR: hash collision on qState. Existing swID/qID = %d/%d, New swID/qID = %d/%d\n", qState[q_key].swID, qState[q_key].qID, swID, qID);
+        if (qState[q_hash].valid && (qState[q_hash].q_key != q_key)) {
+          printf("ERROR: hash collision on qState. Existing swID/qID = %d/%d, New swID/qID = %d/%d\n", qState[q_hash].q_key.swID, qState[q_hash].q_key.qID, swID, qID);
           return;
-        } else if (!qState[q_key].valid || (qState[q_key].q_size != q_size)) {
+        } else if (!qState[q_hash].valid || (qState[q_hash].q_size != q_size)) {
           // This is a new measurement or the measurement has changed!
           // Update state
-          qState[q_key].valid = true;
-          qState[q_key].swID = swID;
-          qState[q_key].qID = qID;
-          qState[q_key].q_size = q_size;
+          qState[q_hash].valid = true;
+          qState[q_hash].q_key = q_key;
+          qState[q_hash].q_size = q_size;
           // Fire QueueSize Event
           tx_app_hdr = (upstream_collector_ip << 32)
                        | (UPSTREAM_COLLECTOR_PORT << 16)
@@ -287,16 +325,15 @@ void process_msgs() {
         tx_utilization = get_next_word(&msg_word, &rem_words);
 
         // Update linkState / Fire LinkUtilEvent
-        if (linkState[link_key].valid && (linkState[link_key].swID != swID || linkState[link_key].portID != l1_egress_port)) {
-          printf("ERROR: hash collision on linkState. Existing swID/portID = %d/%d, New swID/portID = %d/%d\n", linkState[link_key].swID, linkState[link_key].portID, swID, l1_egress_port);
+        if (linkState[link_hash].valid && (linkState[link_hash].link_key != link_key)) {
+          printf("ERROR: hash collision on linkState. Existing swID/portID = %d/%d, New swID/portID = %d/%d\n", linkState[link_hash].link_key.swID, linkState[link_hash].link_key.portID, swID, l1_egress_port);
           return;
-        } else if (!linkState[link_key].valid || (linkState[link_key].tx_utilization != tx_utilization)) {
+        } else if (!linkState[link_hash].valid || (linkState[link_hash].tx_utilization != tx_utilization)) {
           // This is a new measurement or the measurement has changed!
           // Update state
-          linkState[link_key].valid = true;
-          linkState[link_key].swID = swID;
-          linkState[link_key].portID = l1_egress_port;
-          linkState[link_key].tx_utilization = tx_utilization;
+          linkState[link_hash].valid = true;
+          linkState[link_hash].link_key = link_key;
+          linkState[link_hash].tx_utilization = tx_utilization;
           // Fire LinkUtilEvent
           tx_app_hdr = (upstream_collector_ip << 32)
                        | (UPSTREAM_COLLECTOR_PORT << 16)
@@ -327,13 +364,13 @@ void process_msgs() {
       tx_msg_word = (tx_msg_word << 32) | num_hops;
       lnic_write_r(tx_msg_word);
       for (i = 0; i < num_hops; i++) {
-        lnic_write_r(flowState[flow_key].path[i]);
+        lnic_write_r(flowState[flow_hash].path[i]);
       }
     }
 
     // detect path latency changes and fire PathLatency Event
-    bool path_latency_change = (flowState[flow_key].path_latency != path_latency);
-    flowState[flow_key].path_latency = path_latency;
+    bool path_latency_change = (flowState[flow_hash].path_latency != path_latency);
+    flowState[flow_hash].path_latency = path_latency;
     if (is_new_flow || path_latency_change) {
       tx_app_hdr = (upstream_collector_ip << 32)
                    | (UPSTREAM_COLLECTOR_PORT << 16)
@@ -378,6 +415,8 @@ void process_msgs() {
   }
 }
 
+extern "C" {
+
 // Only use core 0
 int main(int argc, char** argv) {
   uint64_t context_id = 0;
@@ -389,3 +428,4 @@ int main(int argc, char** argv) {
   return 0;
 }
 
+}

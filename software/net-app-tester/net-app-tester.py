@@ -484,7 +484,7 @@ class INTCollectorTest(unittest.TestCase):
 
     def test_collector(self):
         # NOTE: this param must match the constants defined in the collector src file
-        NUM_REPORTS = 100
+        NUM_REPORTS = 20
 
         NUM_HOPS = 6
         # Create INT reports to send
