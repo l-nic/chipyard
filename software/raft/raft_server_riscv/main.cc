@@ -30,11 +30,12 @@ extern "C" {
 
 // Raft server constants
 const uint32_t kBaseClusterIpAddr = 0xa000002;
-const uint64_t kRaftElectionTimeoutMsec = 5000;
-const uint64_t kCyclesPerMsec = 10000;
+const uint64_t kRaftElectionTimeoutMsec = 500;
+const uint64_t kCyclesPerMsec = 3200000;
 const uint64_t kAppKeySize = 16;
 const uint64_t kAppValueSize = 64;
 const uint64_t kAppNumKeys = 8*1024; // 8K keys
+const uint32_t kStallLoopTurnsPerCount = 1000;
 
 struct MyFixedTableConfig {
   static constexpr size_t kBucketCap = 7;
@@ -87,6 +88,7 @@ typedef struct {
     uint32_t client_current_leader_index;
     vector<raft_entry_t*> log_record;
     FixedTable *table;
+    uint32_t stall_count;
 } server_t;
 
 typedef enum ClientRespType {
@@ -284,7 +286,8 @@ int client_send_request(client_req_t* client_req) {
 
     // Receive the response from the cluster.
     // TODO: A real version would really need a timeout.
-    while (!lnic_ready());
+    lnic_wait();
+    printf("Received message\n");
     uint64_t header = lnic_read();
     uint64_t start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
@@ -299,6 +302,7 @@ int client_send_request(client_req_t* client_req) {
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
+    lnic_msg_done();
     client_resp_t* client_response = (client_resp_t*)msg_buf;
     printf("Message response type is %d\n", client_response->resp_type);
     if (client_response->resp_type == ClientRespType::kSuccess) {
@@ -330,6 +334,7 @@ void change_leader_to_any() {
 }
 
 int client_main() {
+    printf("Starting client main\n");
     sv->client_current_leader_index = 0;
     while (true) {
         // Create a client request
@@ -377,16 +382,15 @@ void periodic_raft_wrapper() {
     }
 }
 
-void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words) {
+void __attribute__((noinline)) send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words) {
     uint64_t header = 0;
     header |= (uint64_t)dst_ip << 32;
     header |= (uint16_t)buf_words;// * sizeof(uint64_t);
-    //printf("Writing header %#lx\n", header);
+    printf("Writing header %#lx\n", header);
     lnic_write_r(header);
     for (int i = 0; i < buf_words / sizeof(uint64_t); i++) {
         lnic_write_r(buffer[i]);
     }
-    lnic_msg_done();
 }
 
 void send_client_response(uint64_t header, uint64_t start_word, ClientRespType resp_type, uint32_t leader_ip=0) {
@@ -394,9 +398,11 @@ void send_client_response(uint64_t header, uint64_t start_word, ClientRespType r
     client_response.resp_type = resp_type;
     client_response.leader_ip = leader_ip;
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
+    printf("Sending client response to %#x\n", src_ip);
     uint32_t buf_size = sizeof(client_resp_t) + sizeof(uint64_t);
     if (buf_size % sizeof(uint64_t) != 0)
         buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
+    printf("Response size is %d\n", buf_size);
     char* buffer = malloc(buf_size);
     uint32_t msg_id = ReqType::kClientReqResponse;
     memcpy(buffer, &msg_id, sizeof(uint32_t));
@@ -419,6 +425,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         for (int i = 0; i < msg_len_words_remaining; i++) {
             volatile uint64_t dump = lnic_read();
         }
+        lnic_msg_done();
         send_client_response(header, start_word, ClientRespType::kFailTryAgain);
         return;
     }
@@ -431,6 +438,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         for (int i = 0; i < msg_len_words_remaining; i++) {
             volatile uint64_t dump = lnic_read();
         }
+        lnic_msg_done();
         send_client_response(header, start_word, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
@@ -448,6 +456,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
+    lnic_msg_done();
 
     
 
@@ -483,6 +492,7 @@ void service_request_vote(uint64_t header, uint64_t start_word) {
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
+    lnic_msg_done();
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
     //printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
@@ -516,11 +526,12 @@ void service_request_vote_response(uint64_t header, uint64_t start_word) {
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
+    lnic_msg_done();
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
     int raft_retval = raft_recv_requestvote_response(sv->raft, raft_get_node(sv->raft, src_ip), (msg_requestvote_response_t*)(msg_buf + sizeof(uint64_t)));
     assert(raft_retval == 0);
-    //printf("Received requestvote response\n");
+    printf("Received requestvote response\n");
     free(msg_buf);
 }
 
@@ -535,6 +546,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
+    lnic_msg_done();
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
 
@@ -588,6 +600,7 @@ void service_append_entries_response(uint64_t header, uint64_t start_word) {
         memcpy(msg_current, &data, sizeof(uint64_t));
         msg_current += sizeof(uint64_t);
     }
+    lnic_msg_done();
 
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
     //printf("Entering raft call with message of size %d\n", header & LEN_MASK);
@@ -603,6 +616,7 @@ void service_pending_messages() {
     //lnic_wait();
     //uint64_t header = lnic_read();
     if (!lnic_ready()) {
+        lnic_idle();
         return;
     }
     uint64_t header = lnic_read();
@@ -628,11 +642,19 @@ void service_pending_messages() {
 }
 
 int server_main() {
+    printf("Starting server main\n");
     raft_init();
 
     while (true) {
         periodic_raft_wrapper();
         service_pending_messages();
+
+        raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
+        if (leader_node == nullptr) {
+            continue;
+        }
+        uint32_t leader_ip = raft_node_get_id(leader_node);
+        printf("Current leader ip is %#x\n", leader_ip);
 
         // Reply to clients if any entries have committed
         leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
@@ -649,16 +671,16 @@ int server_main() {
             leader_sav.in_use = false;
             send_client_response(leader_sav.header, leader_sav.start_word, ClientRespType::kSuccess, 0);
         }
-
-        // raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
-        // if (leader_node == nullptr) {
-        //     continue;
-        // }
-        // uint32_t leader_ip = raft_node_get_id(leader_node);
-        //printf("Current leader ip is %#x\n", leader_ip);
     }
 
     return 0;
+}
+
+void stall_start() {
+    uint32_t stall_cycles = sv->stall_count * kStallLoopTurnsPerCount;
+    for (uint32_t i = 0; i < stall_cycles; i++) {
+        asm volatile("nop");
+    }
 }
 
 int main(int argc, char** argv) {
@@ -685,6 +707,7 @@ int main(int argc, char** argv) {
         printf("Supplied NIC IP address is invalid.\n");
         return -1;
     }
+    printf("1\n");
     sv->own_ip_addr = nic_ip_addr;
     bool is_server = false;
     for (int i = 3; i < argc; i++) {
@@ -699,16 +722,23 @@ int main(int argc, char** argv) {
         sv->peer_ip_addrs.push_back(peer_ip);
         if (peer_ip == sv->own_ip_addr) {
             is_server = true;
+            sv->stall_count = i - 3;
+            srand(i - 3);
         }
     }
+    printf("2\n");
     sv->num_servers = sv->peer_ip_addrs.size();
 
     // Determine if client or server. Client will have an ip that is not a member of the peer ip set.
     if (!is_server) {
         // This is a client
+        sv->stall_count = sv->num_servers;
+        srand(sv->num_servers);
+        stall_start();
         return client_main();
     } else {
         // This is a server
+        stall_start();
         return server_main();
     }
 
