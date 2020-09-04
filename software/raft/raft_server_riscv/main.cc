@@ -127,7 +127,7 @@ void send_message(uint32_t dst_ip, uint64_t* buffer, uint32_t buf_words);
 
 int __raft_send_requestvote(raft_server_t* raft, void *user_data, raft_node_t *node, msg_requestvote_t* m) {
     uint32_t dst_ip = raft_node_get_id(node);
-    printf("Requesting vote from %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
+    //printf("Requesting vote from %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
     uint32_t buf_size = sizeof(msg_requestvote_t) + sizeof(uint64_t);
     if (buf_size % sizeof(uint64_t) != 0)
         buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
@@ -195,7 +195,7 @@ int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
     assert(ety->data.len == sizeof(client_req_t));
     client_req_t* client_req = (client_req_t*)ety->data.buf;
     assert(client_req->key[0] == client_req->value[0]); // This isn't a requirement. It's just how the test is currently set up.
-    printf("Trying to apply log\n");
+    //printf("Trying to apply log\n");
     uint64_t key_hash = mica_hash(&client_req->key[0], sizeof(uint64_t));
     FixedTable::ft_key_t ft_key;
     ft_key.qword[0] = client_req->key[0];
@@ -216,8 +216,8 @@ int __raft_persist_term(raft_server_t* raft, void* udata, const int current_term
 
 int __raft_logentry_offer(raft_server_t* raft, void *udata, raft_entry_t *ety, int ety_idx) {
     assert(!raft_entry_is_cfg_change(ety));
-    printf("Entry length is %d\n", ety->data.len);
-    printf("Struct length is %d\n", sizeof(client_req_t));
+    //printf("Entry length is %d\n", ety->data.len);
+    //printf("Struct length is %d\n", sizeof(client_req_t));
     assert(ety->data.len == sizeof(client_req_t));
 
     // Not truly persistent, but at least allows us to track an easily accessible log record
@@ -225,25 +225,25 @@ int __raft_logentry_offer(raft_server_t* raft, void *udata, raft_entry_t *ety, i
 
     // TODO: erpc does some tricks here with persistent memory. Do we need to do that?
 
-    printf("Offered entry\n");
+    //printf("Offered entry\n");
     return 0;
 }
 
 int __raft_logentry_poll(raft_server_t* raft, void *udata, raft_entry_t *entry, int ety_idx) {
-    printf("This application does not support log compaction.\n");
+    //printf("This application does not support log compaction.\n");
     assert(false);
     return -1;
 }
 
 int __raft_logentry_pop(raft_server_t* raft, void *udata, raft_entry_t *entry, int ety_idx) {
     free(entry->data.buf); // TODO: This will only work as long as the data is heap-allocated
-    printf("Popped entry.\n");
+    //printf("Popped entry.\n");
     sv->log_record.pop_back();
     return 0;
 }
 
 int __raft_node_has_sufficient_logs(raft_server_t* raft, void *user_data, raft_node_t* node) {
-    printf("Checking sufficient logs\n");
+    //printf("Checking sufficient logs\n");
     return 0;
 }
 
@@ -280,14 +280,15 @@ int client_send_request(client_req_t* client_req) {
     memcpy(buffer, &msg_id, sizeof(uint32_t));
     memcpy(buffer + sizeof(uint32_t), &src_ip, sizeof(uint32_t));
     memcpy(buffer + sizeof(uint64_t), client_req, sizeof(client_req_t));
+    uint64_t start_time = csr_read(mcycle); // TODO: This isn't a great metric, but it's a start
     send_message(dst_ip, (uint64_t*)buffer, buf_size);
     free(buffer);
-    printf("Sent message\n");
+    //printf("Sent message\n");
 
     // Receive the response from the cluster.
     // TODO: A real version would really need a timeout.
     lnic_wait();
-    printf("Received message\n");
+    //printf("Received message\n");
     uint64_t header = lnic_read();
     uint64_t start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
@@ -304,7 +305,9 @@ int client_send_request(client_req_t* client_req) {
     }
     lnic_msg_done();
     client_resp_t* client_response = (client_resp_t*)msg_buf;
-    printf("Message response type is %d\n", client_response->resp_type);
+    uint64_t finish_time = csr_read(mcycle);
+    uint64_t elapsed_time = finish_time - start_time;
+    printf("Message response type is %d, elapsed time is %ld cycles\n", client_response->resp_type, elapsed_time);
     if (client_response->resp_type == ClientRespType::kSuccess) {
         printf("Request commited.\n");
         return 0;
@@ -386,7 +389,7 @@ void __attribute__((noinline)) send_message(uint32_t dst_ip, uint64_t* buffer, u
     uint64_t header = 0;
     header |= (uint64_t)dst_ip << 32;
     header |= (uint16_t)buf_words;// * sizeof(uint64_t);
-    printf("Writing header %#lx\n", header);
+    //printf("Writing header %#lx\n", header);
     lnic_write_r(header);
     for (int i = 0; i < buf_words / sizeof(uint64_t); i++) {
         lnic_write_r(buffer[i]);
@@ -398,11 +401,11 @@ void send_client_response(uint64_t header, uint64_t start_word, ClientRespType r
     client_response.resp_type = resp_type;
     client_response.leader_ip = leader_ip;
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
-    printf("Sending client response to %#x\n", src_ip);
+    //printf("Sending client response to %#x\n", src_ip);
     uint32_t buf_size = sizeof(client_resp_t) + sizeof(uint64_t);
     if (buf_size % sizeof(uint64_t) != 0)
         buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
-    printf("Response size is %d\n", buf_size);
+    //printf("Response size is %d\n", buf_size);
     char* buffer = malloc(buf_size);
     uint32_t msg_id = ReqType::kClientReqResponse;
     memcpy(buffer, &msg_id, sizeof(uint32_t));
@@ -416,11 +419,11 @@ uint32_t get_random() {
 }
 
 void service_client_message(uint64_t header, uint64_t start_word) {
-    printf("Received client request with header %#lx\n", header);
+    //printf("Received client request with header %#lx\n", header);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
     if (leader == nullptr) {
         // Cluster doesn't have a leader, reply with error.
-        printf("Cluster has no leader, replying with error\n");
+        //printf("Cluster has no leader, replying with error\n");
         uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
         for (int i = 0; i < msg_len_words_remaining; i++) {
             volatile uint64_t dump = lnic_read();
@@ -433,7 +436,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     uint32_t leader_ip = raft_node_get_id(leader);
     if (leader_ip != sv->own_ip_addr) {
         // This is not the cluster leader, reply with actual leader.
-        printf("This is not the cluster leader, redirecting to %#x\n", leader_ip);
+        //printf("This is not the cluster leader, redirecting to %#x\n", leader_ip);
         uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
         for (int i = 0; i < msg_len_words_remaining; i++) {
             volatile uint64_t dump = lnic_read();
@@ -473,10 +476,10 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     ent.id = get_random(); // TODO: Check this!
     ent.data.buf = msg_buf + sizeof(uint64_t);
     ent.data.len = (header & LEN_MASK) - sizeof(uint64_t);
-    printf("Header length is %d and entry length is %d\n", (header & LEN_MASK), ent.data.len);
+    //printf("Header length is %d and entry length is %d\n", (header & LEN_MASK), ent.data.len);
 
     // Send the entry into the raft library handlers
-    printf("Adding raft log entry\n");
+    //printf("Adding raft log entry\n");
     int raft_retval = raft_recv_entry(sv->raft, &ent, &leader_sav.msg_entry_response);
     assert(raft_retval == 0);
 }
@@ -531,7 +534,7 @@ void service_request_vote_response(uint64_t header, uint64_t start_word) {
     uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
     int raft_retval = raft_recv_requestvote_response(sv->raft, raft_get_node(sv->raft, src_ip), (msg_requestvote_response_t*)(msg_buf + sizeof(uint64_t)));
     assert(raft_retval == 0);
-    printf("Received requestvote response\n");
+    //printf("Received requestvote response\n");
     free(msg_buf);
 }
 
@@ -565,7 +568,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
     }
 
     if (append_entries->n_entries != 0) {
-        printf("Received non-zero number of entries\n");
+        //printf("Received non-zero number of entries\n");
     }
 
     //printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
@@ -654,7 +657,7 @@ int server_main() {
             continue;
         }
         uint32_t leader_ip = raft_node_get_id(leader_node);
-        printf("Current leader ip is %#x\n", leader_ip);
+        //printf("Current leader ip is %#x\n", leader_ip);
 
         // Reply to clients if any entries have committed
         leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
@@ -662,7 +665,7 @@ int server_main() {
         if (!leader_sav.in_use) {
             continue;
         }
-        printf("Leader has saved a response\n");
+        //printf("Leader has saved a response\n");
         int commit_status = raft_msg_entry_response_committed(sv->raft, &leader_sav.msg_entry_response);
         assert(commit_status == 0 || commit_status == 1);
         if (commit_status == 1) {
