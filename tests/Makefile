@@ -44,6 +44,7 @@ PROGRAMS += lnic-postcard-agg-sw
 PROGRAMS += lnic-postcard-agg-opt
 PROGRAMS += lnic-int-collector
 PROGRAMS += lnic-int-collector-opt
+PROGRAMS += lnic-int-heavy-hitter
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

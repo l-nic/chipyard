@@ -164,12 +164,62 @@ class LinkUtilEvent(Packet):
 bind_layers(NetworkEvent, LinkUtilEvent, event_type=4)
 
 
+# ------------- INT Heavy Hitter Prevention Use Case -------------
+
+class INT_HH_report(Packet):
+    name = "INT_HH_report"
+    fields_desc = [
+        # word 1
+        IPField("src_ip", "0.0.0.0"),
+        IPField("dst_ip", "0.0.0.0"),
+        # word 2
+        ShortField("src_port", 0),
+        ShortField("dst_port", 0),
+        IntField("proto", 0),
+        # word 3
+        BitField("unused", 0, 56),
+        FlagsField("flow_flags", 0, 8, ["DATA", "START", "FIN", "R0", "R1", "R2", "R3", "R4"]),
+        # word 4
+        LongField("report_timestamp", 0), # ns
+        # word 5
+        LongField("pkt_len", 0),
+        # word 6
+        LongField("ingress_switch_ip", 0),
+        # word 7
+        LongField("nic_timestamp", 0)
+    ]
+
+class HH_header(Packet):
+    name = "HH_header"
+    fields_desc = [
+        LongField("msg_type", 0)
+    ]
+
+class HH_event(Packet):
+    name = "HH_event"
+    fields_desc = [
+        # word 1
+        IPField("src_ip", "0.0.0.0"),
+        IPField("dst_ip", "0.0.0.0"),
+        # word 2
+        ShortField("src_port", 0),
+        ShortField("dst_port", 0),
+        IntField("proto", 0),
+        # word 3
+        IntField("timestamp", 0),
+        IntField("latency", 0)
+    ]
+bind_layers(HH_header, HH_event, msg_type=0)
+
+# ----------------------------------------------------------------
+
 class DoneMsg(Packet):
     name = "DoneMsg"
     fields_desc = [
         IntField("timestamp", 0),
         IntField("latency", 0)
     ]
+bind_layers(HH_header, DoneMsg, msg_type=1)
 
 if __name__ == "__main__":
 

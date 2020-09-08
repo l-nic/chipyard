@@ -452,6 +452,8 @@ class INTCollectorTest(unittest.TestCase):
                 INTMetadata=int_metadata)/ \
             ('\x00'*8) # padding so the HW can insert a timestamp
         p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        print "len(INT report) = {} bytes".format(len(p))
+        print "len(int_metadata) = {}".format(len(int_metadata))
         return p
 
     def INT_opt_report(self, flow_dst_port, tx_msg_id, int_metadata):
@@ -499,7 +501,7 @@ class INTCollectorTest(unittest.TestCase):
 
     def test_collector(self):
         # NOTE: this param must match the constants defined in the collector src file
-        NUM_REPORTS = 50
+        NUM_REPORTS = 2
 
         NUM_HOPS = 6
         # Create INT reports to send
@@ -519,7 +521,7 @@ class INTCollectorTest(unittest.TestCase):
             int_metadata += self.INT_metadata(swid, l1_ingress_port, l1_egress_port, hop_latency, qid, qsize,
                              ingress_time, egress_time, l2_ingress_port, l2_egress_port, tx_utilization)
         #NOTE: we will use the flow_dst_port to index the flow state for now ...
-        report = self.INT_opt_report(flow_dst_port=0, tx_msg_id=0, int_metadata=int_metadata)
+        report = self.INT_report(flow_dst_port=0, tx_msg_id=0, int_metadata=int_metadata)
         inputs = [report.copy() for i in range(NUM_REPORTS)]
         # assign a unique LNIC tx_msg_id to each report so that the NIC can properly reassemble
         for p, i in zip(inputs, range(len(inputs))):
@@ -551,7 +553,67 @@ class INTCollectorTest(unittest.TestCase):
         print 'throughput = {} M reports/sec'.format(throughput/1e6)
 
 
-class INTCollectorOptTest(unittest.TestCase):
+class INTHHTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, INT.HH_header, dst_context=LATENCY_CONTEXT)
+
+    def INT_report(self):
+        pkt_len = 1500
+        flow_dst_port = 0
+        ingress_switch_ip = 0x0a010100
+        p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
+            IP(src=MY_IP, dst=NIC_IP)/ \
+            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=0)/ \
+            INT.INT_HH_report(src_ip='10.2.2.2', dst_ip='10.3.3.3', src_port=0, dst_port=flow_dst_port, proto=0,
+                          pkt_len=pkt_len, ingress_switch_ip=ingress_switch_ip)
+
+        p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        return p
+
+    def test_hh(self):
+        # NOTE: this param must match the constants defined in the collector src file
+        NUM_REPORTS = 50
+
+        # TODO(sibanez): generate reports and compute expected number of HH events that should be generated.
+        inputs = []
+        for i in range(NUM_REPORTS):
+            p = self.INT_report()
+            p[LNIC].tx_msg_id = i % 128
+            p[INT.INT_HH_report].report_timestamp = i*5000
+            p[INT.INT_HH_report].flow_flags.DATA = True
+            if i == 0:
+                p[INT.INT_HH_report].flow_flags.START = True
+            if i == NUM_REPORTS-1:
+                p[INT.INT_HH_report].flow_flags.FIN = True
+            inputs.append(p)
+
+        receiver = LNICReceiver(TEST_IFACE)
+        # Create two sniffers, one to listen for NetworkEvents
+        # and one to listen for the final done msg
+        # start sniffing for responses
+        exp_num_events = 0
+#        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.HH_event) and x[LNIC].flags.DATA,
+#                    prn=receiver.process_pkt, count=exp_num_events, timeout=300)
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=1, timeout=300)
+#        event_sniffer.start()
+        done_sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+#        event_sniffer.join()
+        done_sniffer.join()
+#        print "-------- Events: ---------"
+#        for p in event_sniffer.results:
+#            p.show()
+#            print '================================'
+#            print '================================'
+        total_latency = done_sniffer.results[0].latency / 3.2e9 # seconds
+        throughput = NUM_REPORTS/total_latency # postcards/second
+        print 'throughput = {} M reports/sec'.format(throughput/1e6)
+
+
+class PostcardOptTest(unittest.TestCase):
     def setUp(self):
         bind_layers(LNIC, Postcard.RawPostcard, dst_context=0)
         bind_layers(LNIC, Postcard.AggPostcard, dst_context=Postcard.UPSTREAM_COLLECTOR_PORT)
