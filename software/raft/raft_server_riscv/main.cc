@@ -227,7 +227,7 @@ int __raft_logentry_offer(raft_server_t* raft, void *udata, raft_entry_t *ety, i
     assert(ety->data.len == sizeof(client_req_t));
 
     // Not truly persistent, but at least allows us to track an easily accessible log record
-    sv->log_record.push_back(ety);
+    //sv->log_record.push_back(ety);
 
     // TODO: erpc does some tricks here with persistent memory. Do we need to do that?
 
@@ -244,7 +244,7 @@ int __raft_logentry_poll(raft_server_t* raft, void *udata, raft_entry_t *entry, 
 int __raft_logentry_pop(raft_server_t* raft, void *udata, raft_entry_t *entry, int ety_idx) {
     free(entry->data.buf); // TODO: This will only work as long as the data is heap-allocated
     //printf("Popped entry.\n");
-    sv->log_record.pop_back();
+    //sv->log_record.pop_back();
     return 0;
 }
 
@@ -676,16 +676,22 @@ void service_pending_messages() {
 int server_main() {
     printf("Starting server main\n");
     raft_init();
+    int periodic_counter = 0;
 
     while (true) {
-        periodic_raft_wrapper();
+        if (periodic_counter == 100) {
+            periodic_raft_wrapper();
+            periodic_counter = 0;
+        } else {
+            periodic_counter++;
+        }
         service_pending_messages();
 
-        raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
-        if (leader_node == nullptr) {
-            continue;
-        }
-        uint32_t leader_ip = raft_node_get_id(leader_node);
+        // raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
+        // if (leader_node == nullptr) {
+        //     continue;
+        // }
+        // uint32_t leader_ip = raft_node_get_id(leader_node);
         //printf("Current leader ip is %#x\n", leader_ip);
 
         // Reply to clients if any entries have committed
