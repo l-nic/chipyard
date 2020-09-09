@@ -209,9 +209,51 @@ class HH_event(Packet):
         IntField("timestamp", 0),
         IntField("latency", 0)
     ]
-bind_layers(HH_header, HH_event, msg_type=0)
+bind_layers(HH_header, HH_event, msg_type=1)
 
-# ----------------------------------------------------------------
+# -----------------------------------------------------------------------
+# ------------- INT Path Latency Anomaly Detection Use Case -------------
+
+class INT_PathLatency_report(Packet):
+    name = "INT_PathLatency_report"
+    fields_desc = [
+        # word 1
+        IPField("src_ip", "0.0.0.0"),
+        IPField("dst_ip", "0.0.0.0"),
+        # word 2
+        ShortField("src_port", 0),
+        ShortField("dst_port", 0),
+        IntField("proto", 0),
+        # word 3
+        BitField("unused", 0, 56),
+        FlagsField("flow_flags", 0, 8, ["DATA", "START", "FIN", "R0", "R1", "R2", "R3", "R4"]),
+        # word 4
+        LongField("num_hops", 0),
+        # word 5 -> 5+N-1
+        FieldListField("hop_latencies", [], LongField("", 0), count_from=lambda p:p.num_hops),
+        # word 5+N
+        LongField("nic_timestamp", 0)
+    ]
+
+class PathLatencyAnomaly_event(Packet):
+    name = "PathLatencyAnomaly_event"
+    fields_desc = [
+        # word 1
+        IPField("src_ip", "0.0.0.0"),
+        IPField("dst_ip", "0.0.0.0"),
+        # word 2
+        ShortField("src_port", 0),
+        ShortField("dst_port", 0),
+        IntField("proto", 0),
+        # word 3
+        LongField("path_latency", 0),
+        # word 4
+        IntField("timestamp", 0),
+        IntField("latency", 0)
+    ]
+bind_layers(HH_header, PathLatencyAnomaly_event, msg_type=2)
+
+# -----------------------------------------------------------------------
 
 class DoneMsg(Packet):
     name = "DoneMsg"
@@ -219,7 +261,7 @@ class DoneMsg(Packet):
         IntField("timestamp", 0),
         IntField("latency", 0)
     ]
-bind_layers(HH_header, DoneMsg, msg_type=1)
+bind_layers(HH_header, DoneMsg, msg_type=0)
 
 if __name__ == "__main__":
 

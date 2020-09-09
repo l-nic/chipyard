@@ -557,59 +557,165 @@ class INTHHTest(unittest.TestCase):
     def setUp(self):
         bind_layers(LNIC, INT.HH_header, dst_context=LATENCY_CONTEXT)
 
-    def INT_report(self):
+    def INT_report(self, dst_context, flow_id):
         pkt_len = 1500
-        flow_dst_port = 0
         ingress_switch_ip = 0x0a010100
         p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
             IP(src=MY_IP, dst=NIC_IP)/ \
-            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=0)/ \
-            INT.INT_HH_report(src_ip='10.2.2.2', dst_ip='10.3.3.3', src_port=0, dst_port=flow_dst_port, proto=0,
+            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=dst_context)/ \
+            INT.INT_HH_report(src_ip='10.2.2.2', dst_ip='10.3.3.3', src_port=0, dst_port=flow_id, proto=0,
                           pkt_len=pkt_len, ingress_switch_ip=ingress_switch_ip)
 
         p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
         return p
 
-    def test_hh(self):
-        # NOTE: this param must match the constants defined in the collector src file
-        NUM_REPORTS = 50
+    def do_hh_test(self, inputs, num_cores, exp_num_events):
+        receiver = LNICReceiver(TEST_IFACE)
+        # Create two sniffers, one to listen for NetworkEvents
+        # and one to listen for the final done msg
+        # start sniffing for responses
+        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.HH_event) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=exp_num_events, timeout=300) if exp_num_events > 0 else None
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=num_cores, timeout=300)
+        if event_sniffer is not None:
+            event_sniffer.start()
+        done_sniffer.start()
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        if event_sniffer is not None:
+            event_sniffer.join()
+        done_sniffer.join()
+        if event_sniffer is not None:
+            print "-------- Events: ---------"
+            for p in event_sniffer.results:
+                p.show()
+                print '================================'
+                print '================================'
+        total_latency = done_sniffer.results[-1].latency / 3.2e9 # seconds
+        throughput = len(inputs)/total_latency # postcards/second
+        print 'throughput = {} M reports/sec'.format(throughput/1e6)
 
-        # TODO(sibanez): generate reports and compute expected number of HH events that should be generated.
+#    def test_num_cores(self):
+#        # NOTE: this param must match the constants defined in the collector src file
+#        NUM_CORES = 4
+#        NUM_REPORTS_PER_CORE = 50
+#
+#        # TODO(sibanez): generate reports and compute expected number of HH events that should be generated.
+#        inputs = []
+#        for i in range(NUM_REPORTS_PER_CORE):
+#            for c in range(NUM_CORES):
+#                p = self.INT_report(dst_context=c, flow_id=0)
+#                p[LNIC].tx_msg_id = (c*NUM_REPORTS_PER_CORE + i) % 128
+#                p[INT.INT_HH_report].report_timestamp = i*5000
+#                p[INT.INT_HH_report].flow_flags.DATA = True
+#                if i == 0:
+#                    p[INT.INT_HH_report].flow_flags.START = True
+#                inputs.append(p)
+#
+#        self.do_hh_test(inputs, NUM_CORES, 0)
+
+#    def test_num_flows(self):
+#        NUM_FLOWS = 10
+#        NUM_REPORTS_PER_FLOW = 3
+#        REPEAT_FLOWS = 1
+#        # NOTE: NUM_REPORTS_PER_CORE = NUM_FLOWS * NUM_REPORTS_PER_FLOW * REPEAT_FLOWS
+#
+#        inputs = []
+#        for f in range(NUM_FLOWS):
+#            for i in range(NUM_REPORTS_PER_FLOW):
+#                p = self.INT_report(dst_context=0, flow_id=f)
+#                p[LNIC].tx_msg_id = (f*NUM_FLOWS + i) % 128
+#                p[INT.INT_HH_report].report_timestamp = i*5000
+#                p[INT.INT_HH_report].flow_flags.DATA = True
+#                if i == 0:
+#                    p[INT.INT_HH_report].flow_flags.START = True
+#                if i == NUM_REPORTS_PER_FLOW-1:
+#                    p[INT.INT_HH_report].flow_flags.FIN = True
+#                inputs.append(p)
+#        inputs = inputs * REPEAT_FLOWS
+#
+#        self.do_hh_test(inputs, 1, 0)
+
+    def test_detection_latency(self):
+        NUM_REPORTS = 2
+
         inputs = []
         for i in range(NUM_REPORTS):
-            p = self.INT_report()
+            p = self.INT_report(dst_context=0, flow_id=0)
             p[LNIC].tx_msg_id = i % 128
-            p[INT.INT_HH_report].report_timestamp = i*5000
+            p[INT.INT_HH_report].report_timestamp = i*500
             p[INT.INT_HH_report].flow_flags.DATA = True
             if i == 0:
                 p[INT.INT_HH_report].flow_flags.START = True
-            if i == NUM_REPORTS-1:
-                p[INT.INT_HH_report].flow_flags.FIN = True
             inputs.append(p)
+
+        self.do_hh_test(inputs, 1, 1)
+
+
+class INTPathLatencyTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, INT.HH_header, dst_context=LATENCY_CONTEXT)
+
+    def INT_report(self, dst_context, flow_id, hop_latencies):
+        pkt_len = 1500
+        p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
+            IP(src=MY_IP, dst=NIC_IP)/ \
+            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=dst_context)/ \
+            INT.INT_PathLatency_report(src_ip='10.2.2.2', dst_ip='10.3.3.3', src_port=0, dst_port=flow_id, proto=0,
+                          num_hops=len(hop_latencies), hop_latencies=hop_latencies)
+
+        p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        return p
+
+    def test_path_latency(self):
+        # NOTE: this must match the source file
+        NUM_REPORTS_PER_CORE = 50
+
+        NUM_CORES = 1
+        NUM_HOPS = 4
+
+        exp_num_events = 0
+
+        hop_latencies = [100 for i in range(NUM_HOPS)]
+        inputs = []
+        for i in range(NUM_REPORTS_PER_CORE):
+            for c in range(NUM_CORES):
+                p = self.INT_report(dst_context=c, flow_id=0, hop_latencies=hop_latencies)
+                p[INT.INT_PathLatency_report].flow_flags.DATA = True
+                if i == 0:
+                    p[INT.INT_PathLatency_report].flow_flags.START = True
+                inputs.append(p)
+
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i % 128
 
         receiver = LNICReceiver(TEST_IFACE)
         # Create two sniffers, one to listen for NetworkEvents
         # and one to listen for the final done msg
         # start sniffing for responses
-        exp_num_events = 0
-#        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.HH_event) and x[LNIC].flags.DATA,
-#                    prn=receiver.process_pkt, count=exp_num_events, timeout=300)
+        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.PathLatencyAnomaly_event) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=exp_num_events, timeout=300) if exp_num_events > 0 else None
         done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
-                    prn=receiver.process_pkt, count=1, timeout=300)
-#        event_sniffer.start()
+                    prn=receiver.process_pkt, count=NUM_CORES, timeout=300)
+        if event_sniffer is not None:
+            event_sniffer.start()
         done_sniffer.start()
         # send in pkts
         sendp(inputs, iface=TEST_IFACE)
         # wait for all responses
-#        event_sniffer.join()
+        if event_sniffer is not None:
+            event_sniffer.join()
         done_sniffer.join()
-#        print "-------- Events: ---------"
-#        for p in event_sniffer.results:
-#            p.show()
-#            print '================================'
-#            print '================================'
-        total_latency = done_sniffer.results[0].latency / 3.2e9 # seconds
-        throughput = NUM_REPORTS/total_latency # postcards/second
+        if event_sniffer is not None:
+            print "-------- Events: ---------"
+            for p in event_sniffer.results:
+                p.show()
+                print '================================'
+                print '================================'
+        total_latency = done_sniffer.results[-1].latency / 3.2e9 # seconds
+        throughput = len(inputs)/total_latency # postcards/second
         print 'throughput = {} M reports/sec'.format(throughput/1e6)
 
 
