@@ -31,7 +31,8 @@ extern "C" {
 // Raft server constants
 const uint32_t kBaseClusterIpAddr = 0xa000002;
 const uint64_t kRaftElectionTimeoutMsec = 500;
-const uint64_t kCyclesPerMsec = 3200000;
+//const uint64_t kCyclesPerMsec = 3200000;
+const uint64_t kCyclesPerMsec = 320000;
 const uint64_t kAppKeySize = 16;
 const uint64_t kAppValueSize = 64;
 const uint64_t kAppNumKeys = 8*1024; // 8K keys
@@ -145,10 +146,10 @@ int __raft_send_requestvote(raft_server_t* raft, void *user_data, raft_node_t *n
 int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t *node, msg_appendentries_t* m) {
     // TODO: Remove this temporary debug check
     //printf("Sending appendentries\n");
-    for (int i = 0; i < m->n_entries; i++) {
-        printf("Checking assert\n");
-        assert(m->entries[i].data.len == sizeof(client_req_t));
-    }
+    // for (int i = 0; i < m->n_entries; i++) {
+    //     printf("Checking assert\n");
+    //     assert(m->entries[i].data.len == sizeof(client_req_t));
+    // }
 
     // Prepare and send the header
     uint32_t dst_ip = raft_node_get_id(node);
@@ -546,7 +547,7 @@ void service_request_vote_response(uint64_t header, uint64_t start_word) {
 }
 
 void service_append_entries(uint64_t header, uint64_t start_word) {
-    //printf("Received append entries from %x\n", (header & 0xffffffff00000000) >> 32);
+    printf("Received append entries from %x\n", (header & 0xffffffff00000000) >> 32);
     // Read in the appendentries structure
     msg_appendentries_t m;
     uint64_t* m_data = (uint64_t)&m;
@@ -614,7 +615,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
 
 void service_append_entries_response(uint64_t header, uint64_t start_word) {
     // Read in the message
-    //printf("Receiving append entries response\n");
+    printf("Receiving append entries response\n");
     msg_appendentries_response_t response;
     uint64_t* response_data = (uint64_t*)&response;
     response_data[0] = start_word;

@@ -131,6 +131,7 @@ void handle_client_reads(uint32_t ip_addr) {
 
     // Read in the rest of the message
     uint64_t msg_len = header & LEN_MASK;
+    uint32_t src_ip_lower = (header & 0xffff0000) >> 16;
     char* buffer = new char[msg_len + sizeof(uint64_t)];
     memcpy(buffer, &header, sizeof(uint64_t)); // TODO: This will get the message size across and in the correct position, but the rest of the format is wrong
     total_len = 0;
@@ -144,6 +145,11 @@ void handle_client_reads(uint32_t ip_addr) {
     } while (total_len < msg_len);
 
     uint32_t dst_ip = (header & IP_MASK) >> 32;
+    uint64_t src_ip = (dst_ip & 0xffff0000) | src_ip_lower;
+    header = 0;
+    header |= msg_len;
+    header |= (src_ip << 32);
+    memcpy(buffer, &header, sizeof(uint64_t));
     send_to_client(dst_ip, buffer, msg_len + sizeof(uint64_t));
     delete [] buffer;
   }
@@ -157,7 +163,7 @@ int main( int argc, char* argv[] )
   if (_server_fd < 0) {
     return -1;
   }
-  int client_connections_retval = accept_client_connections(3);
+  int client_connections_retval = accept_client_connections(4);
   if (client_connections_retval < 0) {
     return -1;
   }
