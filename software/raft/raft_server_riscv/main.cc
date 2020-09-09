@@ -143,50 +143,56 @@ int __raft_send_requestvote(raft_server_t* raft, void *user_data, raft_node_t *n
 }
 
 int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t *node, msg_appendentries_t* m) {
-    //printf("Sending append entries\n");
-    uint32_t buf_size = sizeof(msg_appendentries_t) + sizeof(uint64_t);
+    // TODO: Remove this temporary debug check
+    //printf("Sending appendentries\n");
     for (int i = 0; i < m->n_entries; i++) {
-        //printf("Entry size is %d\n", m->entries[i].data.len);
-        buf_size += sizeof(msg_entry_t) + m->entries[i].data.len;
-    }
-    if (buf_size % sizeof(uint64_t) != 0)
-        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
-    char* buffer = malloc(buf_size);
-    char* buf_now = buffer;
-
-    // Copy in extra header metadata
-    uint32_t msg_id = ReqType::kAppendEntries;
-    uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
-    memcpy(buf_now, &msg_id, sizeof(uint32_t));
-    buf_now += sizeof(uint32_t);
-    memcpy(buf_now, &src_ip, sizeof(uint32_t));
-    buf_now += sizeof(uint32_t);
-
-    // Copy in the appendentries structure, preserving the local entries pointer
-    memcpy(buf_now, m, sizeof(msg_appendentries_t));
-    msg_appendentries_t* buf_appendentries = (msg_appendentries_t*)buf_now;
-    buf_appendentries->entries = nullptr;
-    buf_now += sizeof(msg_appendentries_t);
-
-    // Copy in the per-entry information
-    for (int i = 0; i < m->n_entries; i++) {
-        msg_entry_t* current_entry = &m->entries[i];
-        memcpy(buf_now, current_entry, sizeof(msg_entry_t));
-        msg_entry_t* buf_entry = (msg_entry_t*)buf_now;
-        buf_entry->data.buf = nullptr;
-        buf_now += sizeof(msg_entry_t);
-        
-        // Copy in the entry data
-        // TODO: The entry data format should be more specifically defined
-        memcpy(buf_now, m->entries[i].data.buf, m->entries[i].data.len);
-        buf_now += m->entries[i].data.len;
+        printf("Checking assert\n");
+        assert(m->entries[i].data.len == sizeof(client_req_t));
     }
 
+    // Prepare and send the header
     uint32_t dst_ip = raft_node_get_id(node);
-    send_message(dst_ip, (uint64_t*)buffer, buf_size);
-    free(buffer);
-    //printf("Sent appendentries\n");
+    uint32_t buf_size = sizeof(msg_appendentries_t);
+    buf_size += m->n_entries * (sizeof(msg_entry_t) + sizeof(client_req_t));
+    uint64_t header = 0;
+    header |= (uint64_t)dst_ip << 32;
+    header |= (uint16_t)buf_size;
+    lnic_write_r(header);
 
+    // Prepare and send the main appendentries structure
+    // This is a fixed size, so it's faster without a loop
+    m->msg_id = ReqType::kAppendEntries;
+    uint64_t* m_data = (uint64_t*)m;
+    lnic_write_r(m_data[0]);
+    lnic_write_r(m_data[1]);
+    lnic_write_r(m_data[2]);
+    lnic_write_r(m_data[3]);
+    lnic_write_r(m_data[4]);
+    lnic_write_r(m_data[5]);
+
+    // Prepare and send the data for each entry
+    for (int i = 0; i < m->n_entries; i++) {
+        // Send the entry metadata
+        msg_entry_t* current_entry = &m->entries[i]; 
+        uint64_t* entry_data = (uint64_t*)current_entry;
+        lnic_write_r(entry_data[0]);
+        lnic_write_r(entry_data[1]);
+        lnic_write_r(entry_data[2]);
+        lnic_write_r(entry_data[3]);
+
+        // Send the client request
+        uint64_t* msg_data = (uint64_t*)current_entry->data.buf;
+        lnic_write_r(msg_data[0]);
+        lnic_write_r(msg_data[1]);
+        lnic_write_r(msg_data[2]);
+        lnic_write_r(msg_data[3]);
+        lnic_write_r(msg_data[4]);
+        lnic_write_r(msg_data[5]);
+        lnic_write_r(msg_data[6]);
+        lnic_write_r(msg_data[7]);
+        lnic_write_r(msg_data[8]);
+        lnic_write_r(msg_data[9]);
+    }
     return 0;
 }
 
@@ -447,6 +453,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     }
 
     // This is actually the leader
+    printf("Leader servicing client message\n");
 
     // Read in the rest of the message. TODO: This should eventually be brought into the raft library or at least not done with malloc
     uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
@@ -539,80 +546,88 @@ void service_request_vote_response(uint64_t header, uint64_t start_word) {
 }
 
 void service_append_entries(uint64_t header, uint64_t start_word) {
-    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
-    char* msg_buf = malloc(header & LEN_MASK);
-    char* msg_current = msg_buf;
-    memcpy(msg_current, &start_word, sizeof(uint64_t));
-    msg_current += sizeof(uint64_t);
-    for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = lnic_read();
-        memcpy(msg_current, &data, sizeof(uint64_t));
-        msg_current += sizeof(uint64_t);
+    //printf("Received append entries from %x\n", (header & 0xffffffff00000000) >> 32);
+    // Read in the appendentries structure
+    msg_appendentries_t m;
+    uint64_t* m_data = (uint64_t)&m;
+    m_data[0] = start_word;
+    m_data[1] = lnic_read();
+    m_data[2] = lnic_read();
+    m_data[3] = lnic_read();
+    m_data[4] = lnic_read();
+    m_data[5] = lnic_read();
+
+    // Read in the per-entry data. This has to use malloc so that it persists.
+    if (m.n_entries > 0) {
+        m.entries = malloc(sizeof(msg_entry_t)*m.n_entries);
+        for (int i = 0; i < m.n_entries; i++) {
+            // Read in the entry metadata
+            msg_entry_t* current_entry = &m.entries[i];
+            uint64_t* entry_data = (uint64_t*)current_entry;
+            entry_data[0] = lnic_read();
+            entry_data[1] = lnic_read();
+            entry_data[2] = lnic_read();
+            entry_data[3] = lnic_read();
+
+            // Read in the client request. This also needs to use malloc.
+            current_entry->data.buf = malloc(sizeof(client_req_t));
+            uint64_t* msg_data = (uint64_t*)current_entry->data.buf;
+            msg_data[0] = lnic_read();
+            msg_data[1] = lnic_read();
+            msg_data[2] = lnic_read();
+            msg_data[3] = lnic_read();
+            msg_data[4] = lnic_read();
+            msg_data[5] = lnic_read();
+            msg_data[6] = lnic_read();
+            msg_data[7] = lnic_read();
+            msg_data[8] = lnic_read();
+            msg_data[9] = lnic_read();
+        }
+    } else {
+        m.entries = nullptr;
     }
     lnic_msg_done();
+    //printf("starting to process appendentries\n");
 
-    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
-
-    msg_appendentries_t* append_entries = (msg_appendentries_t*)(msg_buf + sizeof(uint64_t));
-    if (append_entries->n_entries > 0) {
-        char* per_entry_buf = msg_buf + sizeof(uint64_t) + sizeof(msg_appendentries_t);
-        append_entries->entries = malloc(sizeof(msg_entry_t)*append_entries->n_entries); // TODO: Get rid of these extra malloc's
-        for (int i = 0; i < append_entries->n_entries; i++) {
-            msg_entry_t* current_entry = &append_entries->entries[i];
-            memcpy(current_entry, per_entry_buf, sizeof(msg_entry_t));
-            per_entry_buf += sizeof(msg_entry_t);
-            current_entry->data.buf = malloc(current_entry->data.len);
-            memcpy(current_entry->data.buf, per_entry_buf, current_entry->data.len);
-            per_entry_buf += current_entry->data.len;
-        }
-    }
-
-    if (append_entries->n_entries != 0) {
-        //printf("Received non-zero number of entries\n");
-    }
-
-    //printf("Source ip is %x, node is %#lx\n", src_ip, raft_get_node(sv->raft, src_ip));
+    // Process the reassembled request
+    uint32_t src_ip = (header & 0xffffffff00000000) >> 32;
     msg_appendentries_response_t msg_response_buf;
-    int raft_retval = raft_recv_appendentries(sv->raft, raft_get_node(sv->raft, src_ip), append_entries, &msg_response_buf);
+    int raft_retval = raft_recv_appendentries(sv->raft, raft_get_node(sv->raft, src_ip), &m, &msg_response_buf);
     assert(raft_retval == 0);
-    //printf("Received appendentries\n");
-    free(msg_buf);
+    //printf("starting to send append entries response\n");
 
     // Send the response to the appendentries request
-    uint32_t buf_size = sizeof(msg_appendentries_response_t) + sizeof(uint64_t);
-    if (buf_size % sizeof(uint64_t) != 0)
-        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
-    char* buffer = malloc(buf_size);
-    uint32_t msg_id = ReqType::kAppendEntriesResponse;
-    memcpy(buffer, &msg_id, sizeof(uint32_t));
-    memcpy(buffer + sizeof(uint32_t), &sv->own_ip_addr, sizeof(uint32_t));
-    memcpy(buffer + sizeof(uint64_t), &msg_response_buf, sizeof(msg_appendentries_response_t));
-    send_message(src_ip, (uint64_t*)buffer, buf_size);
-    free(buffer);
+    // Send the header
+    header = 0;
+    header |= (uint64_t)src_ip << 32;
+    header |= (uint16_t)(sizeof(msg_appendentries_response_t));
+    lnic_write_r(header);
+
+    // Send the message
+    msg_response_buf.msg_id = ReqType::kAppendEntriesResponse;
+    uint64_t* msg_response_data = (uint64_t*)&msg_response_buf;
+    lnic_write_r(msg_response_data[0]);
+    lnic_write_r(msg_response_data[1]);
+    lnic_write_r(msg_response_data[2]);
+    lnic_write_r(msg_response_data[3]);
 }
 
 void service_append_entries_response(uint64_t header, uint64_t start_word) {
-    //printf("Receiving appendentries response\n");
-    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
-    char* msg_buf = malloc(header & LEN_MASK);
-    char* msg_current = msg_buf;
-    memcpy(msg_current, &start_word, sizeof(uint64_t));
-    msg_current += sizeof(uint64_t);
-    for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = lnic_read();
-        memcpy(msg_current, &data, sizeof(uint64_t));
-        msg_current += sizeof(uint64_t);
-    }
+    // Read in the message
+    //printf("Receiving append entries response\n");
+    msg_appendentries_response_t response;
+    uint64_t* response_data = (uint64_t*)&response;
+    response_data[0] = start_word;
+    response_data[1] = lnic_read();
+    response_data[2] = lnic_read();
+    response_data[3] = lnic_read();
     lnic_msg_done();
+    //printf("finished reading response\n");
 
-    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
-    //printf("Entering raft call with message of size %d\n", header & LEN_MASK);
-    int raft_retval = raft_recv_appendentries_response(sv->raft, raft_get_node(sv->raft, src_ip), (msg_appendentries_response_t*)(msg_buf + sizeof(uint64_t)));
-    //printf("raft retval is %d\n", raft_retval);
+    // Process the reassembled message
+    uint32_t src_ip = (header & 0xffffffff00000000) >> 32;
+    int raft_retval = raft_recv_appendentries_response(sv->raft, raft_get_node(sv->raft, src_ip), &response);
     assert(raft_retval == 0 || raft_retval == RAFT_ERR_NOT_LEADER);
-    //printf("Server received append entries but is not the leader\n");
-    //printf("Received appendentries response\n");
-    free(msg_buf);
 }
 
 void service_pending_messages() {
@@ -693,6 +708,10 @@ int main(int argc, char** argv) {
     __libc_init_array();
 
     lnic_add_context(0, 1);
+    printf("append entries struct size is: %d\n", sizeof(msg_appendentries_t));
+    printf("response size is: %d\n", sizeof(msg_appendentries_response_t));
+    printf("entry size is: %d\n", sizeof(msg_entry_t));
+    printf("client req size is: %d\n", sizeof(client_req_t));
 
     // Initialize variables and parse arguments
     printf("Started raft main\n");
