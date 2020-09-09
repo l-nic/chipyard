@@ -454,7 +454,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     }
 
     // This is actually the leader
-    printf("Leader servicing client message\n");
+    //printf("Leader servicing client message\n");
 
     // Read in the rest of the message. TODO: This should eventually be brought into the raft library or at least not done with malloc
     uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
@@ -547,7 +547,7 @@ void service_request_vote_response(uint64_t header, uint64_t start_word) {
 }
 
 void service_append_entries(uint64_t header, uint64_t start_word) {
-    printf("Received append entries from %x\n", (header & 0xffffffff00000000) >> 32);
+    //printf("Received append entries from %x\n", (header & 0xffffffff00000000) >> 32);
     // Read in the appendentries structure
     msg_appendentries_t m;
     uint64_t* m_data = (uint64_t)&m;
@@ -615,7 +615,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
 
 void service_append_entries_response(uint64_t header, uint64_t start_word) {
     // Read in the message
-    printf("Receiving append entries response\n");
+    //printf("Receiving append entries response\n");
     msg_appendentries_response_t response;
     uint64_t* response_data = (uint64_t*)&response;
     response_data[0] = start_word;
