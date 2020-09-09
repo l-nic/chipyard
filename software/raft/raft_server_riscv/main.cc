@@ -31,8 +31,8 @@ extern "C" {
 // Raft server constants
 const uint32_t kBaseClusterIpAddr = 0xa000002;
 const uint64_t kRaftElectionTimeoutMsec = 500;
-//const uint64_t kCyclesPerMsec = 3200000;
-const uint64_t kCyclesPerMsec = 320000;
+const uint64_t kCyclesPerMsec = 3200000;
+//const uint64_t kCyclesPerMsec = 320000;
 const uint64_t kAppKeySize = 16;
 const uint64_t kAppValueSize = 64;
 const uint64_t kAppNumKeys = 8*1024; // 8K keys
