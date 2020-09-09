@@ -364,10 +364,6 @@ int client_main() {
         do {
             send_retval = client_send_request(&client_req);
         } while (send_retval != 0);
-
-        
-
-        while (1);
     }
 }
 
