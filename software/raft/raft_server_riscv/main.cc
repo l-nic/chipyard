@@ -75,7 +75,6 @@ static uint64_t mica_hash(const T* key, size_t key_length) {
 typedef struct {
     bool in_use = false;
     uint64_t header;
-    uint64_t start_word;
     msg_entry_response_t msg_entry_response;
 } leader_saveinfo_t;
 
@@ -274,47 +273,55 @@ raft_cbs_t raft_funcs = {
 // TODO: Make sure all message structs are packed
 
 int client_send_request(client_req_t* client_req) {
-    // Send the request to the current raft leader
-    uint32_t dst_ip = sv->peer_ip_addrs[sv->client_current_leader_index];
+    // Send the request to the current raft leader, and start tracking the time
+    uint64_t dst_ip = sv->peer_ip_addrs[sv->client_current_leader_index];
     printf("Client sending request to %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
-    uint32_t buf_size = sizeof(client_req_t) + sizeof(uint64_t);
-    if (buf_size % sizeof(uint64_t) != 0)
-        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
-    char* buffer = malloc(buf_size);
-    printf("Buf size is %d\n", buf_size);
-    uint32_t msg_id = ReqType::kClientReq;
-    uint32_t src_ip = sv->own_ip_addr; // TODO: The NIC will eventually handle this for us
-    memcpy(buffer, &msg_id, sizeof(uint32_t));
-    memcpy(buffer + sizeof(uint32_t), &src_ip, sizeof(uint32_t));
-    memcpy(buffer + sizeof(uint64_t), client_req, sizeof(client_req_t));
     uint64_t start_time = csr_read(mcycle); // TODO: This isn't a great metric, but it's a start
-    send_message(dst_ip, (uint64_t*)buffer, buf_size);
-    free(buffer);
-    //printf("Sent message\n");
+
+    // Build and send the header and start word
+    uint64_t header = 0;
+    header |= (uint16_t)(sizeof(client_req_t) + sizeof(uint64_t));
+    header |= (dst_ip << 32);
+    lnic_write_r(header);
+    uint64_t start_word = 0;
+    start_word |= ReqType::kClientReq;
+    lnic_write_r(start_word);
+
+    // Send the actual request.
+    uint64_t* req_data = (uint64_t*)client_req;
+    lnic_write_r(req_data[0]);
+    lnic_write_r(req_data[1]);
+    lnic_write_r(req_data[2]);
+    lnic_write_r(req_data[3]);
+    lnic_write_r(req_data[4]);
+    lnic_write_r(req_data[5]);
+    lnic_write_r(req_data[6]);
+    lnic_write_r(req_data[7]);
+    lnic_write_r(req_data[8]);
+    lnic_write_r(req_data[9]);
 
     // Receive the response from the cluster.
     // TODO: A real version would really need a timeout.
     lnic_wait();
-    //printf("Received message\n");
-    uint64_t header = lnic_read();
-    uint64_t start_word = lnic_read();
+
+    // Process the header and the start word
+    header = lnic_read();
+    start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
     uint16_t msg_type = start_word_arr[0];
     assert(msg_type == ReqType::kClientReqResponse);
 
-    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
-    char* msg_buf = malloc(header & LEN_MASK);
-    char* msg_current = msg_buf;
-    for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = lnic_read();
-        memcpy(msg_current, &data, sizeof(uint64_t));
-        msg_current += sizeof(uint64_t);
-    }
+    // Process the actual message response
+    uint64_t msg_response_data = lnic_read();
+    client_resp_t* client_response = (client_resp_t*)&msg_response_data;
     lnic_msg_done();
-    client_resp_t* client_response = (client_resp_t*)msg_buf;
+
+    // Log the elapsed time
     uint64_t finish_time = csr_read(mcycle);
     uint64_t elapsed_time = finish_time - start_time;
     printf("Message response type is %d, elapsed time is %ld cycles\n", client_response->resp_type, elapsed_time);
+
+    // Take action depending on the response type
     if (client_response->resp_type == ClientRespType::kSuccess) {
         printf("Request commited.\n");
         return 0;
@@ -403,22 +410,21 @@ void __attribute__((noinline)) send_message(uint32_t dst_ip, uint64_t* buffer, u
     }
 }
 
-void send_client_response(uint64_t header, uint64_t start_word, ClientRespType resp_type, uint32_t leader_ip=0) {
+void send_client_response(uint64_t header, ClientRespType resp_type, uint32_t leader_ip=0) {
+    // Build and send the header and start word
+    header &= 0xffffffffffff0000;
+    header |= (uint16_t)(sizeof(client_resp_t) + sizeof(uint64_t));
+    lnic_write_r(header);
+    uint64_t start_word = 0;
+    start_word |= ReqType::kClientReqResponse;
+    lnic_write_r(start_word);
+
+    // Build and send the client response
     client_resp_t client_response;
     client_response.resp_type = resp_type;
     client_response.leader_ip = leader_ip;
-    uint32_t src_ip = (start_word & 0xffffffff00000000) >> 32;
-    //printf("Sending client response to %#x\n", src_ip);
-    uint32_t buf_size = sizeof(client_resp_t) + sizeof(uint64_t);
-    if (buf_size % sizeof(uint64_t) != 0)
-        buf_size += sizeof(uint64_t) - (buf_size % sizeof(uint64_t));
-    //printf("Response size is %d\n", buf_size);
-    char* buffer = malloc(buf_size);
-    uint32_t msg_id = ReqType::kClientReqResponse;
-    memcpy(buffer, &msg_id, sizeof(uint32_t));
-    memcpy(buffer + sizeof(uint32_t), &sv->own_ip_addr, sizeof(uint32_t));
-    memcpy(buffer + sizeof(uint64_t), &client_response, sizeof(client_resp_t));
-    send_message(src_ip, (uint64_t*)buffer, buf_size);
+    uint64_t* client_response_data = (uint64_t*)&client_response;
+    lnic_write_r(client_response_data[0]);
 }
 
 uint32_t get_random() {
@@ -426,68 +432,75 @@ uint32_t get_random() {
 }
 
 void service_client_message(uint64_t header, uint64_t start_word) {
-    //printf("Received client request with header %#lx\n", header);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
     if (leader == nullptr) {
         // Cluster doesn't have a leader, reply with error.
-        //printf("Cluster has no leader, replying with error\n");
-        uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
-        for (int i = 0; i < msg_len_words_remaining; i++) {
-            volatile uint64_t dump = lnic_read();
-        }
+        // start_word is *not* part of the message structure when the client sends requests. This keeps us from having
+        // to send extra data in every append entries request. Dump all 10 remaining message words.
+        volatile uint64_t dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, start_word, ClientRespType::kFailTryAgain);
+        send_client_response(header, ClientRespType::kFailTryAgain);
         return;
     }
 
     uint32_t leader_ip = raft_node_get_id(leader);
     if (leader_ip != sv->own_ip_addr) {
         // This is not the cluster leader, reply with actual leader.
-        //printf("This is not the cluster leader, redirecting to %#x\n", leader_ip);
-        uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
-        for (int i = 0; i < msg_len_words_remaining; i++) {
-            volatile uint64_t dump = lnic_read();
-        }
+        volatile uint64_t dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
+        dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, start_word, ClientRespType::kFailRedirect, leader_ip);
+        send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
 
     // This is actually the leader
-    //printf("Leader servicing client message\n");
 
-    // Read in the rest of the message. TODO: This should eventually be brought into the raft library or at least not done with malloc
-    uint64_t msg_len_words_remaining = ((header & LEN_MASK) / sizeof(uint64_t)) - 1;
-    char* msg_buf = malloc(header & LEN_MASK);
-    char* msg_current = msg_buf;
-    memcpy(msg_current, &start_word, sizeof(uint64_t));
-    msg_current += sizeof(uint64_t);
-    for (int i = 0; i < msg_len_words_remaining; i++) {
-        uint64_t data = lnic_read();
-        memcpy(msg_current, &data, sizeof(uint64_t));
-        msg_current += sizeof(uint64_t);
-    }
+    // Read in the rest of the message. This unfortunately needs to use malloc so that it persists.
+    client_req_t* req = malloc(sizeof(client_req_t));
+    uint64_t* req_data = (uint64_t*)req;
+    req_data[0] = lnic_read();
+    req_data[1] = lnic_read();
+    req_data[2] = lnic_read();
+    req_data[3] = lnic_read();
+    req_data[4] = lnic_read();
+    req_data[5] = lnic_read();
+    req_data[6] = lnic_read();
+    req_data[7] = lnic_read();
+    req_data[8] = lnic_read();
+    req_data[9] = lnic_read();
     lnic_msg_done();
-
-    
 
     // Set up saveinfo so that we can reply to the client later.
     leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
     assert(!leader_sav.in_use);
     leader_sav.in_use = true;
     leader_sav.header = header;
-    leader_sav.start_word = start_word;
 
     // Set up the raft entry
     msg_entry_t ent;
     ent.type = RAFT_LOGTYPE_NORMAL;
     ent.id = get_random(); // TODO: Check this!
-    ent.data.buf = msg_buf + sizeof(uint64_t);
-    ent.data.len = (header & LEN_MASK) - sizeof(uint64_t);
-    //printf("Header length is %d and entry length is %d\n", (header & LEN_MASK), ent.data.len);
+    ent.data.buf = req;
+    ent.data.len = sizeof(client_req_t);
 
     // Send the entry into the raft library handlers
-    //printf("Adding raft log entry\n");
     int raft_retval = raft_recv_entry(sv->raft, &ent, &leader_sav.msg_entry_response);
     assert(raft_retval == 0);
 }
@@ -688,7 +701,7 @@ int server_main() {
             // We've already committed the entry
             raft_apply_all(sv->raft);
             leader_sav.in_use = false;
-            send_client_response(leader_sav.header, leader_sav.start_word, ClientRespType::kSuccess, 0);
+            send_client_response(leader_sav.header, ClientRespType::kSuccess, 0);
         }
     }
 
