@@ -18,6 +18,8 @@
 
 using namespace std;
 
+uint64_t initial_msg_recv;
+
 // Utility symbols linked into the binary
 extern "C" {
 	extern int inet_pton4 (const char *src, const char *end, unsigned char *dst);
@@ -237,6 +239,7 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
 }
 
 int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
+    uint64_t apply_start = csr_read(mcycle);
     assert(!raft_entry_is_cfg_change(ety));
     assert(ety->data.len == sizeof(client_req_t));
     client_req_t* client_req = (client_req_t*)ety->data.buf;
@@ -248,6 +251,8 @@ int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
     MicaResult out_result = sv->table->set(key_hash, ft_key, (char*)(&client_req->value[0]));
     assert(out_result == MicaResult::kSuccess);
     free_slot(client_req);
+    uint64_t apply_end = csr_read(mcycle);
+    //printf("apply elapsed %ld\n", apply_end - apply_start);
     return 0;
 }
 
@@ -537,9 +542,13 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     ent.data.buf = req;
     ent.data.len = sizeof(client_req_t);
 
+    uint64_t entry_recv_start = csr_read(mcycle);
+
     // Send the entry into the raft library handlers
     int raft_retval = raft_recv_entry(sv->raft, &ent, &leader_sav.msg_entry_response);
     assert(raft_retval == 0);
+    uint64_t entry_recv_end = csr_read(mcycle);
+    //printf("entry recv cycled %ld\n", entry_recv_end - entry_recv_start);
 }
 
 void service_request_vote(uint64_t header, uint64_t start_word) {
@@ -691,6 +700,7 @@ void service_pending_messages() {
         lnic_idle();
         return;
     }
+    initial_msg_recv = csr_read(mcycle);
     uint64_t header = lnic_read();
     uint64_t start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
@@ -754,6 +764,8 @@ int server_main() {
             raft_apply_all(sv->raft);
             leader_sav.in_use = false;
             send_client_response(leader_sav.header, ClientRespType::kSuccess, 0);
+            uint64_t end_time = csr_read(mcycle);
+            //printf("total elapsed %ld\n", end_time - initial_msg_recv);
         }
     }
 
