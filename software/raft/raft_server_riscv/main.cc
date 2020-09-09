@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <bits/stdc++.h>
 
 #include "../../../tests/lnic.h"
 #include "../../../tests/lnic-scheduler.h"
@@ -27,6 +28,9 @@ extern "C" {
     extern void __libc_init_array();
     extern void __libc_fini_array();
 }
+
+const uint32_t kStaticBufSize = 4;
+msg_entry_t entry_static_buf[kStaticBufSize];
 
 // Raft server constants
 const uint32_t kBaseClusterIpAddr = 0xa000002;
@@ -91,6 +95,18 @@ typedef struct {
     uint32_t stall_count;
 } server_t;
 
+// Should have coverage for 1024 entries of 80 bytes each
+const uint32_t kNumAllocSlots = 1024;
+
+typedef struct {
+    char* base_ptr;
+    uint32_t current_index;
+    bitset<kNumAllocSlots> used_slots;
+} allocator_t;
+
+allocator_t alloc_global;
+allocator_t* alloc = &alloc_global;
+
 typedef enum ClientRespType {
     kSuccess, kFailRedirect, kFailTryAgain
 };
@@ -120,6 +136,30 @@ typedef struct __attribute__((packed)) {
 
 server_t server;
 server_t *sv = &server;
+
+client_req_t* get_slot() {
+    assert(!alloc->used_slots.all());
+    for (int i = alloc->current_index; i < kNumAllocSlots; i++) {
+        if (alloc->used_slots[i]) {
+            continue;
+        }
+        alloc->used_slots[i] = true;
+        alloc->current_index = i + 1;
+        if (alloc->current_index == kNumAllocSlots) {
+            alloc->current_index = 0;
+        }
+        return (client_req_t*)(alloc->base_ptr + i*sizeof(client_req_t));
+    }
+    printf("Allocator should never reach here\n");
+    assert(false);
+    return 0;
+}
+
+void free_slot(client_req_t* addr) {
+    uint32_t i = ((uint64_t)((char*)addr - alloc->base_ptr)) / sizeof(client_req_t);
+    assert(alloc->used_slots[i]);
+    alloc->used_slots[i] = false;
+}
 
 uint32_t get_random();
 
@@ -207,6 +247,7 @@ int __raft_applylog(raft_server_t* raft, void *udata, raft_entry_t *ety) {
     ft_key.qword[0] = client_req->key[0];
     MicaResult out_result = sv->table->set(key_hash, ft_key, (char*)(&client_req->value[0]));
     assert(out_result == MicaResult::kSuccess);
+    free_slot(client_req);
     return 0;
 }
 
@@ -469,7 +510,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     // This is actually the leader
 
     // Read in the rest of the message. This unfortunately needs to use malloc so that it persists.
-    client_req_t* req = malloc(sizeof(client_req_t));
+    client_req_t* req = get_slot();//malloc(sizeof(client_req_t));
     uint64_t* req_data = (uint64_t*)req;
     req_data[0] = lnic_read();
     req_data[1] = lnic_read();
@@ -569,7 +610,10 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
 
     // Read in the per-entry data. This has to use malloc so that it persists.
     if (m.n_entries > 0) {
-        m.entries = malloc(sizeof(msg_entry_t)*m.n_entries);
+        m.entries = entry_static_buf;
+        if (m.n_entries > kStaticBufSize) {
+            m.entries = malloc(sizeof(msg_entry_t)*m.n_entries);
+        }
         for (int i = 0; i < m.n_entries; i++) {
             // Read in the entry metadata
             msg_entry_t* current_entry = &m.entries[i];
@@ -580,7 +624,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
             entry_data[3] = lnic_read();
 
             // Read in the client request. This also needs to use malloc.
-            current_entry->data.buf = malloc(sizeof(client_req_t));
+            current_entry->data.buf = get_slot();//malloc(sizeof(client_req_t));
             uint64_t* msg_data = (uint64_t*)current_entry->data.buf;
             msg_data[0] = lnic_read();
             msg_data[1] = lnic_read();
@@ -673,6 +717,12 @@ int server_main() {
     printf("Starting server main\n");
     raft_init();
     int periodic_counter = 0;
+
+    alloc->base_ptr = malloc(kNumAllocSlots*64*sizeof(client_req_t));
+    alloc->current_index = 0;
+    for (int i = 0; i < kNumAllocSlots; i++) {
+        alloc->used_slots[i] = 0;
+    }
 
     while (true) {
         if (periodic_counter == 100) {
