@@ -44,6 +44,8 @@ const uint64_t kAppValueSize = 64; // 64B values
 const uint64_t kAppNumKeys = 10000; // 10K keys
 const uint32_t kStallLoopTurnsPerCount = 1000;
 
+uint64_t load_gen_ip = 0x0a000001;
+
 struct MyFixedTableConfig {
   static constexpr size_t kBucketCap = 7;
 
@@ -81,6 +83,7 @@ static uint64_t mica_hash(const T* key, size_t key_length) {
 typedef struct {
     bool in_use = false;
     uint64_t header;
+    uint64_t sent_time;
     msg_entry_response_t msg_entry_response;
 } leader_saveinfo_t;
 
@@ -414,7 +417,7 @@ int client_main() {
 }
 
 void raft_init() {
-    printf("Starting raft server at ip %#lx\n", sv->own_ip_addr);
+    //printf("Starting raft server at ip %#lx\n", sv->own_ip_addr);
     sv->raft = raft_new();
     sv->table = new FixedTable(kAppValueSize, 0);
     raft_set_election_timeout(sv->raft, kRaftElectionTimeoutMsec);
@@ -452,11 +455,13 @@ void __attribute__((noinline)) send_message(uint32_t dst_ip, uint64_t* buffer, u
     }
 }
 
-void send_client_response(uint64_t header, ClientRespType resp_type, uint32_t leader_ip=0) {
+void send_client_response(uint64_t header, uint64_t sent_time, ClientRespType resp_type, uint32_t leader_ip=0) {
     // Build and send the header and start word
     header &= 0xffffffffffff0000;
-    header |= (uint16_t)(sizeof(client_resp_t) + sizeof(uint64_t));
+    header |= (uint16_t)(sizeof(client_resp_t) + 3*sizeof(uint64_t));
     lnic_write_r(header);
+    lnic_write_r(sent_time); // service_time will be wrong, but we don't use it here anyway
+    lnic_write_r(sent_time);
     uint64_t start_word = 0;
     start_word |= ReqType::kClientReqResponse;
     lnic_write_r(start_word);
@@ -473,7 +478,16 @@ uint32_t get_random() {
     return rand(); // TODO: Figure out what instruction this actually turns into
 }
 
-void service_client_message(uint64_t header, uint64_t start_word) {
+void send_startup_msg(int cid, uint64_t context_id) {
+    uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
+    uint64_t cid_to_send = cid;
+    lnic_write_r(app_hdr);
+    lnic_write_r(cid_to_send);
+    lnic_write_r(context_id);
+}
+
+void service_client_message(uint64_t header, uint64_t start_word, uint64_t sent_time) {
+    //printf("Servicing a client message with header %#lx\n", header);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
     if (leader == nullptr) {
         // Cluster doesn't have a leader, reply with error.
@@ -490,7 +504,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         dump = lnic_read();
         dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, ClientRespType::kFailTryAgain);
+        send_client_response(header, sent_time, ClientRespType::kFailTryAgain);
         return;
     }
 
@@ -508,7 +522,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         dump = lnic_read();
         dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
+        send_client_response(header, sent_time, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
 
@@ -534,6 +548,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     assert(!leader_sav.in_use);
     leader_sav.in_use = true;
     leader_sav.header = header;
+    leader_sav.sent_time = sent_time;
 
     // Set up the raft entry
     msg_entry_t ent;
@@ -702,13 +717,16 @@ void service_pending_messages() {
     }
     initial_msg_recv = csr_read(mcycle);
     uint64_t header = lnic_read();
+    uint64_t service_time = lnic_read();
+    uint64_t sent_time = lnic_read();
     uint64_t start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
+    //printf("%ld, %ld, %#lx\n", service_time, sent_time, start_word);
     uint16_t msg_type = start_word_arr[0];
     // printf("header is %#lx, start word is %#lx\n", header, start_word);
 
     if (msg_type == ReqType::kClientReq) {
-        service_client_message(header, start_word);
+        service_client_message(header, start_word, sent_time);
     } else if (msg_type == ReqType::kAppendEntries) {
         service_append_entries(header, start_word);
     } else if (msg_type == ReqType::kRequestVote) {
@@ -724,7 +742,7 @@ void service_pending_messages() {
 }
 
 int server_main() {
-    printf("Starting server main\n");
+    //printf("Starting server main\n");
     raft_init();
     int periodic_counter = 0;
 
@@ -733,6 +751,8 @@ int server_main() {
     for (int i = 0; i < kNumAllocSlots; i++) {
         alloc->used_slots[i] = 0;
     }
+
+    send_startup_msg(0, 0);
 
     while (true) {
         if (periodic_counter == 100) {
@@ -763,7 +783,7 @@ int server_main() {
             // We've already committed the entry
             raft_apply_all(sv->raft);
             leader_sav.in_use = false;
-            send_client_response(leader_sav.header, ClientRespType::kSuccess, 0);
+            send_client_response(leader_sav.header, leader_sav.sent_time, ClientRespType::kSuccess, 0);
             uint64_t end_time = csr_read(mcycle);
             //printf("total elapsed %ld\n", end_time - initial_msg_recv);
         }
@@ -786,13 +806,13 @@ int main(int argc, char** argv) {
     __libc_init_array();
 
     lnic_add_context(0, 1);
-    printf("append entries struct size is: %d\n", sizeof(msg_appendentries_t));
-    printf("response size is: %d\n", sizeof(msg_appendentries_response_t));
-    printf("entry size is: %d\n", sizeof(msg_entry_t));
-    printf("client req size is: %d\n", sizeof(client_req_t));
+    //printf("append entries struct size is: %d\n", sizeof(msg_appendentries_t));
+    //printf("response size is: %d\n", sizeof(msg_appendentries_response_t));
+    //printf("entry size is: %d\n", sizeof(msg_entry_t));
+    //printf("client req size is: %d\n", sizeof(client_req_t));
 
     // Initialize variables and parse arguments
-    printf("Started raft main\n");
+    //printf("Started raft main\n");
     if (argc < 3) {
         printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
         return -1;
@@ -807,7 +827,7 @@ int main(int argc, char** argv) {
         printf("Supplied NIC IP address is invalid.\n");
         return -1;
     }
-    printf("1\n");
+    //printf("1\n");
     sv->own_ip_addr = nic_ip_addr;
     bool is_server = false;
     for (int i = 3; i < argc; i++) {
@@ -826,7 +846,7 @@ int main(int argc, char** argv) {
             srand(i - 3);
         }
     }
-    printf("2\n");
+    //printf("2\n");
     sv->num_servers = sv->peer_ip_addrs.size();
 
     // Determine if client or server. Client will have an ip that is not a member of the peer ip set.
