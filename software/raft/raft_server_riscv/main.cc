@@ -853,7 +853,7 @@ int server_main() {
             // We've already committed the entry
             raft_apply_all(sv->raft);
             leader_sav.in_use = false;
-            send_client_response(leader_sav.header, ClientRespType::kSuccess, 0);
+            send_client_response(leader_sav.header, ClientRespType::kSuccess, sv->own_ip_addr);
             uint64_t end_time = csr_read(mcycle);
             //printf("total elapsed %ld\n", end_time - initial_msg_recv);
         }
