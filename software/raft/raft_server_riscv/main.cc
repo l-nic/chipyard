@@ -39,9 +39,9 @@ const uint32_t kBaseClusterIpAddr = 0xa000002;
 const uint64_t kRaftElectionTimeoutMsec = 500;
 const uint64_t kCyclesPerMsec = 3200000;
 //const uint64_t kCyclesPerMsec = 320000;
-const uint64_t kAppKeySize = 16;
-const uint64_t kAppValueSize = 64;
-const uint64_t kAppNumKeys = 8*1024; // 8K keys
+const uint64_t kAppKeySize = 16; // 16B keys
+const uint64_t kAppValueSize = 64; // 64B values
+const uint64_t kAppNumKeys = 10000; // 10K keys
 const uint32_t kStallLoopTurnsPerCount = 1000;
 
 struct MyFixedTableConfig {
@@ -321,7 +321,7 @@ raft_cbs_t raft_funcs = {
 int client_send_request(client_req_t* client_req) {
     // Send the request to the current raft leader, and start tracking the time
     uint64_t dst_ip = sv->peer_ip_addrs[sv->client_current_leader_index];
-    printf("Client sending request to %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
+    //printf("Client sending request to %#x\n", dst_ip); // TODO: Modify these structures to encode the application header data without needing the copies
     uint64_t start_time = csr_read(mcycle); // TODO: This isn't a great metric, but it's a start
 
     // Build and send the header and start word
