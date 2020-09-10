@@ -34,9 +34,11 @@ extern "C" {
 const uint32_t kStaticBufSize = 4;
 msg_entry_t entry_static_buf[kStaticBufSize];
 
+bool sent_startup_msg = false;
+
 // Raft server constants
 const uint32_t kBaseClusterIpAddr = 0xa000002;
-const uint64_t kRaftElectionTimeoutMsec = 500;
+const uint64_t kRaftElectionTimeoutMsec = 5;
 const uint64_t kCyclesPerMsec = 3200000;
 //const uint64_t kCyclesPerMsec = 320000;
 const uint64_t kAppKeySize = 16; // 16B keys
@@ -83,7 +85,6 @@ static uint64_t mica_hash(const T* key, size_t key_length) {
 typedef struct {
     bool in_use = false;
     uint64_t header;
-    uint64_t sent_time;
     msg_entry_response_t msg_entry_response;
 } leader_saveinfo_t;
 
@@ -399,21 +400,100 @@ void change_leader_to_any() {
     }
 }
 
-int client_main() {
-    printf("Starting client main\n");
-    sv->client_current_leader_index = 0;
-    while (true) {
-        // Create a client request
-        client_req_t client_req;
-        uint64_t rand_key = get_random() & (kAppNumKeys - 1);
-        client_req.key[0] = rand_key;
-        client_req.value[0] = rand_key;
+void send_startup_msg(int cid, uint64_t context_id) {
+    uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
+    uint64_t cid_to_send = cid;
+    lnic_write_r(app_hdr);
+    lnic_write_r(cid_to_send);
+    lnic_write_r(context_id);
+}
 
-        int send_retval = 0;
-        do {
-            send_retval = client_send_request(&client_req);
-        } while (send_retval != 0);
+int client_main() {
+    //printf("Starting client main\n");
+
+    // Client is now just a proxy client
+    send_startup_msg(0, 0);
+    while (true) {
+        // Read in message metadata from load generator
+        lnic_wait();
+        uint64_t header = lnic_read();
+        uint64_t service_time = lnic_read();
+        uint64_t sent_time = lnic_read();
+        uint64_t start_word = lnic_read();
+
+        // Verify the message has the correct formatting
+        uint16_t msg_len = header & 0xffff;
+        assert(msg_len == 3*sizeof(uint64_t) + sizeof(client_req_t));
+        uint32_t src_ip = (header >> 32) & 0xffffffff;
+        assert(src_ip == 0x0a000001);
+        uint16_t* start_word_arr = (uint16_t*)&start_word;
+        uint16_t msg_type = start_word_arr[0];
+        assert(msg_type == ReqType::kClientReq);
+
+        // Send the new header
+        uint32_t* leader_ptr = (uint32_t*)&service_time;
+        uint64_t leader_ip = leader_ptr[0];
+        uint64_t new_header = 0;
+        new_header |= sizeof(client_req_t) + sizeof(uint64_t);
+        new_header |= (leader_ip << 32);
+        lnic_write_r(new_header);
+
+        // Send the whole message
+        uint64_t start_cycles = csr_read(mcycle);
+        lnic_write_r(start_word);
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_copy();
+        lnic_msg_done();
+
+        // Receive the response from the cluster.
+        // TODO: A real version would really need a timeout.
+        lnic_wait();
+        uint64_t end_cycles = csr_read(mcycle);
+
+        // Process the header and the start word
+        header = lnic_read();
+        start_word = lnic_read();
+        start_word_arr = (uint16_t*)&start_word;
+        msg_type = start_word_arr[0];
+        assert(msg_type == ReqType::kClientReqResponse);
+
+        // Forward the new header and metadata
+        new_header = 0;
+        new_header |= sizeof(client_resp_t) + 3*sizeof(uint64_t);
+        new_header |= (load_gen_ip << 32);
+        lnic_write_r(new_header);
+        uint64_t delta_cycles = end_cycles - start_cycles;
+        lnic_write_r(delta_cycles);
+        lnic_write_r(sent_time);
+        lnic_write_r(start_word);
+
+        // Forward the rest of the response message
+        lnic_copy();
+        lnic_msg_done();
     }
+
+
+    // sv->client_current_leader_index = 0;
+    // while (true) {
+    //     // Create a client request
+    //     client_req_t client_req;
+    //     uint64_t rand_key = get_random() & (kAppNumKeys - 1);
+    //     client_req.key[0] = rand_key;
+    //     client_req.value[0] = rand_key;
+
+    //     int send_retval = 0;
+    //     do {
+    //         send_retval = client_send_request(&client_req);
+    //     } while (send_retval != 0);
+    // }
 }
 
 void raft_init() {
@@ -455,13 +535,11 @@ void __attribute__((noinline)) send_message(uint32_t dst_ip, uint64_t* buffer, u
     }
 }
 
-void send_client_response(uint64_t header, uint64_t sent_time, ClientRespType resp_type, uint32_t leader_ip=0) {
+void send_client_response(uint64_t header, ClientRespType resp_type, uint32_t leader_ip=0) {
     // Build and send the header and start word
     header &= 0xffffffffffff0000;
-    header |= (uint16_t)(sizeof(client_resp_t) + 3*sizeof(uint64_t));
+    header |= (uint16_t)(sizeof(client_resp_t) + sizeof(uint64_t));
     lnic_write_r(header);
-    lnic_write_r(sent_time); // service_time will be wrong, but we don't use it here anyway
-    lnic_write_r(sent_time);
     uint64_t start_word = 0;
     start_word |= ReqType::kClientReqResponse;
     lnic_write_r(start_word);
@@ -478,15 +556,7 @@ uint32_t get_random() {
     return rand(); // TODO: Figure out what instruction this actually turns into
 }
 
-void send_startup_msg(int cid, uint64_t context_id) {
-    uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
-    uint64_t cid_to_send = cid;
-    lnic_write_r(app_hdr);
-    lnic_write_r(cid_to_send);
-    lnic_write_r(context_id);
-}
-
-void service_client_message(uint64_t header, uint64_t start_word, uint64_t sent_time) {
+void service_client_message(uint64_t header, uint64_t start_word) {
     //printf("Servicing a client message with header %#lx\n", header);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
     if (leader == nullptr) {
@@ -504,7 +574,7 @@ void service_client_message(uint64_t header, uint64_t start_word, uint64_t sent_
         dump = lnic_read();
         dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, sent_time, ClientRespType::kFailTryAgain);
+        send_client_response(header, ClientRespType::kFailTryAgain);
         return;
     }
 
@@ -522,7 +592,7 @@ void service_client_message(uint64_t header, uint64_t start_word, uint64_t sent_
         dump = lnic_read();
         dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, sent_time, ClientRespType::kFailRedirect, leader_ip);
+        send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
 
@@ -548,7 +618,6 @@ void service_client_message(uint64_t header, uint64_t start_word, uint64_t sent_
     assert(!leader_sav.in_use);
     leader_sav.in_use = true;
     leader_sav.header = header;
-    leader_sav.sent_time = sent_time;
 
     // Set up the raft entry
     msg_entry_t ent;
@@ -717,16 +786,13 @@ void service_pending_messages() {
     }
     initial_msg_recv = csr_read(mcycle);
     uint64_t header = lnic_read();
-    uint64_t service_time = lnic_read();
-    uint64_t sent_time = lnic_read();
     uint64_t start_word = lnic_read();
     uint16_t* start_word_arr = (uint16_t*)&start_word;
-    //printf("%ld, %ld, %#lx\n", service_time, sent_time, start_word);
     uint16_t msg_type = start_word_arr[0];
     // printf("header is %#lx, start word is %#lx\n", header, start_word);
 
     if (msg_type == ReqType::kClientReq) {
-        service_client_message(header, start_word, sent_time);
+        service_client_message(header, start_word);
     } else if (msg_type == ReqType::kAppendEntries) {
         service_append_entries(header, start_word);
     } else if (msg_type == ReqType::kRequestVote) {
@@ -752,8 +818,6 @@ int server_main() {
         alloc->used_slots[i] = 0;
     }
 
-    send_startup_msg(0, 0);
-
     while (true) {
         if (periodic_counter == 100) {
             periodic_raft_wrapper();
@@ -762,6 +826,12 @@ int server_main() {
             periodic_counter++;
         }
         service_pending_messages();
+
+        raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
+        if (!sent_startup_msg && (leader_node != 0)) {
+            sent_startup_msg = true;
+            send_startup_msg(0, 0);
+        }
 
         // raft_node_t* leader_node = raft_get_current_leader_node(sv->raft);
         // if (leader_node == nullptr) {
@@ -783,7 +853,7 @@ int server_main() {
             // We've already committed the entry
             raft_apply_all(sv->raft);
             leader_sav.in_use = false;
-            send_client_response(leader_sav.header, leader_sav.sent_time, ClientRespType::kSuccess, 0);
+            send_client_response(leader_sav.header, ClientRespType::kSuccess, 0);
             uint64_t end_time = csr_read(mcycle);
             //printf("total elapsed %ld\n", end_time - initial_msg_recv);
         }
