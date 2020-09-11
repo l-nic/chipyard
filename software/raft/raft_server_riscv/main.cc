@@ -46,6 +46,7 @@ const uint64_t kAppKeySize = 16; // 16B keys
 const uint64_t kAppValueSize = 64; // 64B values
 const uint64_t kAppNumKeys = 10000; // 10K keys
 const uint32_t kStallLoopTurnsPerCount = 1000;
+const uint32_t kMaxStaticPendingRequests = 10;
 
 uint64_t load_gen_ip = 0x0a000001;
 
@@ -96,7 +97,8 @@ typedef struct {
     uint32_t num_servers;
     raft_server_t *raft;
     uint64_t last_cycles;
-    leader_saveinfo_t leader_saveinfo;
+    leader_saveinfo_t leader_saveinfo[kMaxStaticPendingRequests];
+    uint32_t next_open_leader_sav_index;
     uint32_t client_current_leader_index;
     vector<raft_entry_t*> log_record;
     FixedTable *table;
@@ -625,8 +627,23 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     req_data[9] = lnic_read();
     lnic_msg_done();
 
+    // Select a saveinfo entry. Default to incrementing the entry counter, unless no more entries can be found.
+    uint32_t index_to_use = kMaxStaticPendingRequests;
+    if (sv->next_open_leader_sav_index < kMaxStaticPendingRequests) {
+        index_to_use = sv->next_open_leader_sav_index;
+        sv->next_open_leader_sav_index++;
+    } else {
+        for (int i = 0; i < kMaxStaticPendingRequests; i++) {
+            if (!sv->leader_saveinfo[i].in_use) {
+                index_to_use = i;
+                break;
+            }
+        }
+    }
+    assert(index_to_use < kMaxStaticPendingRequests);
+
     // Set up saveinfo so that we can reply to the client later.
-    leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
+    leader_saveinfo_t &leader_sav = sv->leader_saveinfo[index_to_use];
     assert(!leader_sav.in_use);
     leader_sav.in_use = true;
     leader_sav.header = header;
@@ -854,21 +871,28 @@ int server_main() {
         //printf("Current leader ip is %#x\n", leader_ip);
 
         // Reply to clients if any entries have committed
-        leader_saveinfo_t &leader_sav = sv->leader_saveinfo;
-        //printf("Log has %d entries\n", sv->log_record.size());
-        if (!leader_sav.in_use) {
-            continue;
-        }
-        //printf("Leader has saved a response\n");
-        int commit_status = raft_msg_entry_response_committed(sv->raft, &leader_sav.msg_entry_response);
-        assert(commit_status == 0 || commit_status == 1);
-        if (commit_status == 1) {
-            // We've already committed the entry
-            raft_apply_all(sv->raft);
-            leader_sav.in_use = false;
-            send_client_response(leader_sav.header, leader_sav.sent_time, ClientRespType::kSuccess, sv->own_ip_addr);
-            uint64_t end_time = csr_read(mcycle);
-            //printf("total elapsed %ld\n", end_time - initial_msg_recv);
+        for (int i = 0; i < sv->next_open_leader_sav_index; i++) {
+            leader_saveinfo_t &leader_sav = sv->leader_saveinfo[i];
+            //printf("Log has %d entries\n", sv->log_record.size());
+            if (!leader_sav.in_use) {
+                continue;
+            }
+            //printf("Leader has saved a response\n");
+            int commit_status = raft_msg_entry_response_committed(sv->raft, &leader_sav.msg_entry_response);
+            assert(commit_status == 0 || commit_status == 1);
+            if (commit_status == 1) {
+                // We've already committed the entry
+                raft_apply_all(sv->raft);
+                leader_sav.in_use = false;
+                send_client_response(leader_sav.header, leader_sav.sent_time, ClientRespType::kSuccess, sv->own_ip_addr);
+                uint64_t end_time = csr_read(mcycle);
+
+                // Lower the save index if this entry is at the end of the allocated entry list
+                if (i == sv->next_open_leader_sav_index - 1) {
+                    sv->next_open_leader_sav_index--;
+                }
+                //printf("total elapsed %ld\n", end_time - initial_msg_recv);
+            }
         }
     }
 
