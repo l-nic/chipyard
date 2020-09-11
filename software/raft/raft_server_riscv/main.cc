@@ -21,6 +21,8 @@
 using namespace std;
 
 uint64_t initial_msg_recv;
+uint64_t global_start_cycles;
+uint64_t global_end_cycles;
 
 // Utility symbols linked into the binary
 extern "C" {
@@ -31,6 +33,7 @@ extern "C" {
     extern void sbrk_init(long int* init_addr);
     extern void __libc_init_array();
     extern void __libc_fini_array();
+    extern uint64_t global_raft_data_export;
 }
 
 const uint32_t kStaticBufSize = 4;
@@ -246,7 +249,8 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
         lnic_write_r(msg_data[8]);
         lnic_write_r(msg_data[9]);
     }
-    uint64_t test_dummy = 1234;
+    // uint64_t test_dummy = csr_read(mcycle) - global_start_cycles; // 56K cycles when reported here
+    uint64_t test_dummy = global_raft_data_export - global_start_cycles;//global_end_cycles - global_start_cycles;
     lnic_write_r(test_dummy);
     return 0;
 }
@@ -576,6 +580,7 @@ uint32_t get_random() {
 
 void service_client_message(uint64_t header, uint64_t start_word) {
     //printf("Servicing a client message with header %#lx\n", header);
+    global_start_cycles = csr_read(mcycle);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
     uint64_t sent_time = lnic_read();
     if (leader == nullptr) {
@@ -652,6 +657,8 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     uint64_t entry_recv_start = csr_read(mcycle);
 
     // Send the entry into the raft library handlers
+    // global_end_cycles = csr_read(mcycle); // 314 cycles when reported here
+    global_raft_data_export = 0;
     int raft_retval = raft_recv_entry(sv->raft, &ent, &leader_sav.msg_entry_response);
     assert(raft_retval == 0);
     uint64_t entry_recv_end = csr_read(mcycle);
