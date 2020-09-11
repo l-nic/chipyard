@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <map>
 #include <bits/stdc++.h>
 
 #include "../../../tests/lnic.h"
@@ -85,6 +86,7 @@ static uint64_t mica_hash(const T* key, size_t key_length) {
 typedef struct {
     bool in_use = false;
     uint64_t header;
+    uint64_t sent_time;
     msg_entry_response_t msg_entry_response;
 } leader_saveinfo_t;
 
@@ -412,72 +414,80 @@ int client_main() {
     //printf("Starting client main\n");
 
     // Client is now just a proxy client
+    map<uint64_t, uint64_t> sent_map;
     send_startup_msg(0, 0);
     while (true) {
-        // Read in message metadata from load generator
         lnic_wait();
         uint64_t header = lnic_read();
-        uint64_t service_time = lnic_read();
-        uint64_t sent_time = lnic_read();
-        uint64_t start_word = lnic_read();
-
-        // Verify the message has the correct formatting
-        uint16_t msg_len = header & 0xffff;
-        assert(msg_len == 3*sizeof(uint64_t) + sizeof(client_req_t));
         uint32_t src_ip = (header >> 32) & 0xffffffff;
-        assert(src_ip == 0x0a000001);
-        uint16_t* start_word_arr = (uint16_t*)&start_word;
-        uint16_t msg_type = start_word_arr[0];
-        assert(msg_type == ReqType::kClientReq);
+        if (src_ip == load_gen_ip) {
+            // Read in message metadata from load generator
+            uint64_t service_time = lnic_read();
+            uint64_t sent_time = lnic_read();
+            uint64_t start_word = lnic_read();
+            sent_map[sent_time] = 0;
 
-        // Send the new header
-        uint32_t* leader_ptr = (uint32_t*)&service_time;
-        uint64_t leader_ip = leader_ptr[0];
-        uint64_t new_header = 0;
-        new_header |= sizeof(client_req_t) + sizeof(uint64_t);
-        new_header |= (leader_ip << 32);
-        lnic_write_r(new_header);
+            // Verify the message has the correct formatting
+            uint16_t msg_len = header & 0xffff;
+            assert(msg_len == 3*sizeof(uint64_t) + sizeof(client_req_t));
+            assert(src_ip == 0x0a000001);
+            uint16_t* start_word_arr = (uint16_t*)&start_word;
+            uint16_t msg_type = start_word_arr[0];
+            assert(msg_type == ReqType::kClientReq);
 
-        // Send the whole message
-        uint64_t start_cycles = csr_read(mcycle);
-        lnic_write_r(start_word);
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_copy();
-        lnic_msg_done();
+            // Send the new header
+            uint32_t* leader_ptr = (uint32_t*)&service_time;
+            uint64_t leader_ip = leader_ptr[0];
+            uint64_t new_header = 0;
+            new_header |= sizeof(client_req_t) + 2*sizeof(uint64_t);
+            new_header |= (leader_ip << 32);
+            lnic_write_r(new_header);
 
-        // Receive the response from the cluster.
-        // TODO: A real version would really need a timeout.
-        lnic_wait();
-        uint64_t end_cycles = csr_read(mcycle);
+            // Send the whole message
+            uint64_t start_cycles = csr_read(mcycle);
+            lnic_write_r(start_word);
+            lnic_write_r(sent_time);
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_copy();
+            lnic_msg_done();
+            sent_map[sent_time] = start_cycles;
+        } else {
+            // Receive the response from the cluster.
+            // TODO: A real version would really need a timeout.
+            uint64_t end_cycles = csr_read(mcycle);
+            uint16_t msg_len = header & 0xffff;
+            assert(msg_len == sizeof(client_resp_t) + 2*sizeof(uint64_t));
 
-        // Process the header and the start word
-        header = lnic_read();
-        start_word = lnic_read();
-        start_word_arr = (uint16_t*)&start_word;
-        msg_type = start_word_arr[0];
-        assert(msg_type == ReqType::kClientReqResponse);
+            // Process the header and the start word
+            uint64_t start_word = lnic_read();
+            uint64_t sent_time = lnic_read();
+            uint64_t start_cycles = sent_map.at(sent_time);
+            uint16_t* start_word_arr = (uint16_t*)&start_word;
+            uint16_t msg_type = start_word_arr[0];
+            assert(msg_type == ReqType::kClientReqResponse);
 
-        // Forward the new header and metadata
-        new_header = 0;
-        new_header |= sizeof(client_resp_t) + 3*sizeof(uint64_t);
-        new_header |= (load_gen_ip << 32);
-        lnic_write_r(new_header);
-        uint64_t delta_cycles = end_cycles - start_cycles;
-        lnic_write_r(delta_cycles);
-        lnic_write_r(sent_time);
-        lnic_write_r(start_word);
+            // Forward the new header and metadata
+            uint64_t new_header = 0;
+            new_header |= sizeof(client_resp_t) + 3*sizeof(uint64_t);
+            new_header |= (load_gen_ip << 32);
+            lnic_write_r(new_header);
+            uint64_t delta_cycles = end_cycles - start_cycles;
+            lnic_write_r(delta_cycles);
+            lnic_write_r(sent_time);
+            lnic_write_r(start_word);
 
-        // Forward the rest of the response message
-        lnic_copy();
-        lnic_msg_done();
+            // Forward the rest of the response message
+            lnic_copy();
+            lnic_msg_done();
+        }
     }
 
 
@@ -535,14 +545,15 @@ void __attribute__((noinline)) send_message(uint32_t dst_ip, uint64_t* buffer, u
     }
 }
 
-void send_client_response(uint64_t header, ClientRespType resp_type, uint32_t leader_ip=0) {
+void send_client_response(uint64_t header, uint64_t sent_time, ClientRespType resp_type, uint32_t leader_ip=0) {
     // Build and send the header and start word
     header &= 0xffffffffffff0000;
-    header |= (uint16_t)(sizeof(client_resp_t) + sizeof(uint64_t));
+    header |= (uint16_t)(sizeof(client_resp_t) + 2*sizeof(uint64_t));
     lnic_write_r(header);
     uint64_t start_word = 0;
     start_word |= ReqType::kClientReqResponse;
     lnic_write_r(start_word);
+    lnic_write_r(sent_time);
 
     // Build and send the client response
     client_resp_t client_response;
@@ -559,6 +570,7 @@ uint32_t get_random() {
 void service_client_message(uint64_t header, uint64_t start_word) {
     //printf("Servicing a client message with header %#lx\n", header);
     raft_node_t* leader = raft_get_current_leader_node(sv->raft);
+    uint64_t sent_time = lnic_read();
     if (leader == nullptr) {
         // Cluster doesn't have a leader, reply with error.
         // start_word is *not* part of the message structure when the client sends requests. This keeps us from having
@@ -574,7 +586,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         dump = lnic_read();
         dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, ClientRespType::kFailTryAgain);
+        send_client_response(header, sent_time, ClientRespType::kFailTryAgain);
         return;
     }
 
@@ -592,7 +604,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
         dump = lnic_read();
         dump = lnic_read();
         lnic_msg_done();
-        send_client_response(header, ClientRespType::kFailRedirect, leader_ip);
+        send_client_response(header, sent_time, ClientRespType::kFailRedirect, leader_ip);
         return;
     }
 
@@ -618,6 +630,7 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     assert(!leader_sav.in_use);
     leader_sav.in_use = true;
     leader_sav.header = header;
+    leader_sav.sent_time = sent_time;
 
     // Set up the raft entry
     msg_entry_t ent;
@@ -853,7 +866,7 @@ int server_main() {
             // We've already committed the entry
             raft_apply_all(sv->raft);
             leader_sav.in_use = false;
-            send_client_response(leader_sav.header, ClientRespType::kSuccess, sv->own_ip_addr);
+            send_client_response(leader_sav.header, leader_sav.sent_time, ClientRespType::kSuccess, sv->own_ip_addr);
             uint64_t end_time = csr_read(mcycle);
             //printf("total elapsed %ld\n", end_time - initial_msg_recv);
         }
