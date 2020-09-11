@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <sstream>
+#include <queue>
 #include <map>
 #include <bits/stdc++.h>
 
@@ -89,6 +90,9 @@ typedef struct {
     uint64_t header;
     uint64_t sent_time;
     msg_entry_response_t msg_entry_response;
+    leader_saveinfo_t() {
+        in_use = false;
+    }
 } leader_saveinfo_t;
 
 typedef struct {
@@ -97,8 +101,9 @@ typedef struct {
     uint32_t num_servers;
     raft_server_t *raft;
     uint64_t last_cycles;
-    leader_saveinfo_t leader_saveinfo[kMaxStaticPendingRequests];
+    queue<leader_saveinfo_t> leader_saveinfo;
     uint32_t next_open_leader_sav_index;
+    uint32_t max_pending_requests;
     uint32_t client_current_leader_index;
     vector<raft_entry_t*> log_record;
     FixedTable *table;
@@ -628,19 +633,25 @@ void service_client_message(uint64_t header, uint64_t start_word) {
     lnic_msg_done();
 
     // Select a saveinfo entry. Default to incrementing the entry counter, unless no more entries can be found.
-    uint32_t index_to_use = kMaxStaticPendingRequests;
-    if (sv->next_open_leader_sav_index < kMaxStaticPendingRequests) {
+    uint32_t index_to_use = sv->max_pending_requests;
+    if (sv->next_open_leader_sav_index < sv->max_pending_requests) {
         index_to_use = sv->next_open_leader_sav_index;
         sv->next_open_leader_sav_index++;
     } else {
-        for (int i = 0; i < kMaxStaticPendingRequests; i++) {
+        for (int i = 0; i < sv->max_pending_requests; i++) {
             if (!sv->leader_saveinfo[i].in_use) {
                 index_to_use = i;
                 break;
             }
         }
     }
-    assert(index_to_use < kMaxStaticPendingRequests);
+
+    if (index_to_use == sv->max_pending_requests) {
+        sv->leader_saveinfo.push_back(leader_saveinfo_t());
+        sv->max_pending_requests++;
+        sv->next_open_leader_sav_index++;
+    }
+    assert(index_to_use < sv->max_pending_requests);
 
     // Set up saveinfo so that we can reply to the client later.
     leader_saveinfo_t &leader_sav = sv->leader_saveinfo[index_to_use];
@@ -846,6 +857,11 @@ int server_main() {
     alloc->current_index = 0;
     for (int i = 0; i < kNumAllocSlots; i++) {
         alloc->used_slots[i] = 0;
+    }
+    sv->max_pending_requests = kMaxStaticPendingRequests;
+    sv->leader_saveinfo.reserve(kMaxStaticPendingRequests);
+    for (int i = 0; i < sv->max_pending_requests; i++) {
+        sv->leader_saveinfo.push_back(leader_saveinfo_t());
     }
 
     while (true) {
