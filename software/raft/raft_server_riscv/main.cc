@@ -205,7 +205,7 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
 
     // Prepare and send the header
     uint32_t dst_ip = raft_node_get_id(node);
-    uint32_t buf_size = sizeof(msg_appendentries_t);
+    uint32_t buf_size = sizeof(msg_appendentries_t) + sizeof(uint64_t);
     buf_size += m->n_entries * (sizeof(msg_entry_t) + sizeof(client_req_t));
     uint64_t header = 0;
     header |= (uint64_t)dst_ip << 32;
@@ -246,6 +246,8 @@ int __raft_send_appendentries(raft_server_t* raft, void *user_data, raft_node_t 
         lnic_write_r(msg_data[8]);
         lnic_write_r(msg_data[9]);
     }
+    uint64_t test_dummy = 1234;
+    lnic_write_r(test_dummy);
     return 0;
 }
 
@@ -754,6 +756,7 @@ void service_append_entries(uint64_t header, uint64_t start_word) {
     } else {
         m.entries = nullptr;
     }
+    uint64_t dump = lnic_read();
     lnic_msg_done();
     //printf("starting to process appendentries\n");
 
