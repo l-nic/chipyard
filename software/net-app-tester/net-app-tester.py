@@ -676,8 +676,6 @@ class INTPathLatencyTest(unittest.TestCase):
         NUM_CORES = 1
         NUM_HOPS = 4
 
-        exp_num_events = 0
-
         hop_latencies = [100 for i in range(NUM_HOPS)]
         inputs = []
         for i in range(NUM_REPORTS_PER_CORE):
@@ -692,28 +690,30 @@ class INTPathLatencyTest(unittest.TestCase):
             p[LNIC].tx_msg_id = i % 128
 
         receiver = LNICReceiver(TEST_IFACE)
-        # Create two sniffers, one to listen for NetworkEvents
-        # and one to listen for the final done msg
-        # start sniffing for responses
-        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.PathLatencyAnomaly_event) and x[LNIC].flags.DATA,
-                    prn=receiver.process_pkt, count=exp_num_events, timeout=300) if exp_num_events > 0 else None
+
         done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
                     prn=receiver.process_pkt, count=NUM_CORES, timeout=300)
-        if event_sniffer is not None:
-            event_sniffer.start()
         done_sniffer.start()
-        # send in pkts
         sendp(inputs, iface=TEST_IFACE)
-        # wait for all responses
-        if event_sniffer is not None:
-            event_sniffer.join()
         done_sniffer.join()
-        if event_sniffer is not None:
-            print "-------- Events: ---------"
-            for p in event_sniffer.results:
-                p.show()
-                print '================================'
-                print '================================'
+
+        # Send in a request with a really high path latency such that a report is generated
+
+        hop_latencies = [10000 for i in range(NUM_HOPS)]
+        p = self.INT_report(dst_context=0, flow_id=0, hop_latencies=hop_latencies)
+        p[INT.INT_PathLatency_report].flow_flags.DATA = True
+
+        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.PathLatencyAnomaly_event) and x[LNIC].flags.DATA,
+                    prn=receiver.process_pkt, count=1, timeout=300)
+        event_sniffer.start()
+        sendp(p, iface=TEST_IFACE)
+        event_sniffer.join()
+
+        print "-------- Events: ---------"
+        for p in event_sniffer.results:
+            p.show()
+            print '================================'
+            print '================================'
         total_latency = done_sniffer.results[-1].latency / 3.2e9 # seconds
         throughput = len(inputs)/total_latency # postcards/second
         print 'throughput = {} M reports/sec'.format(throughput/1e6)
