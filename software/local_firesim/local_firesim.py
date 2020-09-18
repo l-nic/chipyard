@@ -14,11 +14,19 @@ simulator = 'VFireSim-debug' if enable_waveforms else 'VFireSim'
 
 # cmdline args for load generator RISC-V program
 # NOTE: the test type must match what is specified in switchconfig1.h!
-test_type = "ONE_CONTEXT_FOUR_CORES"
-c1_stall_factor = 100
-c1_stall_freq = 10
 
-# NOTE: if use_load_prog is set then MUST pass in the lnic-load-balance.riscv binary
+#test_type = "ONE_CONTEXT_FOUR_CORES"
+#test_type = "FOUR_CONTEXTS_FOUR_CORES"
+
+test_type = "DIF_PRIORITY_LNIC_DRIVEN"
+#test_type = "DIF_PRIORITY_TIMER_DRIVEN"
+
+#test_type = "HIGH_PRIORITY_C1_STALL"
+#test_type = "LOW_PRIORITY_C1_STALL"
+c1_stall_factor = 10
+c1_stall_freq = 5
+
+# NOTE: if use_load_prog is set then MUST pass in the lnic-evaluation.riscv binary
 use_load_prog = True
 load_gen_args = "{} {} {}".format(test_type, c1_stall_factor, c1_stall_freq) if use_load_prog else ""
 

@@ -3,7 +3,8 @@ OBJDUMP=riscv64-unknown-elf-objdump
 CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
 CXX=riscv64-unknown-elf-g++
-CPPFLAGS=-mcmodel=medany -I. -O2 -ffixed-x30 -ffixed-x31 -Wall -Wextra -Werror -pedantic -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
+CPPFLAGS=-mcmodel=medany -I. -Wall -Wextra -pedantic -O2 -ffixed-x30 -ffixed-x31 -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
+
 
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
 PROGRAMS += lnic-nic-loopback-gpr
@@ -41,6 +42,12 @@ PROGRAMS += lnic-evaluation
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
 PROGRAMS += lnic-multi-core-mica
+PROGRAMS += lnic-postcard-agg-sw
+PROGRAMS += lnic-postcard-agg-opt
+PROGRAMS += lnic-int-collector
+PROGRAMS += lnic-int-collector-opt
+PROGRAMS += lnic-int-heavy-hitter
+PROGRAMS += lnic-int-path-latency
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
@@ -59,6 +66,12 @@ lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o
+	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
+
+lnic-int-collector.riscv: lnic-int-collector.o crt.o syscalls.o link.ld city_mod.o
+	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
+
+lnic-int-collector-opt.riscv: lnic-int-collector-opt.o crt.o syscalls.o link.ld city_mod.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 %.riscv: %.o crt.o syscalls.o link.ld
