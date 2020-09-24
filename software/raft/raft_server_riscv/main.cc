@@ -55,7 +55,7 @@ const uint32_t kMaxStaticPendingRequests = 10;
 uint64_t load_gen_ip = 0x0a000001;
 
 struct MyFixedTableConfig {
-  static constexpr size_t kBucketCap = 7;
+  static constexpr size_t kBucketCap = 16;
 
   // Support concurrent access. The actual concurrent access is enabled by
   // concurrent_read and concurrent_write in the configuration.
@@ -68,14 +68,14 @@ struct MyFixedTableConfig {
   // reset_stats().
   static constexpr bool kCollectStats = false;
 
-  static constexpr size_t kKeySize = 8;
+  static constexpr size_t kKeySize = 16;
 
   //static std::string tableName = "test_table";
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
   //static constexpr size_t itemCount = 640000;
   //static constexpr size_t itemCount = 16000;
-  static constexpr size_t itemCount = 8*1024;
+  static constexpr size_t itemCount = 10000;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
