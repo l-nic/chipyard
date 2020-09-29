@@ -1,6 +1,6 @@
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR riscv)
-set(tools /home/$ENV{USER}/chipyard/riscv-tools-install)
+set(tools $ENV{RISCV})
 set(CMAKE_C_COMPILER ${tools}/bin/riscv64-unknown-elf-gcc CACHE STRING "C compiler" FORCE)
 set(CMAKE_CXX_COMPILER ${tools}/bin/riscv64-unknown-elf-g++ CACHE STRING "C++ compiler" FORCE)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -mcmodel=medany -fno-builtin-printf -fpermissive -O2 -ffixed-x30 -ffixed-x31")
