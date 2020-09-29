@@ -5,6 +5,7 @@ LDFLAGS=-static -nostdlib -nostartfiles -lgcc
 CXX=riscv64-unknown-elf-g++
 CPPFLAGS=-mcmodel=medany -I. -Wall -Wextra -pedantic -O2 -ffixed-x30 -ffixed-x31 -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
 
+
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
 PROGRAMS += lnic-nic-loopback-gpr
 PROGRAMS += lnic-nic-loopback-csr
@@ -40,6 +41,7 @@ PROGRAMS += lnic-incast-nolock
 PROGRAMS += lnic-evaluation
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
+PROGRAMS += lnic-multi-core-mica
 PROGRAMS += lnic-postcard-agg-sw
 PROGRAMS += lnic-postcard-agg-opt
 PROGRAMS += lnic-int-collector
@@ -60,13 +62,10 @@ dumps: $(addsuffix .dump,$(PROGRAMS))
 %.o: %.cc
 	$(CXX) $(CPPFLAGS) -c $< -o $@
 
-city_mod.o: mica/util/cityhash/city_mod.cc
-	$(CXX) $(CPPFLAGS) -c $< -o $@
-
-lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o city_mod.o
+lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
-lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o city_mod.o
+lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 lnic-int-collector.riscv: lnic-int-collector.o crt.o syscalls.o link.ld city_mod.o

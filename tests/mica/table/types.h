@@ -51,6 +51,36 @@ enum class Result {
 //	};
 //}
 
+static const char *cResultString(enum Result r)
+{
+	switch(r) {
+		case Result::kSuccess:
+			return "Success";
+		case Result::kError:
+			return "Error";
+		case Result::kInsufficientSpacePool:
+			return "Insufficient space in pool";
+		case Result::kInsufficientSpaceIndex:
+			return "Insufficient space in index";
+		case Result::kExists:
+			return "Exists";
+		case Result::kNotFound:
+			return "Not found";
+		case Result::kPartialValue:
+			return "Partial value";
+		case Result::kNotProcessed:
+			return "Not processed";
+		case Result::kNotSupported:
+			return "Not supported";
+		case Result::kTimedOut:
+			return "Timed out";
+		case Result::kRejected:
+			return "Rejected";
+		default:
+			return "Invalid ::mica::table Result type";
+	};
+}
+
 }
 }
 
