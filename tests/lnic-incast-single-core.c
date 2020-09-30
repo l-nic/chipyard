@@ -7,7 +7,7 @@
 
 #define MSG_LEN_WORDS 128
 
-#define NUM_CLIENTS 7
+#define NUM_CLIENTS 63
 
 // IP addr's are assigned by firesim starting at 10.0.0.2. Server will be the first one.
 uint64_t server_ip = 0x0a000002;

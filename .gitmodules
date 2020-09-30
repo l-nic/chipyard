@@ -37,14 +37,14 @@
 	url = https://github.com/sifive/block-inclusivecache-sifive.git
 [submodule "toolchains/riscv-tools/riscv-gnu-toolchain"]
 	path = toolchains/riscv-tools/riscv-gnu-toolchain
-	url = https://github.com/riscv/riscv-gnu-toolchain.git
+	url = https://github.com/l-nic/riscv-gnu-toolchain.git
 [submodule "toolchains/riscv-tools/riscv-gnu-toolchain-prebuilt"]
 	path = toolchains/riscv-tools/riscv-gnu-toolchain-prebuilt
 	url = https://github.com/ucb-bar/chipyard-toolchain-prebuilt.git
 	shallow = true
 [submodule "toolchains/riscv-tools/riscv-isa-sim"]
 	path = toolchains/riscv-tools/riscv-isa-sim
-	url = https://github.com/riscv/riscv-isa-sim.git
+	url = https://github.com/l-nic/riscv-isa-sim.git
 [submodule "toolchains/riscv-tools/riscv-pk"]
 	path = toolchains/riscv-tools/riscv-pk
 	url = https://github.com/riscv/riscv-pk.git
@@ -132,3 +132,21 @@
 [submodule "software/local_firesim/PcapPlusPlus"]
 	path = software/local_firesim/PcapPlusPlus
 	url = https://github.com/l-nic/PcapPlusPlus
+[submodule "software/ray-tracing/host-driver"]
+	path = software/ray-tracing/host-driver
+	url = https://github.com/l-nic/r2t2
+[submodule "software/ray-tracing/riscv-tracer"]
+	path = software/ray-tracing/riscv-tracer
+	url = https://github.com/l-nic/r2t2
+[submodule "software/ray-tracing/protobuf-tools/host-protobuf"]
+	path = software/ray-tracing/protobuf-tools/host-protobuf
+	url = https://github.com/l-nic/protobuf
+[submodule "software/ray-tracing/protobuf-tools/riscv-protobuf"]
+	path = software/ray-tracing/protobuf-tools/riscv-protobuf
+	url = https://github.com/l-nic/protobuf
+[submodule "software/raft/host_raft"]
+	path = software/raft/host_raft
+	url = https://github.com/l-nic/raft.git
+[submodule "software/raft/riscv_raft"]
+	path = software/raft/riscv_raft
+	url = https://github.com/l-nic/raft

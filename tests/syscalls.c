@@ -52,6 +52,8 @@ int thread_failed[NCORES];
 extern volatile uint64_t tohost;
 extern volatile uint64_t fromhost;
 
+volatile int wait = 1;
+
 uint32_t use_uart = 0;
 
 bool did_init = false;
@@ -59,6 +61,9 @@ int core_global_ret = 0;
 uint64_t num_exited = 0;
 
 uint64_t num_threads_exited[NCORES];
+
+const void *const __dso_handle __attribute__ ((__visibility__ ("hidden")))
+  = &__dso_handle;
 
 bool __attribute__((weak)) is_single_core()
 {
@@ -441,19 +446,20 @@ int __attribute__((weak)) main(int argc, char** argv)
 static void init_tls()
 {
   register void* thread_pointer asm("tp");
-  extern char _tls_data;
+  extern char __tdata_start;
   extern __thread char _tdata_begin, _tdata_end, _tbss_end;
   size_t tdata_size = &_tdata_end - &_tdata_begin;
-  memcpy(thread_pointer, &_tls_data, tdata_size);
+  memcpy(thread_pointer, &__tdata_start, tdata_size);
   size_t tbss_size = &_tbss_end - &_tdata_end;
   memset(thread_pointer + tdata_size, 0, tbss_size);
 }
 
 void _init(int cid, int nc)
 {
+  //printf("early init\n");
   init_tls();
   if (cid == 0) {
-    uart_init();
+    // uart_init();
     getmainvars(&mainvars[0], MAX_ARGS_BYTES);
     argc = mainvars[0];
     argv = mainvars + 1;
