@@ -44,10 +44,10 @@ PROGRAMS += lnic-multi-core-chain-rep
 PROGRAMS += lnic-multi-core-mica
 PROGRAMS += lnic-postcard-agg-sw
 PROGRAMS += lnic-postcard-agg-opt
-PROGRAMS += lnic-int-collector
-PROGRAMS += lnic-int-collector-opt
-PROGRAMS += lnic-int-heavy-hitter
-PROGRAMS += lnic-int-path-latency
+#PROGRAMS += lnic-int-collector
+#PROGRAMS += lnic-int-collector-opt
+#PROGRAMS += lnic-int-heavy-hitter
+#PROGRAMS += lnic-int-path-latency
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
