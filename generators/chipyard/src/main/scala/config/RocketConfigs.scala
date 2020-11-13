@@ -323,13 +323,13 @@ class InitZeroRocketConfig extends Config(
   new freechips.rocketchip.system.BaseConfig)
 // DOC include end: InitZeroRocketConfig
 
-class LoopbackNICRocketConfig extends Config(
+class SimNetworkIceNICRocketConfig extends Config(
   new chipyard.iobinders.WithUARTAdapter ++
   new chipyard.iobinders.WithTieOffInterrupts ++
   new chipyard.iobinders.WithBlackBoxSimMem ++
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
-  new chipyard.iobinders.WithLoopbackNIC ++                        // drive NIC IOs with loopback
+  new chipyard.iobinders.WithSimNIC ++                        // drive NIC IOs with loopback
   new testchipip.WithTSI ++
   new icenet.WithIceNIC ++                                         // add an IceNIC
   new chipyard.config.WithNoGPIO ++
