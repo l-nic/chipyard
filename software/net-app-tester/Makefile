@@ -7,6 +7,9 @@ mica:
 loopback:
 	python -m unittest net-app-tester.Loopback
 
+loopback_latency:
+	python -m unittest net-app-tester.LoopbackLatency
+
 throughput:
 	python -m unittest net-app-tester.ThroughputTest
 

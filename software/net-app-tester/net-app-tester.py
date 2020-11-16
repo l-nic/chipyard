@@ -351,14 +351,17 @@ class LoopbackLatency(unittest.TestCase):
 #        print_pkts(sniffer.results)
         return sniffer.results
     def test_latency(self):
-        msg_len = 8 # bytes
-        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
+        msg_len = 800 # bytes
+        num_packets = 1
+        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)] * num_packets
         rx_pkts = self.do_loopback(pkts)
-        self.assertEqual(1, len(rx_pkts))
-        p = rx_pkts[0]
-        latency = struct.unpack('!L', str(p)[-4:])[0]
-        time = struct.unpack('!L', str(p)[-8:-4])[0]
-        print "latency = {} cycles".format(latency)
+        self.assertEqual(num_packets, len(rx_pkts))
+        for i in range(num_packets):
+            p = rx_pkts[i]
+            latency = struct.unpack('!L', str(p)[-4:])[0]
+            time = struct.unpack('!L', str(p)[-8:-4])[0]
+            print "latency = {} cycles".format(latency)
+        print "Number of packets is {}".format(len(pkts))
 
 class ThroughputTest(unittest.TestCase):
     def setUp(self):
