@@ -5,7 +5,7 @@ LDFLAGS= -static
 
 include libgloss.mk
 
-PROGRAMS = pwm blkdev accum charcount nic-loopback big-blkdev pingd hello
+PROGRAMS = pwm blkdev accum charcount nic-loopback big-blkdev pingd hello icenic_cpu_loopback
 
 .DEFAULT_GOAL := default
 
