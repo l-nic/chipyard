@@ -150,3 +150,6 @@
 [submodule "software/raft/riscv_raft"]
 	path = software/raft/riscv_raft
 	url = https://github.com/l-nic/raft
+[submodule "software/packet-classification/nuevomatch"]
+	path = software/packet-classification/nuevomatch
+	url = https://github.com/theojepsen/nuevomatch.git
