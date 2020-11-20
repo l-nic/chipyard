@@ -375,8 +375,9 @@ class LoopbackLatency(unittest.TestCase):
 #        print_pkts(sniffer.results)
         return sniffer.results
     def test_latency(self):
-        msg_len = 8 # bytes
-        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
+        msg_len = 800 # bytes
+        num_packets = 1
+        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)] * num_packets
         rx_pkts = self.do_loopback(pkts)
         self.assertEqual(1, len(rx_pkts))
         p = rx_pkts[0]
