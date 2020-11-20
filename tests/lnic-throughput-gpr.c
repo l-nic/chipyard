@@ -41,8 +41,15 @@ int rx_throughput_test(uint64_t app_hdr) {
     msg_len = (uint16_t)app_hdr;
 #ifdef UNROLL_LOOP
     if (msg_len != MSG_LEN_WORDS*8) {
-      printf("ERROR: application only supports %d byte msgs!\n", MSG_LEN_WORDS*8);
-      return -1;
+      num_words = msg_len/LNIC_WORD_SIZE;
+      if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
+      // read and discard all msg data
+      for (j = 0; j < num_words; j++) {
+        lnic_read();
+      }
+      continue;
+      //printf("ERROR: application only supports %d byte msgs!\n", MSG_LEN_WORDS*8);
+      //return -1;
     }
     REPEAT_128(lnic_read();)
 #else

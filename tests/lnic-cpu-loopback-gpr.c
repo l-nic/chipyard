@@ -29,7 +29,17 @@ int main(void)
     num_words = msg_len/LNIC_WORD_SIZE;
     if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
     // copy msg words back into network
-    for (i = 0; i < num_words; i++) {
+    for (i = 0; i < num_words / 8; i++) {
+      lnic_copy();
+      lnic_copy();
+      lnic_copy();
+      lnic_copy();
+      lnic_copy();
+      lnic_copy();
+      lnic_copy();
+      lnic_copy();
+    }
+    for (i = 0; i < num_words % 8; i++) {
       lnic_copy();
     }
     lnic_msg_done();

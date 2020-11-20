@@ -332,6 +332,30 @@ class Loopback(unittest.TestCase):
 #        df = pd.DataFrame({'pkt_len':length, 'latency':latency})
 #        write_csv('loopback', 'pkt_len_latency.csv', df)
 
+class CacheTest(unittest.TestCase):
+    def do_loopback(self, pkts):
+        receiver = LNICReceiver(TEST_IFACE)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+            prn=receiver.process_pkt, count=len(pkts), timeout=100)
+        sniffer.start()
+        sendp(pkts, iface=TEST_IFACE)
+        sniffer.join()
+        self.assertEqual(len(pkts), len(sniffer.results))
+        return sniffer.results
+    
+    def test_cache(self):
+        msg_len = 520 # bytes
+        raw_data = 'abcdefghhqshxxkuceshaixlnicpdvtgvmoapbvejqoomaabnkxuqpuhepdxxvtgprwalyldpicvepcfsucpjmkqwetciufesjsykkcnjhwiqrctmdvigrgqrtytfqylebjkocvgcvtbseoyjbhdoacizwxtieicadsdfhyiogyvkrjvdxwvcaytuqyanpxbsslincyqchbjuycdfzpuvymbnlsocghirctzhjplfaouojkjjkgelrevzpbbmrgivvmohmnvskqqodpkehhcqgxummrfenglgbuifbhfzorervdtvzdxyhecpzvkuqlihzxxbowsfoeeydrfrihuinzppqnmaxfevamcxdotyjrwjphriabthvmhaniqwnbfgywihhwxwsejcjqdcrpytlcjxzromedyfatsjvhqnvaekcfcbtoendzvbxyiupyxgpnlxtfguhxubbowfwsopkcydrfngcuhvthsmgppjnwnynuykwlqszmlervfdqyqlqdalagr'
+        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw(raw_data)]
+        for i in range(8):
+            rx_pkts = self.do_loopback(pkts)
+            self.assertEqual(1, len(rx_pkts))
+            p = rx_pkts[0]
+            latency = struct.unpack('!L', str(p)[-4:])[0]
+            time = struct.unpack('!L', str(p)[-8:-4])[0]
+            print "latency = {} cycles".format(latency)
+            print "first 8 letters = {}".format(str(p)[:8])
+
 class LoopbackLatency(unittest.TestCase):
     def do_loopback(self, pkts):
 #        print "*********** Request Pkts: ***********"
@@ -359,6 +383,24 @@ class LoopbackLatency(unittest.TestCase):
         latency = struct.unpack('!L', str(p)[-4:])[0]
         time = struct.unpack('!L', str(p)[-8:-4])[0]
         print "latency = {} cycles".format(latency)
+    def test_pkt_length(self):
+        pkt_len = range(64, 64*20, 64)
+        length = []
+        latency = []
+        for l in pkt_len:
+            for i in range(NUM_SAMPLES):
+                print 'Testing pkt_len = {} bytes'.format(l)
+                length.append(l)
+                pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
+                rx_pkts = self.do_loopback(pkts)
+                self.assertEqual(1, len(rx_pkts))
+                p = rx_pkts[0]
+                lat = struct.unpack('!L', str(p)[-4:])[0]
+                time = struct.unpack('!L', str(p)[-8:-4])[0]
+                latency.append(lat)
+        # record latencies
+                df = pd.DataFrame({'pkt_len':length, 'latency':latency})
+                write_csv('loopback', 'pkt_len_latency.csv', df)
 
 class ThroughputTest(unittest.TestCase):
     def setUp(self):
@@ -422,13 +464,13 @@ class ThroughputTest(unittest.TestCase):
         return throughput # bytes/cycle
 
     def test_rx_throughput(self):
-        msg_len = MAX_SEG_LEN_BYTES
+        msg_len = 1024 #MAX_SEG_LEN_BYTES
         num_msgs = 100
         throughput = self.do_rx_test(num_msgs, msg_len)
         print 'RX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
 
     def test_tx_throughput(self):
-        msg_len = MAX_SEG_LEN_BYTES
+        msg_len = 1024 #MAX_SEG_LEN_BYTES
         num_msgs = 100
         throughput = self.do_tx_test(num_msgs, msg_len)
         print 'TX Throughput = {} bytes/cycle ({} Gbps)'.format(throughput, throughput*8.0/0.3125)
