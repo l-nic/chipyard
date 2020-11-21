@@ -121,7 +121,7 @@ struct eth_header {
         uint8_t dst_mac[MAC_ADDR_SIZE];
         uint8_t src_mac[MAC_ADDR_SIZE];
         uint16_t ethtype;
-};
+} __attribute__((packed));
 
 struct arp_header {
         uint16_t htype;
@@ -146,7 +146,7 @@ struct ipv4_header {
         uint16_t cksum;
         uint32_t src_addr;
         uint32_t dst_addr;
-};
+} __attribute__((packed));
 
 struct icmp_header {
         uint8_t type;
@@ -162,7 +162,7 @@ struct lnic_header {
 	uint16_t msg_len;
 	uint16_t offset;
 	uint32_t padding;
-};
+} __attribute__((packed));
 
 static int checksum(uint16_t *data, int len)
 {
@@ -194,14 +194,14 @@ static int nic_recv_lnic(void *buf, struct lnic_header **lnic)
     nic_recv(buf);
 
     // check eth hdr
-    eth = buf;
+    eth = (struct eth_header *)buf;
     if (ntohs(eth->ethtype) != IPV4_ETHTYPE) {
       printf("Wrong ethtype %x\n", ntohs(eth->ethtype));
       break;
     }
 
     // check IPv4 hdr
-    ipv4 = buf + ETH_HEADER_SIZE;
+    ipv4 = (struct ipv4_header *)((char *)buf + ETH_HEADER_SIZE);
     if (ipv4->proto != LNIC_PROTO) {
       printf("Wrong IP protocol %x\n", ipv4->proto);
       break;
@@ -209,7 +209,7 @@ static int nic_recv_lnic(void *buf, struct lnic_header **lnic)
 
     // parse lnic hdr
     int ihl = ipv4->ver_ihl & 0xf;
-    *lnic = (void *)ipv4 + (ihl << 2);
+    *lnic = (struct lnic_header *)((char *)ipv4 + (ihl << 2));
     return 0;
   }
   return 0;
@@ -226,10 +226,10 @@ static int swap_addresses(void *buf, uint8_t *mac)
   uint32_t tmp_ip_addr;
   uint16_t tmp_lnic_addr;
 
-  eth = buf;
-  ipv4 = buf + ETH_HEADER_SIZE;
+  eth = (struct eth_header *)buf;
+  ipv4 = (struct ipv4_header *)((char *)buf + ETH_HEADER_SIZE);
   int ihl = ipv4->ver_ihl & 0xf;
-  lnic = (void *)ipv4 + (ihl << 2);
+  lnic = (struct lnic_header *)((char *)ipv4 + (ihl << 2));
 
   // swap eth/ip/lnic src and dst
   memcpy(eth->dst_mac, eth->src_mac, MAC_ADDR_SIZE);

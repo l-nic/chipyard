@@ -12,6 +12,8 @@ import pandas as pd
 import os
 import random
 import numpy as np
+from cityhash import CityHash64
+import json
 
 # set random seed for consistent sims
 random.seed(1)
@@ -570,3 +572,72 @@ class Multithread(unittest.TestCase):
         sendp(lnic_req(0) / payload, iface=TEST_IFACE)
         self.assertTrue(True)
 
+MICA_VALUE_SIZE_BYTES = 512
+MICA_ITEM_COUNT = 10000
+#MICA_ITEM_COUNT = 100
+class MICA(unittest.TestCase):
+    def do_loopback(self, payload):
+        req = lnic_req() / payload
+        #req.show2()
+        # send request / receive response
+        resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC, verbose=0)
+        self.assertIsNotNone(resp)
+        self.assertEqual(resp[LNIC].dst, MY_CONTEXT)
+        #resp.show2()
+        #service_time, sent_time = struct.unpack('!QQ', str(resp[LNIC].payload))
+        resp_data = str(resp[LNIC].payload)[16:-8]
+        latency = struct.unpack('!Q', str(resp[LNIC].payload)[-8:])[0]
+        return (latency, resp_data)
+    def make_req(self, read=True, key=0x2):
+        service_time = '\x00'*8
+        sent_time = '\x00'*8
+        msg_type_r = '\x00\x00\x00\x00\x00\x00\x00\x01'
+        msg_type_w = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        msg_key0   = struct.pack('!Q', key)
+        msg_key1   = '\x00\x00\x00\x00\x00\x00\x00\x00'
+        key_hash = CityHash64(msg_key0[::-1] + msg_key1[::-1])
+        key_hash_be = struct.pack('!Q', key_hash)
+        if read:
+            msg_type = msg_type_r
+            msg_val = ''
+        else:
+            msg_type = msg_type_w
+            msg_val    = '\x00\x00\x00\x00\x01\x02\x03\x04' + '\x00'*(MICA_VALUE_SIZE_BYTES-8)
+        timestamp  = '\x00\x00\x00\x00\x00\x00\x00\x00'
+        return Raw(service_time + sent_time + msg_type + msg_key0 + msg_key1 + key_hash_be + msg_val + timestamp)
+    def test_rw_lats(self):
+        read_lats = []
+        write_lats = []
+        for x in range(20000):
+        #for x in range(10):
+            if x%1000 == 0: print "Sent", x, "requests"
+            is_read = x%2 == 0
+            key = random.randint(1, MICA_ITEM_COUNT)
+            #key = (x % 10) + 1
+            payload = self.make_req(read=is_read, key=key)
+            latency, resp_data = self.do_loopback(payload)
+            if is_read:
+                read_lats.append(latency)
+            else:
+                write_lats.append(latency)
+        with open('/tmp/read_lats.json', 'w') as f:
+            json.dump(read_lats, f)
+        with open('/tmp/write_lats.json', 'w') as f:
+            json.dump(write_lats, f)
+        all_lats = read_lats + write_lats
+        print "mean read", np.mean(read_lats)
+        print "mean write", np.mean(write_lats)
+        percentiles = [50, 99, 99.9, 99.99]
+        print "read percentiles:", list(zip(percentiles, np.percentile(read_lats, percentiles)))
+        print "write percentiles:", list(zip(percentiles, np.percentile(write_lats, percentiles)))
+    def _test_read(self):
+        latencies = []
+        payload = self.make_req(read=True)
+        latency, resp_data = self.do_loopback(payload)
+        print "msg_val:", repr(resp_data)
+        print "read latency:", latency, latency/3.2, "ns"
+    def _test_write(self):
+        payload = self.make_req(read=False)
+        latency, resp_data = self.do_loopback(payload)
+        print "ack:", repr(resp_data)
+        print "write latency:", latency, latency/3.2, "ns"

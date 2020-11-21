@@ -34,3 +34,6 @@ nbody:
 multithread:
 	python -m unittest net-app-tester.Multithread
 
+mica:
+	python -m unittest net-app-tester.MICA
+
