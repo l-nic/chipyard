@@ -15,6 +15,7 @@ import pandas as pd
 import os
 import random
 import numpy as np
+import time
 
 # set random seed for consistent sims
 random.seed(1)
@@ -363,9 +364,11 @@ class LoopbackLatency(unittest.TestCase):
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
                     prn=receiver.process_pkt, count=len(pkts), timeout=100)
+
         sniffer.start()
+        time.sleep(1)
         # send in pkts
         sendp(pkts, iface=TEST_IFACE)
         # wait for all response pkts
@@ -375,7 +378,7 @@ class LoopbackLatency(unittest.TestCase):
 #        print_pkts(sniffer.results)
         return sniffer.results
     def test_latency(self):
-        msg_len = 800 # bytes
+        msg_len = 64 # bytes
         num_packets = 1
         pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)] * num_packets
         rx_pkts = self.do_loopback(pkts)
@@ -384,24 +387,24 @@ class LoopbackLatency(unittest.TestCase):
         latency = struct.unpack('!L', str(p)[-4:])[0]
         time = struct.unpack('!L', str(p)[-8:-4])[0]
         print "latency = {} cycles".format(latency)
-    def test_pkt_length(self):
-        pkt_len = range(64, 64*20, 64)
-        length = []
-        latency = []
-        for l in pkt_len:
-            for i in range(NUM_SAMPLES):
-                print 'Testing pkt_len = {} bytes'.format(l)
-                length.append(l)
-                pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
-                rx_pkts = self.do_loopback(pkts)
-                self.assertEqual(1, len(rx_pkts))
-                p = rx_pkts[0]
-                lat = struct.unpack('!L', str(p)[-4:])[0]
-                time = struct.unpack('!L', str(p)[-8:-4])[0]
-                latency.append(lat)
-        # record latencies
-                df = pd.DataFrame({'pkt_len':length, 'latency':latency})
-                write_csv('loopback', 'pkt_len_latency.csv', df)
+#    def test_pkt_length(self):
+#        pkt_len = range(64, 64*20, 64)
+#        length = []
+#        latency = []
+#        for l in pkt_len:
+#            for i in range(NUM_SAMPLES):
+#                print 'Testing pkt_len = {} bytes'.format(l)
+#                length.append(l)
+#                pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
+#                rx_pkts = self.do_loopback(pkts)
+#                self.assertEqual(1, len(rx_pkts))
+#                p = rx_pkts[0]
+#                lat = struct.unpack('!L', str(p)[-4:])[0]
+#                time = struct.unpack('!L', str(p)[-8:-4])[0]
+#                latency.append(lat)
+#        # record latencies
+#                df = pd.DataFrame({'pkt_len':length, 'latency':latency})
+#                write_csv('loopback', 'pkt_len_latency.csv', df)
 
 class ThroughputTest(unittest.TestCase):
     def setUp(self):

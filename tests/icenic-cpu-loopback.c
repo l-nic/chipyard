@@ -13,7 +13,7 @@
  *   - swap eth/ip/lnic src and dst
  *   - send pkt back out
  */
-static int process_packet(void *buf, uint8_t *mac)
+static int process_packet(void *buf)
 {
   struct eth_header *eth;
   struct ipv4_header *ipv4;
@@ -44,8 +44,10 @@ static int process_packet(void *buf, uint8_t *mac)
   lnic = (void *)ipv4 + (ihl << 2);
 
   // swap eth/ip/lnic src and dst
+  uint8_t tmp_mac[MAC_ADDR_SIZE];
+  memcpy(tmp_mac, eth->dst_mac, MAC_ADDR_SIZE);
   memcpy(eth->dst_mac, eth->src_mac, MAC_ADDR_SIZE);
-  memcpy(eth->src_mac, mac, MAC_ADDR_SIZE);
+  memcpy(eth->src_mac, tmp_mac, MAC_ADDR_SIZE);
 
   tmp_ip_addr = ipv4->dst_addr;
   ipv4->dst_addr = ipv4->src_addr;
@@ -67,14 +69,9 @@ uint64_t buffer[ETH_MAX_WORDS];
 
 int main(void)
 {
-  uint64_t macaddr_long;
-  uint8_t *macaddr;
-
-  macaddr_long = nic_macaddr();
-  macaddr = (uint8_t *) &macaddr_long;
 
   for (;;) {
-    if (process_packet(buffer, macaddr))
+    if (process_packet(buffer))
       return -1;
   }
 

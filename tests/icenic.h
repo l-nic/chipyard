@@ -115,7 +115,7 @@ static inline uint64_t htonl(uint64_t nint)
 #define MAC_ADDR_SIZE 6
 #define IP_ADDR_SIZE 4
 
-#define LNIC_HEADER_SIZE 14
+#define LNIC_HEADER_SIZE 30
 
 struct eth_header {
         uint8_t dst_mac[MAC_ADDR_SIZE];
@@ -156,13 +156,20 @@ struct icmp_header {
 };
 
 struct lnic_header {
+	uint8_t flags;
 	uint16_t src;
 	uint16_t dst;
-	uint16_t msg_id;
 	uint16_t msg_len;
-	uint16_t offset;
-	uint32_t padding;
-};
+	uint8_t pkt_offset;
+	uint16_t pull_offset;
+	uint16_t msg_id;
+	uint16_t buf_ptr;
+	uint8_t buf_size_class;
+	uint64_t pad0;
+	uint32_t pad1;
+	uint16_t pad2;
+	uint8_t pad3;
+} __attribute__((packed));
 
 static int checksum(uint16_t *data, int len)
 {
