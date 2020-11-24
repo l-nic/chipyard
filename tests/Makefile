@@ -23,6 +23,7 @@ PROGRAMS += icenic-stream
 PROGRAMS += lnic-multi-thread-basic
 PROGRAMS += lnic-nbody-node-gpr
 PROGRAMS += icenic-nbody-node
+PROGRAMS += icenic-cache-test
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 

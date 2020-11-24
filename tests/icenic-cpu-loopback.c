@@ -27,23 +27,23 @@ static int process_packet(void *buf, uint8_t *mac)
 
   // check eth hdr
   eth = buf;
-  if (ntohs(eth->ethtype) != IPV4_ETHTYPE) {
-    printf("Wrong ethtype %x\n", ntohs(eth->ethtype));
-    return -1;
-  }
+  // if (ntohs(eth->ethtype) != IPV4_ETHTYPE) {
+  //   printf("Wrong ethtype %x\n", ntohs(eth->ethtype));
+  //   return -1;
+  // }
 
   // check IPv4 hdr
   ipv4 = buf + ETH_HEADER_SIZE;
-  if (ipv4->proto != LNIC_PROTO) {
-    printf("Wrong IP protocol %x\n", ipv4->proto);
-    return -1;
-  }
+  // if (ipv4->proto != LNIC_PROTO) {
+  //   printf("Wrong IP protocol %x\n", ipv4->proto);
+  //   return -1;
+  // }
 
   // parse lnic hdr
   int ihl = ipv4->ver_ihl & 0xf;
   lnic = (void *)ipv4 + (ihl << 2);
 
-  // swap eth/ip/lnic src and dst
+  // // swap eth/ip/lnic src and dst
   memcpy(eth->dst_mac, eth->src_mac, MAC_ADDR_SIZE);
   memcpy(eth->src_mac, mac, MAC_ADDR_SIZE);
 

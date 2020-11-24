@@ -162,6 +162,13 @@ class SimNetworkIceNICConfig extends Config(
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
   new freechips.rocketchip.system.BaseConfig)
 
+class IceNICConfig extends Config(
+  new WithIceNIC ++
+  new WithBootROM ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
 /**
  * Config for PktGen IceNIC.
  */

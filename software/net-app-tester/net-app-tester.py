@@ -37,6 +37,10 @@ LOG_DIR = '/vagrant/logs'
 
 NUM_SAMPLES = 1
 
+def minimal_req():
+    return Ether(dst=NIC_MAC, src=MY_MAC) / \
+            IP(src=MY_IP, dst=NIC_IP)
+
 def lnic_req(my_context=MY_CONTEXT, lnic_dst = DST_CONTEXT):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=MY_IP, dst=NIC_IP) / \
@@ -252,6 +256,25 @@ class PriorityMix(unittest.TestCase):
         print "High count {}, avg {}".format(len(latency_high), sum(latency_high)/float(len(latency_high)))
         # self.assertEqual(app_packets, len(packet_lengths))
 
+class IceNICCacheTest(unittest.TestCase):
+    def do_loopback(self, msg_len, raw_data):
+        pkt_len = msg_len + len(lnic_req())
+        payload = Raw(raw_data)
+        req = lnic_req() / payload
+        resp = srp1(req, iface=TEST_IFACE, timeout=TIMEOUT_SEC)
+        self.assertIsNotNone(resp)
+        resp_data = resp[LNIC].payload
+        self.assertEqual(len(resp_data), len(raw_data))
+        latency = struct.unpack('!Q', str(resp_data)[-8:])[0]
+        return latency
+    
+    def test_cache(self):
+        msg_len = 520 # bytes
+        raw_data = 'abcdefghhqshxxkuceshaixlnicpdvtgvmoapbvejqoomaabnkxuqpuhepdxxvtgprwalyldpicvepcfsucpjmkqwetciufesjsykkcnjhwiqrctmdvigrgqrtytfqylebjkocvgcvtbseoyjbhdoacizwxtieicadsdfhyiogyvkrjvdxwvcaytuqyanpxbsslincyqchbjuycdfzpuvymbnlsocghirctzhjplfaouojkjjkgelrevzpbbmrgivvmohmnvskqqodpkehhcqgxummrfenglgbuifbhfzorervdtvzdxyhecpzvkuqlihzxxbowsfoeeydrfrihuinzppqnmaxfevamcxdotyjrwjphriabthvmhaniqwnbfgywihhwxwsejcjqdcrpytlcjxzromedyfatsjvhqnvaekcfcbtoendzvbxyiupyxgpnlxtfguhxubbowfwsopkcydrfngcuhvthsmgppjnwnynuykwlqszmlervfdqyqlqdalagr'
+        for i in range(6):
+            latency = self.do_loopback(msg_len, raw_data)
+            print 'Latency = {} cycles'.format(latency)
+
 class Loopback(unittest.TestCase):
     def do_loopback(self, pkt_len):
         msg_len = pkt_len - len(lnic_req()) # bytes
@@ -269,18 +292,18 @@ class Loopback(unittest.TestCase):
         pkt_len = 64 # bytes
         latency = self.do_loopback(pkt_len)
         print 'Latency = {} cycles'.format(latency)
-    def test_pkt_length(self):
-        pkt_len = range(64, 64*20, 64)
-        length = []
-        latency = []
-        for l in pkt_len:
-            for i in range(NUM_SAMPLES):
-                print 'Testing pkt_len = {} bytes'.format(l)
-                length.append(l)
-                latency.append(self.do_loopback(l))
-        # record latencies
-        df = pd.DataFrame({'pkt_len':length, 'latency':latency})
-        write_csv('loopback', 'pkt_len_latency.csv', df)
+    # def test_pkt_length(self):
+    #     pkt_len = range(64, 64*20, 64)
+    #     length = []
+    #     latency = []
+    #     for l in pkt_len:
+    #         for i in range(NUM_SAMPLES):
+    #             print 'Testing pkt_len = {} bytes'.format(l)
+    #             length.append(l)
+    #             latency.append(self.do_loopback(l))
+    #     # record latencies
+    #     df = pd.DataFrame({'pkt_len':length, 'latency':latency})
+    #     write_csv('loopback', 'pkt_len_latency.csv', df)
 
 class ThroughputTest(unittest.TestCase):
     def setUp(self):

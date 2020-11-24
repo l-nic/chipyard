@@ -7,6 +7,9 @@ loopback:
 throughput:
 	python -m unittest net-app-tester.ThroughputTest
 
+ice_nic_cache_test:
+	python -m unittest net-app-tester.IceNICCacheTest
+
 scheduler_test:
 	python -m unittest net-app-tester.SchedulerTest
 
