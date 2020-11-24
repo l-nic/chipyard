@@ -13,7 +13,7 @@
 
 #define IPV4_MIN_HEADER_SIZE 20
 
-#define MSG_SIZE_WORDS 65 // We need one extra here since the timestamp word has to fit in the buffer
+#define MSG_SIZE_WORDS 9 // We need one extra here since the timestamp word has to fit in the buffer
 
 #define BUF_SIZE (ETH_HEADER_SIZE + IPV4_MIN_HEADER_SIZE + LNIC_HEADER_SIZE + MSG_SIZE_WORDS*sizeof(uint64_t))
 uint8_t buffer[BUF_SIZE];
@@ -47,6 +47,7 @@ int main() {
     proc_time_end = rdcycle();
     nic_send(buffer, BUF_SIZE);
     uint64_t proc_time_diff = proc_time_end - proc_time_start;
+    return 0;
     //printf("Header processing time is %d\n", proc_time_diff);
 
     // Hold first word

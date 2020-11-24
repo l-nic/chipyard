@@ -269,8 +269,9 @@ class IceNICCacheTest(unittest.TestCase):
         return latency
     
     def test_cache(self):
-        msg_len = 520 # bytes
-        raw_data = 'abcdefghhqshxxkuceshaixlnicpdvtgvmoapbvejqoomaabnkxuqpuhepdxxvtgprwalyldpicvepcfsucpjmkqwetciufesjsykkcnjhwiqrctmdvigrgqrtytfqylebjkocvgcvtbseoyjbhdoacizwxtieicadsdfhyiogyvkrjvdxwvcaytuqyanpxbsslincyqchbjuycdfzpuvymbnlsocghirctzhjplfaouojkjjkgelrevzpbbmrgivvmohmnvskqqodpkehhcqgxummrfenglgbuifbhfzorervdtvzdxyhecpzvkuqlihzxxbowsfoeeydrfrihuinzppqnmaxfevamcxdotyjrwjphriabthvmhaniqwnbfgywihhwxwsejcjqdcrpytlcjxzromedyfatsjvhqnvaekcfcbtoendzvbxyiupyxgpnlxtfguhxubbowfwsopkcydrfngcuhvthsmgppjnwnynuykwlqszmlervfdqyqlqdalagr'
+        msg_len = 72 # bytes
+        raw_data = 'abcdefghhqshxxkuceshaixlnicpdvtgvmoapbvejqoomaabnkxuqpuhepdxxvtgprwalyld'
+        # raw_data = 'abcdefghhqshxxkuceshaixlnicpdvtgvmoapbvejqoomaabnkxuqpuhepdxxvtgprwalyldpicvepcfsucpjmkqwetciufesjsykkcnjhwiqrctmdvigrgqrtytfqylebjkocvgcvtbseoyjbhdoacizwxtieicadsdfhyiogyvkrjvdxwvcaytuqyanpxbsslincyqchbjuycdfzpuvymbnlsocghirctzhjplfaouojkjjkgelrevzpbbmrgivvmohmnvskqqodpkehhcqgxummrfenglgbuifbhfzorervdtvzdxyhecpzvkuqlihzxxbowsfoeeydrfrihuinzppqnmaxfevamcxdotyjrwjphriabthvmhaniqwnbfgywihhwxwsejcjqdcrpytlcjxzromedyfatsjvhqnvaekcfcbtoendzvbxyiupyxgpnlxtfguhxubbowfwsopkcydrfngcuhvthsmgppjnwnynuykwlqszmlervfdqyqlqdalagr'
         for i in range(6):
             latency = self.do_loopback(msg_len, raw_data)
             print 'Latency = {} cycles'.format(latency)
