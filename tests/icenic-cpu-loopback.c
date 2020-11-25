@@ -8,59 +8,25 @@
 /**
  * Tasks:
  *   - receive a pkt
- *   - parse ethernet, ip, lnic headers
- *   - drop all non lnic pkts
- *   - swap eth/ip/lnic src and dst
+ *   - parse ethernet headers
+ *   - swap eth src and dst
  *   - send pkt back out
  */
 static int process_packet(void *buf)
 {
   struct eth_header *eth;
-  struct ipv4_header *ipv4;
-  struct lnic_header *lnic;
-  uint32_t tmp_ip_addr;
-  uint16_t tmp_lnic_addr;
-  ssize_t size;
+  int len;
 
   // receive pkt
-  nic_recv(buf);
-
-  // check eth hdr
+  len = nic_recv(buf);
   eth = buf;
-  if (ntohs(eth->ethtype) != IPV4_ETHTYPE) {
-    printf("Wrong ethtype %x\n", ntohs(eth->ethtype));
-    return -1;
-  }
-
-  // check IPv4 hdr
-  ipv4 = buf + ETH_HEADER_SIZE;
-  if (ipv4->proto != LNIC_PROTO) {
-    printf("Wrong IP protocol %x\n", ipv4->proto);
-    return -1;
-  }
-
-  // parse lnic hdr
-  int ihl = ipv4->ver_ihl & 0xf;
-  lnic = (void *)ipv4 + (ihl << 2);
-
-  // swap eth/ip/lnic src and dst
+  // swap eth src and dst
   uint8_t tmp_mac[MAC_ADDR_SIZE];
   memcpy(tmp_mac, eth->dst_mac, MAC_ADDR_SIZE);
   memcpy(eth->dst_mac, eth->src_mac, MAC_ADDR_SIZE);
   memcpy(eth->src_mac, tmp_mac, MAC_ADDR_SIZE);
-
-  tmp_ip_addr = ipv4->dst_addr;
-  ipv4->dst_addr = ipv4->src_addr;
-  ipv4->src_addr = tmp_ip_addr;
-
-  tmp_lnic_addr = lnic->dst;
-  lnic->dst = lnic->src;
-  lnic->src = tmp_lnic_addr;
-
   // send pkt back out
-  size = ntohs(ipv4->length) + ETH_HEADER_SIZE;
-  size = ceil_div(size, 8) * 8;
-  nic_send(buf, size);
+  nic_send(buf, len);
 
   return 0;
 }

@@ -223,6 +223,23 @@ static int nic_recv_lnic(void *buf, struct lnic_header **lnic)
 }
 
 /**
+ * Swap Ethernet addresses
+ */
+static int swap_eth(void *buf)
+{
+  struct eth_header *eth;
+  uint8_t tmp_mac[MAC_ADDR_SIZE];
+
+  eth = buf;
+  // swap addresses
+  memcpy(tmp_mac, eth->dst_mac, MAC_ADDR_SIZE);
+  memcpy(eth->dst_mac, eth->src_mac, MAC_ADDR_SIZE);
+  memcpy(eth->src_mac, tmp_mac, MAC_ADDR_SIZE);
+
+  return 0;
+}
+
+/**
  * Swap addresses in lnic pkt
  */
 static int swap_addresses(void *buf, uint8_t *mac)
