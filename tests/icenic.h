@@ -1,3 +1,6 @@
+#ifndef RISCV_ICENIC_H
+#define RISCV_ICENIC_H
+
 #define SIMPLENIC_BASE 0x10016000L
 #define SIMPLENIC_SEND_REQ (SIMPLENIC_BASE + 0)
 #define SIMPLENIC_RECV_REQ (SIMPLENIC_BASE + 8)
@@ -269,3 +272,5 @@ static int swap_addresses(void *buf, uint8_t *mac)
 
   return 0;
 }
+
+#endif // RISCV_ICENIC_H

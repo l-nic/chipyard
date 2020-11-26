@@ -486,6 +486,7 @@ void _init(int cid, int nc)
     }
   }
 
+  // NOTE: do not do this when using IceNIC!
   // wait for lnicrdy CSR to be set
   while (read_csr(0x057) == 0);
 

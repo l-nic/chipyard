@@ -35,7 +35,7 @@ uint64_t buffer[ETH_MAX_WORDS];
 
 int main(void)
 {
-
+  printf("Ready!\n");
   for (;;) {
     if (process_packet(buffer))
       return -1;

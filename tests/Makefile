@@ -18,6 +18,7 @@ PROGRAMS += lnic-throughput-gpr
 PROGRAMS += lnic-loopback-throughput
 PROGRAMS += icenic-tx-rx-throughput
 PROGRAMS += icenic-loopback-throughput
+PROGRAMS += icenic-loopback-throughput-batch
 PROGRAMS += lnic-nn-inference-gpr
 PROGRAMS += icenic-nn-inference
 PROGRAMS += lnic-othello-gpr

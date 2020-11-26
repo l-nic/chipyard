@@ -145,6 +145,7 @@ _start:
   sll sp, sp, STKSHIFT
   add sp, sp, tp
 
+  # Do not do this when using IceNIC!
   # start timer on NIC to track msg processing time
   csrwi 0x54, 0x4
 
