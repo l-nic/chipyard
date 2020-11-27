@@ -94,147 +94,95 @@ typedef struct {
   bool valid;
   flow_key_t flow_key;
   int num_hops;
-  int path[MAX_NUM_HOPS];
+  uint32_t path[MAX_NUM_HOPS];
   uint64_t path_latency;
   uint64_t hop_latency[MAX_NUM_HOPS];
 } flow_state_t;
-flow_state_t flowState[MAX_NUM_FLOWS];
 
 typedef struct {
   bool valid;
   q_key_t q_key;
-  int q_size;
-} q_state_t;
-q_state_t qState[MAX_NUM_QUEUES];
-
-typedef struct {
-  bool valid;
-  link_key_t link_key;
-  int tx_utilization;
-} link_state_t;
-link_state_t linkState[MAX_NUM_LINKS];
-
-void process_hop_meta(int i, flow_key_t flow_key, uint8_t flow_hash, bool is_new_flow, uint32_t report_timestamp, bool* path_change, uint64_t* path_latency) {
-  uint64_t msg_word;
-
-  uint32_t swID;
-  uint16_t l1_ingress_port;
-  uint16_t l1_egress_port;
-  uint32_t hop_latency;
-  uint8_t qID;
   uint32_t q_size;
-  uint32_t ingress_timestamp;
-  uint32_t egress_timestamp;
-  uint16_t l2_ingress_port;
-  uint16_t l2_egress_port;
-  uint32_t tx_utilization;
+} q_state_t;
 
+typedef struct {
+  bool valid;
   link_key_t link_key;
-  uint8_t link_hash;
-  q_key_t q_key;
-  uint8_t q_hash;
+  uint32_t tx_utilization;
+} link_state_t;
 
-  uint64_t tx_app_hdr;
-  uint64_t tx_msg_word;
-
-  uint64_t upstream_collector_ip = UPSTREAM_COLLECTOR_IP;
-
-  // ---- swID ----
-  swID = lnic_read();
-  // detect path change & update flow path
-  *path_change |= (flowState[flow_hash].path[i] != swID);
+#define PROCESS_HOP_META swID = lnic_read(); \
+  path_change |= (flowState[flow_hash].path[i] != swID); \
   flowState[flow_hash].path[i] = swID;
-  // ---- L1 Ports ----
-  msg_word = lnic_read();
-  l1_ingress_port = (msg_word & 0xffff0000) >> 16;
-  l1_egress_port = msg_word & 0xffff;
-  // Compute link_hash
-  link_key.swID = swID;
-  link_key.portID = l1_egress_port;
-  link_hash = swID; // mica_hash(&link_key, sizeof(link_key));
-  // ---- Hop Latency ----
-  hop_latency = lnic_read();
-  *path_latency += hop_latency;
-  // Detect hop latency change & update state
-  bool hop_latency_change = (flowState[flow_hash].hop_latency[i] != hop_latency);
-  flowState[flow_hash].hop_latency[i] = hop_latency;
-  if (is_new_flow || hop_latency_change) {
-    // Fire HopLatencyEvent
-    tx_app_hdr = (upstream_collector_ip << 32)
-                 | (UPSTREAM_COLLECTOR_PORT << 16)
-                 | HOP_LATENCY_EVENT_LEN;
-    lnic_write_r(tx_app_hdr);
-    lnic_write_i(HOP_LATENCY_EVENT_TYPE);
-    lnic_write_r(report_timestamp);
-    tx_msg_word = flow_key.src_ip;
-    lnic_write_r( (tx_msg_word << 32) | flow_key.dst_ip);
-    tx_msg_word = flow_key.src_port;
-    tx_msg_word = (tx_msg_word << 16) | flow_key.dst_port;
-    tx_msg_word = (tx_msg_word << 32) | swID;
-    lnic_write_r(tx_msg_word);
-    lnic_write_r(hop_latency);
-  }
-  // ---- Q Info ----
-  msg_word = lnic_read();
-  qID = (msg_word & 0xff000000) >> 24;
-  q_size = msg_word & 0xffffff;
-  // Compute q_hash - NOTE: currently just switch ID, should eventually be hash of switch ID ++ qID
-  q_key.swID = swID;
-  q_key.qID = qID;
-  q_hash = swID; // mica_hash(&q_key, sizeof(q_key));
-  // Update qState / Fire QueueSize event
-  if (qState[q_hash].valid && (qState[q_hash].q_key != q_key)) {
-    printf("ERROR: hash collision on qState. Existing swID/qID = %d/%d, New swID/qID = %d/%d\n", qState[q_hash].q_key.swID, qState[q_hash].q_key.qID, swID, qID);
-    return;
-  } else if (!qState[q_hash].valid || (qState[q_hash].q_size != q_size)) {
-    // This is a new measurement or the measurement has changed!
-    // Update state
-    qState[q_hash].valid = true;
-    qState[q_hash].q_key = q_key;
-    qState[q_hash].q_size = q_size;
-    // Fire QueueSize Event
-    tx_app_hdr = (upstream_collector_ip << 32)
-                 | (UPSTREAM_COLLECTOR_PORT << 16)
-                 | QSIZE_EVENT_LEN;
-    lnic_write_r(tx_app_hdr);
-    lnic_write_i(QSIZE_EVENT_TYPE);
-    lnic_write_r(report_timestamp);
-    tx_msg_word = swID;
-    lnic_write_r((tx_msg_word << 32) | qID);
-    lnic_write_r(q_size);
-  }
-  // ---- Ingress Timestamp ----
-  ingress_timestamp = lnic_read();
-  // ---- Egress Timestamp ----
-  egress_timestamp = lnic_read();
-  // ---- L2 Ports ----
-  msg_word = lnic_read();
-  l2_ingress_port = (msg_word & 0xffff0000) >> 16;
-  l2_egress_port = msg_word & 0xffff;
-  // ---- TX Utilization ----
-  tx_utilization = lnic_read();
-  // Update linkState / Fire LinkUtilEvent
-  if (linkState[link_hash].valid && (linkState[link_hash].link_key != link_key)) {
-    printf("ERROR: hash collision on linkState. Existing swID/portID = %d/%d, New swID/portID = %d/%d\n", linkState[link_hash].link_key.swID, linkState[link_hash].link_key.portID, swID, l1_egress_port);
-    return;
-  } else if (!linkState[link_hash].valid || (linkState[link_hash].tx_utilization != tx_utilization)) {
-    // This is a new measurement or the measurement has changed!
-    // Update state
-    linkState[link_hash].valid = true;
-    linkState[link_hash].link_key = link_key;
-    linkState[link_hash].tx_utilization = tx_utilization;
-    // Fire LinkUtilEvent
-    tx_app_hdr = (upstream_collector_ip << 32)
-                 | (UPSTREAM_COLLECTOR_PORT << 16)
-                 | LINK_UTIL_EVENT_LEN;
-    lnic_write_r(tx_app_hdr);
-    lnic_write_i(LINK_UTIL_EVENT_TYPE);
-    lnic_write_r(report_timestamp);
-    tx_msg_word = swID;
-    lnic_write_r((tx_msg_word << 32) | l1_egress_port);
-    lnic_write_r(tx_utilization);
-  }
-}
+//  msg_word = lnic_read(); \
+//  l1_ingress_port = (msg_word & 0xffff0000) >> 16; \
+//  l1_egress_port = msg_word & 0xffff; \
+//  link_key.swID = swID; \
+//  link_key.portID = l1_egress_port; \
+//  link_hash = swID; \
+//  hop_latency = lnic_read(); \
+//  path_latency += hop_latency; \
+//  hop_latency_change = (flowState[flow_hash].hop_latency[i] != hop_latency); \
+//  flowState[flow_hash].hop_latency[i] = hop_latency; \
+//  if (is_new_flow || hop_latency_change) { \
+//    tx_app_hdr = (upstream_collector_ip << 32) \
+//                 | (UPSTREAM_COLLECTOR_PORT << 16) \
+//                 | HOP_LATENCY_EVENT_LEN; \
+//    lnic_write_r(tx_app_hdr); \
+//    lnic_write_i(HOP_LATENCY_EVENT_TYPE); \
+//    lnic_write_r(report_timestamp); \
+//    tx_msg_word = flow_key.src_ip; \
+//    lnic_write_r( (tx_msg_word << 32) | flow_key.dst_ip); \
+//    tx_msg_word = flow_key.src_port; \
+//    tx_msg_word = (tx_msg_word << 16) | flow_key.dst_port; \
+//    tx_msg_word = (tx_msg_word << 32) | swID; \
+//    lnic_write_r(tx_msg_word); \
+//    lnic_write_r(hop_latency); \
+//  } \
+//  msg_word = lnic_read(); \
+//  qID = (msg_word & 0xff000000) >> 24; \
+//  q_size = msg_word & 0xffffff; \
+//  q_key.swID = swID; \
+//  q_key.qID = qID; \
+//  q_hash = swID; \
+//  if (qState[q_hash].valid && (qState[q_hash].q_key != q_key)) { \
+//    return; \
+//  } else if (!qState[q_hash].valid || (qState[q_hash].q_size != q_size)) { \
+//    qState[q_hash].valid = true; \
+//    qState[q_hash].q_key = q_key; \
+//    qState[q_hash].q_size = q_size; \
+//    tx_app_hdr = (upstream_collector_ip << 32) \
+//                 | (UPSTREAM_COLLECTOR_PORT << 16) \
+//                 | QSIZE_EVENT_LEN; \
+//    lnic_write_r(tx_app_hdr); \
+//    lnic_write_i(QSIZE_EVENT_TYPE); \
+//    lnic_write_r(report_timestamp); \
+//    tx_msg_word = swID; \
+//    lnic_write_r((tx_msg_word << 32) | qID); \
+//    lnic_write_r(q_size); \
+//  } \
+//  ingress_timestamp = lnic_read(); \
+//  egress_timestamp = lnic_read(); \
+//  msg_word = lnic_read(); \
+//  l2_ingress_port = (msg_word & 0xffff0000) >> 16; \
+//  l2_egress_port = msg_word & 0xffff; \
+//  tx_utilization = lnic_read(); \
+//  if (linkState[link_hash].valid && (linkState[link_hash].link_key != link_key)) { \
+//    return; \
+//  } else if (!linkState[link_hash].valid || (linkState[link_hash].tx_utilization != tx_utilization)) { \
+//    linkState[link_hash].valid = true; \
+//    linkState[link_hash].link_key = link_key; \
+//    linkState[link_hash].tx_utilization = tx_utilization; \
+//    tx_app_hdr = (upstream_collector_ip << 32) \
+//                 | (UPSTREAM_COLLECTOR_PORT << 16) \
+//                 | LINK_UTIL_EVENT_LEN; \
+//    lnic_write_r(tx_app_hdr); \
+//    lnic_write_i(LINK_UTIL_EVENT_TYPE); \
+//    lnic_write_r(report_timestamp); \
+//    tx_msg_word = swID; \
+//    lnic_write_r((tx_msg_word << 32) | l1_egress_port); \
+//    lnic_write_r(tx_utilization); \
+//  }
 
 void process_msgs() {
   uint64_t upstream_collector_ip = UPSTREAM_COLLECTOR_IP;
@@ -256,6 +204,23 @@ void process_msgs() {
   uint8_t hopMLen;
   uint8_t int_ins;
 
+  uint32_t swID;
+  uint16_t l1_ingress_port;
+  uint16_t l1_egress_port;
+  uint32_t hop_latency;
+  uint8_t qID;
+  uint32_t q_size;
+  uint32_t ingress_timestamp;
+  uint32_t egress_timestamp;
+  uint16_t l2_ingress_port;
+  uint16_t l2_egress_port;
+  uint32_t tx_utilization;
+
+  link_key_t link_key;
+  uint8_t link_hash;
+  q_key_t q_key;
+  uint8_t q_hash;
+
   int num_hops;
 
   bool first_recvd = false;
@@ -267,6 +232,10 @@ void process_msgs() {
 
   // initialize state
   int total_report_count = 0;
+
+  flow_state_t flowState[MAX_NUM_FLOWS];
+  q_state_t qState[MAX_NUM_QUEUES];
+  link_state_t linkState[MAX_NUM_LINKS];
 
   for (i = 0; i < MAX_NUM_FLOWS; i++) {
     flowState[i].valid = false;
@@ -337,23 +306,31 @@ void process_msgs() {
     bool path_change = false;
     uint64_t path_latency = 0;
 
+    bool hop_latency_change;
+
     num_hops = (hopMLen > 0) ? (int_hdr_len - 3)/hopMLen : 0;
 
     PROFILE_POINT
 
     // Unroll INT metadata processing - assume all 8 fields are active
-    process_hop_meta(0, flow_key, flow_hash, is_new_flow, report_timestamp, &path_change, &path_latency);
+    i = 0;
+    PROCESS_HOP_META
     PROFILE_POINT
-    process_hop_meta(1, flow_key, flow_hash, is_new_flow, report_timestamp, &path_change, &path_latency);
-    PROFILE_POINT
-    process_hop_meta(2, flow_key, flow_hash, is_new_flow, report_timestamp, &path_change, &path_latency);
-    PROFILE_POINT
-    process_hop_meta(3, flow_key, flow_hash, is_new_flow, report_timestamp, &path_change, &path_latency);
-    PROFILE_POINT
-    process_hop_meta(4, flow_key, flow_hash, is_new_flow, report_timestamp, &path_change, &path_latency);
-    PROFILE_POINT
-    process_hop_meta(5, flow_key, flow_hash, is_new_flow, report_timestamp, &path_change, &path_latency);
-    PROFILE_POINT
+//    i = 1;
+//    PROCESS_HOP_META
+//    PROFILE_POINT
+//    i = 2;
+//    PROCESS_HOP_META
+//    PROFILE_POINT
+//    i = 3;
+//    PROCESS_HOP_META
+//    PROFILE_POINT
+//    i = 4;
+//    PROCESS_HOP_META
+//    PROFILE_POINT
+//    i = 5;
+//    PROCESS_HOP_META
+//    PROFILE_POINT
 
     // fire path event if needed
     if (is_new_flow || path_change) {
@@ -374,8 +351,10 @@ void process_msgs() {
       }
     }
 
+    bool has_hop_latency = int_ins & HOP_LATENCY_MASK;
+
     // detect path latency changes and fire PathLatency Event
-    bool path_latency_change = (flowState[flow_hash].path_latency != path_latency);
+    bool path_latency_change = has_hop_latency && (flowState[flow_hash].path_latency != path_latency);
     flowState[flow_hash].path_latency = path_latency;
     if (is_new_flow || path_latency_change) {
       tx_app_hdr = (upstream_collector_ip << 32)

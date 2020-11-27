@@ -410,7 +410,7 @@ void process_msgs() {
     }
 
     // detect path latency changes and fire PathLatency Event
-    bool path_latency_change = (flowState[flow_hash].path_latency != path_latency);
+    bool path_latency_change = has_hop_latency && (flowState[flow_hash].path_latency != path_latency);
     flowState[flow_hash].path_latency = path_latency;
     if (is_new_flow || path_latency_change) {
       tx_app_hdr = (upstream_collector_ip << 32)
