@@ -31,7 +31,8 @@ class Data(Packet):
     fields_desc = [
         LongField("index", 0),
         LongField("data", 0),
-        LongField("timestamp", 0)
+        IntField("timestamp", 0),
+        IntField("latency", 0)
     ]
 
 bind_layers(NN, Config, type=CONFIG_TYPE)

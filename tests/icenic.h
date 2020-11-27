@@ -112,8 +112,7 @@ static inline uint64_t htonl(uint64_t nint)
 	return ntohl(nint);
 }
 
-#define ETH_MAX_WORDS 190
-#define ETH_MAX_BYTES 1520
+#define ETH_MAX_WORDS 258
 #define ETH_HEADER_SIZE 14
 #define MAC_ADDR_SIZE 6
 #define IP_ADDR_SIZE 4
@@ -199,29 +198,14 @@ static int nic_recv_lnic(void *buf, struct lnic_header **lnic)
   struct eth_header *eth;
   struct ipv4_header *ipv4;
 
-  while (1) {
-    // receive pkt
-    nic_recv(buf);
+  // receive pkt
+  nic_recv(buf);
 
-    // check eth hdr
-    eth = buf;
-    if (ntohs(eth->ethtype) != IPV4_ETHTYPE) {
-      printf("Wrong ethtype %x\n", ntohs(eth->ethtype));
-      break;
-    }
-
-    // check IPv4 hdr
-    ipv4 = buf + ETH_HEADER_SIZE;
-    if (ipv4->proto != LNIC_PROTO) {
-      printf("Wrong IP protocol %x\n", ipv4->proto);
-      break;
-    }
-
-    // parse lnic hdr
-    int ihl = ipv4->ver_ihl & 0xf;
-    *lnic = (void *)ipv4 + (ihl << 2);
-    return 0;
-  }
+  eth = buf;
+  ipv4 = buf + ETH_HEADER_SIZE;
+  // parse lnic hdr
+  int ihl = ipv4->ver_ihl & 0xf;
+  *lnic = (void *)ipv4 + (ihl << 2);
   return 0;
 }
 
@@ -245,7 +229,7 @@ static int swap_eth(void *buf)
 /**
  * Swap addresses in lnic pkt
  */
-static int swap_addresses(void *buf, uint8_t *mac)
+static int swap_addresses(void *buf)
 {
   struct eth_header *eth;
   struct ipv4_header *ipv4;
@@ -259,8 +243,7 @@ static int swap_addresses(void *buf, uint8_t *mac)
   lnic = (void *)ipv4 + (ihl << 2);
 
   // swap eth/ip/lnic src and dst
-  memcpy(eth->dst_mac, eth->src_mac, MAC_ADDR_SIZE);
-  memcpy(eth->src_mac, mac, MAC_ADDR_SIZE);
+  swap_eth(eth);
 
   tmp_ip_addr = ipv4->dst_addr;
   ipv4->dst_addr = ipv4->src_addr;

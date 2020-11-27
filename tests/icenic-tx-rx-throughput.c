@@ -58,12 +58,6 @@ int main(void)
   struct done_header *done;
   uint64_t *data_timestamp_ptr;
 
-  uint64_t macaddr_long;
-  uint8_t *macaddr;
-
-  macaddr_long = nic_macaddr();
-  macaddr = (uint8_t *) &macaddr_long;
-
   while(1) {
     // wait for a START RX or START TX msg to arrive
     nic_recv_lnic(buffer, &lnic);
@@ -78,7 +72,7 @@ int main(void)
         nic_recv_lnic(buffer, &lnic);
       }
       // send DONE msg
-      swap_addresses(buffer, macaddr);
+      swap_addresses(buffer);
       tp->type = htonl(DONE_TYPE);
       done = (void *)tp + TP_HEADER_SIZE;
       done->timestamp = htonl(start_time);
@@ -91,7 +85,7 @@ int main(void)
       msg_size = ntohl(start_tx->msg_size);
       start_time = ntohl(start_tx->timestamp);
       // generate all required msgs
-      swap_addresses(buffer, macaddr);
+      swap_addresses(buffer);
       tp->type = htonl(DATA_TYPE);
       data_timestamp_ptr = (void *)tp + msg_size - 8;
       (*data_timestamp_ptr) = htonl(start_time);

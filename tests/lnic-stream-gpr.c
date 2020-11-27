@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "lnic.h"
+#include "lnic-loopback.h"
 
 int main(void)
 {
@@ -14,6 +15,7 @@ int main(void)
         // register context ID with L-NIC
         lnic_add_context(0, 0);
 
+        printf("Ready!\n");
 	while (1) {
 		// wait for a pkt to arrive
 		lnic_wait();
@@ -23,14 +25,9 @@ int main(void)
 		lnic_write_r(app_hdr);
 		// extract msg_len
 		msg_len = (uint16_t)app_hdr;
-//		printf("Received msg of length: %hu bytes", msg_len);
-		num_words = msg_len/LNIC_WORD_SIZE;
-		if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
-		// copy msg words back into network
-		for (i = 0; i < num_words-1; i++) {
-			asm volatile ("addi "LWRITE", "LREAD", 1\n\t");
-		}
+                inc_payload(msg_len);
 		lnic_copy(); // copy timestamp on last word
+                lnic_msg_done();
 	}
 	return 0;
 }

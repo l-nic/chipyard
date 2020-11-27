@@ -71,6 +71,7 @@ int main(void) {
   uint64_t minimax_val;
   struct state *state_ptr;
   uint64_t map_cnt, response_cnt, msg_minimax_val;
+  printf("Ready!\n");
   // process pkts 
 othello_start:
   lnic_wait();
@@ -81,7 +82,6 @@ othello_start:
   // process map msg
   board = lnic_read();
   compute_boards(board, new_boards, &num_boards);
-  // TODO(sibanez): these reads are not gauranteed to occur in the correct order ...
   max_depth = lnic_read();
   cur_depth = lnic_read();
   //printf("Processing Map message.\n\tboard = %lu\n\tmax_depth = %lu\n\tcur_depth = %lu\n", board, max_depth, cur_depth);
@@ -122,6 +122,7 @@ othello_start:
     lnic_write_r(minimax_val);
     lnic_copy();
   }
+  lnic_msg_done();
   goto othello_start;
 process_reduce:
   // discard target_host_id
@@ -157,6 +158,7 @@ process_reduce:
     lnic_write_m((*state_ptr).minimax_val);
     lnic_write_r(reduce_start_time);
   }
+  lnic_msg_done();
   goto othello_start;
   return 0;
 }

@@ -62,12 +62,7 @@ int main(void)
   struct weight_header *weight;
   struct data_header *data;
 
-  uint64_t macaddr_long;
-  uint8_t *macaddr;
-
-  macaddr_long = nic_macaddr();
-  macaddr = (uint8_t *) &macaddr_long;
-
+  printf("Ready!\n");
   while(1) {
     edge_cnt = 0;
     result = 0;
@@ -78,10 +73,10 @@ int main(void)
       nic_recv_lnic(buffer, &lnic);
       nn = (void *)lnic + LNIC_HEADER_SIZE;
       if (ntohl(nn->type) == CONFIG_TYPE) {
-	config = (void *)nn + NN_HEADER_SIZE;
+        config = (void *)nn + NN_HEADER_SIZE;
         num_edges = ntohl(config->num_edges);
         configured = 1;
-	start_time = ntohl(config->timestamp);
+        start_time = ntohl(config->timestamp);
       }
     }
 
@@ -91,17 +86,17 @@ int main(void)
       nic_recv_lnic(buffer, &lnic);
       nn = (void *)lnic + LNIC_HEADER_SIZE;
       if (ntohl(nn->type) == WEIGHT_TYPE) {
-	weight = (void *)nn + NN_HEADER_SIZE;
+        weight = (void *)nn + NN_HEADER_SIZE;
         weights[ntohl(weight->index)] = ntohl(weight->weight);
       } else if (ntohl(nn->type) == DATA_TYPE) {
-	data = (void *)nn + NN_HEADER_SIZE;
+        data = (void *)nn + NN_HEADER_SIZE;
         result += weights[ntohl(data->index)] * ntohl(data->data);
         edge_cnt++;
       }
     }
 
     // send out result data pkt
-    swap_addresses(buffer, macaddr);
+    swap_eth(buffer);
     nn->type = htonl(DATA_TYPE);
     data = (void *)nn + NN_HEADER_SIZE;
     data->index = 0;

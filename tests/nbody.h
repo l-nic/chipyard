@@ -11,7 +11,7 @@ double sqrt (double x) {
   return x;
 }
 
-int compute_force(uint64_t xcom, uint64_t ycom, uint64_t xpos, uint64_t ypos, uint64_t *force) {
+uint64_t compute_force(uint64_t xcom, uint64_t ycom, uint64_t xpos, uint64_t ypos) {
   // compute force on the particle
   // assume unit masses
   // If the particle is sufficiently far away then set valid and compute force.
@@ -19,6 +19,8 @@ int compute_force(uint64_t xcom, uint64_t ycom, uint64_t xpos, uint64_t ypos, ui
   double xdiff = xcom - xpos;
   double ydiff = ycom - ypos;
   double distance = sqrt(xdiff*xdiff + ydiff*ydiff);
-  *force = (uint64_t)(G/(distance*distance));
-  return 0;
+  double force_d = G/(distance*distance);
+  uint64_t force = (uint64_t)force_d;
+//  printf("xcom=%ld, ycom=%ld, xpos=%ld, ypos=%ld, force=%ld\n", xcom, ycom, xpos, ypos, force);
+  return force;
 }

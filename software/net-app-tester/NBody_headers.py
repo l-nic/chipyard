@@ -32,7 +32,8 @@ class TraversalResp(Packet):
     name = "TraversalResp"
     fields_desc = [
         LongField("force", 0),
-        LongField("timestamp", 0)
+        IntField("timestamp", 0),
+        IntField("latency", 0)
     ]
 
 bind_layers(NBody, Config, msg_type=CONFIG_TYPE)

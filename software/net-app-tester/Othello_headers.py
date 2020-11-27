@@ -18,7 +18,8 @@ class Map(Packet):
         LongField("cur_depth", 0),
         LongField("src_host_id", 0),
         LongField("src_msg_ptr", 0),
-        LongField("timestamp", 0)
+        IntField("timestamp", 0),
+        IntField("latency", 0)
     ]
 
 class Reduce(Packet):
@@ -27,7 +28,8 @@ class Reduce(Packet):
         LongField("target_host_id", 0),
         LongField("target_msg_ptr", 0),
         LongField("minimax_val", 0),
-        LongField("timestamp", 0)
+        IntField("timestamp", 0),
+        IntField("latency", 0)
     ]
 
 bind_layers(Othello, Map, type=MAP_TYPE)

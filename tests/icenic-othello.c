@@ -60,12 +60,6 @@ struct reduce_header {
 uint64_t buffer[ETH_MAX_WORDS];
 
 int main(void) {
-  uint64_t macaddr_long;
-  uint8_t *macaddr;
-
-  macaddr_long = nic_macaddr();
-  macaddr = (uint8_t *) &macaddr_long;
-
   // headers
   struct lnic_header *lnic;
   struct othello_header *othello;
@@ -80,6 +74,7 @@ int main(void) {
   uint64_t map_start_time;
   uint64_t reduce_start_time;
 
+  printf("Ready!\n");
   // process pkts 
   while (1) {
     nic_recv_lnic(buffer, &lnic);
@@ -105,7 +100,7 @@ int main(void) {
         msg_state.response_cnt = 0;
         msg_state.minimax_val = MAX_INT;
         // send out map msgs
-	swap_addresses(buffer, macaddr);
+        swap_eth(buffer);
         for (int i = 0; i < num_boards; i++) {
           // write new_board, max_depth, cur_depth, src_host_id, src_msg_ptr
 	  map->board = htonl(new_boards[i]);
@@ -156,7 +151,7 @@ int main(void) {
       // check if all responses have been received
       if (response_cnt == map_cnt) {
         // send reduce_msg to parent
-	swap_addresses(buffer, macaddr);
+	swap_eth(buffer);
         // write target_host_id, target_msg_ptr, minimax_val
 	reduce->target_host_id = htonl((*state_ptr).src_host_id);
 	reduce->target_msg_ptr = htonl((*state_ptr).src_msg_ptr);

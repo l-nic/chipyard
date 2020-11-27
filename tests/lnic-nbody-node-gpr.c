@@ -36,7 +36,8 @@ int main(void) {
   // local variables
   uint64_t app_hdr;
   uint64_t msg_type;
-  uint64_t xcom, ycom;
+  uint64_t xcom = 0;
+  uint64_t ycom = 0;
   uint64_t xpos, ypos;
   int msg_cnt;
   uint64_t num_msgs;
@@ -44,6 +45,7 @@ int main(void) {
   uint64_t start_time;
   int configured;
 
+  printf("Ready!\n");
   while(1) {
     msg_cnt = 0;
     configured = 0;
@@ -59,9 +61,10 @@ int main(void) {
       ycom = lnic_read();
       num_msgs = lnic_read();
       start_time = lnic_read();
+      lnic_msg_done();
       configured = 1;
     }
-    // process all requests and send one response at the end
+    // Process all requests and send one response at the end
     while (msg_cnt < num_msgs) {
       lnic_wait();
       app_hdr = lnic_read(); // read app hdr
@@ -73,12 +76,13 @@ int main(void) {
       ypos = lnic_read();
       lnic_read(); // discard timestamp
       // compute force on the particle
-      compute_force(xcom, ycom, xpos, ypos, &force);
+      force = compute_force(xcom, ycom, xpos, ypos);
       // send out TraversalResp
       lnic_write_r((app_hdr & (IP_MASK | CONTEXT_MASK)) | RESP_MSG_LEN);
       lnic_write_i(TRAVERSAL_RESP_TYPE);
       lnic_write_r(force);
       lnic_write_r(start_time);
+      lnic_msg_done();
       msg_cnt++;
     }
   }

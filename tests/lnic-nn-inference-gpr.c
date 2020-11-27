@@ -44,6 +44,7 @@ int main(void) {
   uint64_t config_type = CONFIG_TYPE;
   uint64_t weight_type = WEIGHT_TYPE;
 
+  printf("Ready!\n");
   while(1) {
     edge_cnt = 0;
     result = 0;
@@ -55,6 +56,7 @@ configure:
     lnic_branch("bne", config_type, discard_pkt);
     num_edges = lnic_read();
     start_time = lnic_read();
+    lnic_msg_done();
     //printf("Configured: num_edges = %lu\n", num_edges);
     goto process;
 discard_pkt:
@@ -62,6 +64,7 @@ discard_pkt:
     lnic_read();
     lnic_read();
     lnic_read();
+    lnic_msg_done();
     goto configure;
 
 process:
@@ -82,6 +85,7 @@ process_data:
       //printf("Data[%lu] received.\n\tedge_cnt = %lu\n\tresult = %lu\n", index, edge_cnt, result);
 discard_timestamp:
       lnic_read(); // discard timestamp
+      lnic_msg_done();
     }
 
     // send out result

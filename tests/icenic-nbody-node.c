@@ -61,12 +61,7 @@ int main(void)
   struct traversal_req_header *traversal_req;
   struct traversal_resp_header *traversal_resp;
 
-  uint64_t macaddr_long;
-  uint8_t *macaddr;
-
-  macaddr_long = nic_macaddr();
-  macaddr = (uint8_t *) &macaddr_long;
-
+  printf("Ready!\n");
   while(1) {
     msg_cnt = 0;
     configured = 0;
@@ -96,9 +91,9 @@ int main(void)
       traversal_req = (void *)nbody + NBODY_HEADER_SIZE;
       xpos = ntohl(traversal_req->xpos);
       ypos = ntohl(traversal_req->ypos);
-      compute_force(xcom, ycom, xpos, ypos, &force);
+      force = compute_force(xcom, ycom, xpos, ypos);
       // send out TraversalResp
-      swap_addresses(buffer, macaddr);
+      swap_eth(buffer);
       nbody->type = htonl(TRAVERSAL_RESP_TYPE);
       traversal_resp = (void *)nbody + NBODY_HEADER_SIZE;
       traversal_resp->force = htonl(force);

@@ -42,4 +42,31 @@ void copy_payload(uint16_t msg_len) {
   }
 }
 
+/* Copy and increment all except the last word back into the network.
+ */
+void inc_payload(uint16_t msg_len) {
+
+  if (msg_len == 8) {
+    return;
+  } else if (msg_len == 32) {
+    REPEAT_3(asm volatile ("addi "LWRITE", "LREAD", 1\n\t");)
+  } else if (msg_len == 128) {
+    REPEAT_15(asm volatile ("addi "LWRITE", "LREAD", 1\n\t");)
+  } else if (msg_len == 512) {
+    REPEAT_63(asm volatile ("addi "LWRITE", "LREAD", 1\n\t");)
+  } else if (msg_len == 1024) {
+    REPEAT_127(asm volatile ("addi "LWRITE", "LREAD", 1\n\t");)
+  } else if (msg_len == 1400) {
+    REPEAT_174(asm volatile ("addi "LWRITE", "LREAD", 1\n\t");)
+  } else {
+    printf("Application is not optimized for msg len: %d\n", msg_len);
+    int num_words = msg_len/LNIC_WORD_SIZE;
+    if (msg_len % LNIC_WORD_SIZE != 0) { num_words++; }
+    int i;
+    for (i = 0; i < num_words-1; i++) {
+      asm volatile ("addi "LWRITE", "LREAD", 1\n\t");
+    }
+  }
+}
+
 #endif // RISCV_LNIC_LOOPBACK_H
