@@ -27,7 +27,7 @@
 	url = https://github.com/ucb-bar/hwacha.git
 [submodule "sims/firesim"]
 	path = sims/firesim
-	url = https://github.com/firesim/firesim.git
+	url = https://github.com/l-nic/firesim.git
 [submodule "generators/icenet"]
 	path = generators/icenet
 	url = https://github.com/firesim/icenet.git
@@ -36,7 +36,7 @@
 	url = https://github.com/sifive/block-inclusivecache-sifive.git
 [submodule "toolchains/riscv-tools/riscv-gnu-toolchain"]
 	path = toolchains/riscv-tools/riscv-gnu-toolchain
-	url = https://github.com/riscv/riscv-gnu-toolchain.git
+	url = https://github.com/l-nic/riscv-gnu-toolchain.git
 [submodule "toolchains/riscv-tools/riscv-gnu-toolchain-prebuilt"]
 	path = toolchains/riscv-tools/riscv-gnu-toolchain-prebuilt
 	url = https://github.com/ucb-bar/chipyard-toolchain-prebuilt.git
@@ -98,6 +98,7 @@
 [submodule "toolchains/qemu"]
 	path = toolchains/qemu
 	url = https://github.com/qemu/qemu.git
+	ignore = dirty
 [submodule "tools/axe"]
 	path = tools/axe
 	url = https://github.com/CTSRD-CHERI/axe.git
@@ -112,7 +113,7 @@
 	url = https://github.com/ucb-bar/gemmini
 [submodule "software/firemarshal"]
 	path = software/firemarshal
-	url = https://github.com/firesim/FireMarshal.git
+	url = https://github.com/l-nic/FireMarshal.git
 [submodule "generators/ariane"]
 	path = generators/ariane
 	url = https://github.com/ucb-bar/ariane-wrapper.git
