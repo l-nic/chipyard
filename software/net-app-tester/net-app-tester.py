@@ -9,6 +9,7 @@ import Othello_headers as Othello
 import NBody_headers as NBody
 import DummyApp_headers as DummyApp
 import ServiceTime_headers as ServiceTime
+import DotProd_headers as DotProd
 from ChainRep_headers import ChainRep, CHAINREP_OP_READ, CHAINREP_OP_WRITE
 import INT_headers as INT
 import struct
@@ -21,6 +22,9 @@ import time
 # set random seed for consistent sims
 random.seed(1)
 np.random.seed(1)
+
+# IceNIC does not require NDP ctrl pkt processing
+USE_ICENIC = False
 
 TEST_IFACE = "tap0"
 TIMEOUT_SEC = 7 # seconds
@@ -299,14 +303,12 @@ class CacheTest(unittest.TestCase):
             print "first 8 letters = {}".format(str(p)[:8])
 
 class Loopback(unittest.TestCase):
-    # IceNIC does not require any transport control pkts
-    use_icenic = False
     def do_loopback(self, pkts):
 #        print "*********** Request Pkts: ***********"
 #        print_pkts(pkts)
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if Loopback.use_icenic else receiver.process_pkt
+        prn = None if USE_ICENIC else receiver.process_pkt
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
                     prn=prn, count=len(pkts), timeout=100)
@@ -833,13 +835,12 @@ class PostcardOptTest(unittest.TestCase):
 
 
 class Stream(unittest.TestCase):
-    use_icenic = False
     def do_loopback(self, pkts):
 #        print "*********** Request Pkts: ***********"
 #        print_pkts(pkts)
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if Stream.use_icenic else receiver.process_pkt
+        prn = None if USE_ICENIC else receiver.process_pkt
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
                     prn=prn, count=len(pkts), timeout=100)
@@ -883,7 +884,6 @@ class Stream(unittest.TestCase):
 
 
 class NNInference(unittest.TestCase):
-    use_icenic = False
     def setUp(self):
         bind_layers(LNIC, NN.NN)
 
@@ -917,7 +917,7 @@ class NNInference(unittest.TestCase):
             p[LNIC].tx_msg_id = i
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if NNInference.use_icenic else receiver.process_pkt
+        prn = None if USE_ICENIC else receiver.process_pkt
         # start sniffing for DONE msg
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=1, timeout=100)
@@ -953,7 +953,6 @@ class NNInference(unittest.TestCase):
         write_csv('nn', 'num_edges_latency.csv', df)
 
 class OthelloTest(unittest.TestCase):
-    use_icenic = False
     def setUp(self):
         bind_layers(LNIC, Othello.Othello)
 
@@ -974,7 +973,7 @@ class OthelloTest(unittest.TestCase):
     def do_internal_node_test(self, fanout):
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if OthelloTest.use_icenic else receiver.process_pkt
+        prn = None if USE_ICENIC else receiver.process_pkt
 
         # send in initial map msg and receive outgoing map messages
         parent_id = 10
@@ -1041,7 +1040,6 @@ class OthelloTest(unittest.TestCase):
         write_csv('othello', 'fanout_latency.csv', df)
 
 class NBodyTest(unittest.TestCase):
-    use_icenic = False
     G = 667e2
     def setUp(self):
         bind_layers(LNIC, NBody.NBody)
@@ -1059,7 +1057,7 @@ class NBodyTest(unittest.TestCase):
     def do_test(self, num_msgs):
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if NBodyTest.use_icenic else receiver.process_pkt
+        prn = None if USE_ICENIC else receiver.process_pkt
 
         inputs = []
         xcom = 50
@@ -1109,7 +1107,6 @@ class NBodyTest(unittest.TestCase):
         write_csv('nbody', 'num_msgs_latency.csv', df)
 
 class ServiceTimeTest(unittest.TestCase):
-    use_icenic = False
     def setUp(self):
         bind_layers(LNIC, ServiceTime.ServiceTime)
 
@@ -1127,7 +1124,7 @@ class ServiceTimeTest(unittest.TestCase):
     def do_test(self, service_time, pad_bytes):
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if ServiceTimeTest.use_icenic else receiver.process_pkt
+        prn = None if USE_ICENIC else receiver.process_pkt
 
         num_msgs = 40
         inputs = []
@@ -1169,12 +1166,64 @@ class ServiceTimeTest(unittest.TestCase):
         df = pd.DataFrame({'service_time':service_time, 'latency':latency})
         write_csv('service_time', 'service_time_latency.csv', df)
 
-class Multithread(unittest.TestCase):
+class DotProdTest(unittest.TestCase):
+    num_weights = 2000
+    def setUp(self):
+        bind_layers(LNIC, DotProd.DotProd)
+
+    def config_msg(self, num_msgs):
+        msg_len = len(DotProd.DotProd() / DotProd.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / DotProd.DotProd() / DotProd.Config(num_msgs=num_msgs)
+
+    def data_req(self, num_words):
+        msg_words = [random.randint(0, DotProdTest.num_weights-1) for i in range(num_words)]
+        msg_len = len(DotProd.DotProd() / DotProd.Data(num_words=num_words, words=msg_words))
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / DotProd.DotProd() \
+               / DotProd.Data(num_words=num_words, words=msg_words)
+
+    def do_test(self, num_words):
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = None if USE_ICENIC else receiver.process_pkt
+
+        num_msgs = 30
+        inputs = []
+        inputs.append(self.config_msg(num_msgs))
+        # generate req msgs
+        inputs += [self.data_req(num_words) for i in range(num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=num_msgs, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        # check response
+        for req, resp in zip(inputs[1:], sniffer.results):
+          exp_result = sum([x**2 for x in req[DotProd.Data].words])
+          self.assertEqual(exp_result, resp[DotProd.Resp].result)
+        final_resp = sniffer.results[-1]
+        return final_resp[DotProd.Resp].latency
+
     def test_basic(self):
-        pkt_len = 64 # bytes
-        msg_len = pkt_len - len(lnic_req()) # bytes
-        payload = Raw('\x00'*msg_len)
-        sendp(lnic_req(1) / payload, iface=TEST_IFACE)
-        sendp(lnic_req(0) / payload, iface=TEST_IFACE)
-        self.assertTrue(True)
+        latency = self.do_test(125)
+        print 'Latency = {} cycles'.format(latency)
+
+    def test_num_words(self):
+        word_count = [1, 10, 50, 125]
+        num_words = []
+        latency = []
+        for n in word_count:
+            num_words.append(n)
+            latency.append(self.do_test(n))
+        # record latencies
+        df = pd.DataFrame({'num_words':num_words, 'latency':latency})
+        write_csv('dot_product', 'num_words_latency.csv', df)
 
