@@ -8,6 +8,7 @@ import NN_headers as NN
 import Othello_headers as Othello
 import NBody_headers as NBody
 import DummyApp_headers as DummyApp
+import ServiceTime_headers as ServiceTime
 from ChainRep_headers import ChainRep, CHAINREP_OP_READ, CHAINREP_OP_WRITE
 import INT_headers as INT
 import struct
@@ -1106,6 +1107,67 @@ class NBodyTest(unittest.TestCase):
         # record latencies
         df = pd.DataFrame({'num_msgs':msgs, 'latency':latency})
         write_csv('nbody', 'num_msgs_latency.csv', df)
+
+class ServiceTimeTest(unittest.TestCase):
+    use_icenic = False
+    def setUp(self):
+        bind_layers(LNIC, ServiceTime.ServiceTime)
+
+    def config_msg(self, num_msgs):
+        msg_len = len(ServiceTime.ServiceTime() / ServiceTime.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / ServiceTime.ServiceTime() / ServiceTime.Config(num_msgs=num_msgs)
+
+    def data_req(self, service_time, pad_bytes):
+        msg_len = len(ServiceTime.ServiceTime() / ServiceTime.DataReq()) + pad_bytes
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / ServiceTime.ServiceTime() / ServiceTime.DataReq(service_time=service_time) \
+               / Raw('\x00'*pad_bytes)
+
+    def do_test(self, service_time, pad_bytes):
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = None if ServiceTimeTest.use_icenic else receiver.process_pkt
+
+        num_msgs = 40
+        inputs = []
+        inputs.append(self.config_msg(num_msgs))
+        # generate req msgs
+        inputs += [self.data_req(service_time, pad_bytes) for i in range(num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=num_msgs, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        # check response
+        self.assertEqual(len(sniffer.results), num_msgs)
+        final_resp = sniffer.results[-1]
+        # return latency
+        latency = struct.unpack('!L', str(final_resp)[-4:])[0]
+        return latency
+
+    def test_basic(self):
+        latency = self.do_test(1000, 1008)
+        print 'Latency = {} cycles'.format(latency)
+
+    def test_service_time(self):
+        times = [10, 100, 500, 1000]
+        pad_bytes = 1008
+        service_time = []
+        latency = []
+        for t in times:
+            service_time.append(t)
+            latency.append(self.do_test(t, pad_bytes))
+        # record latencies
+        df = pd.DataFrame({'service_time':service_time, 'latency':latency})
+        write_csv('service_time', 'service_time_latency.csv', df)
 
 class Multithread(unittest.TestCase):
     def test_basic(self):

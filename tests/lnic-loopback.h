@@ -11,7 +11,8 @@
 #define REPEAT_32(X) REPEAT_16(X) REPEAT_16(X)
 #define REPEAT_63(X) REPEAT_32(X) REPEAT_16(X) REPEAT_8(X) REPEAT_4(X) X X X
 #define REPEAT_64(X) REPEAT_32(X) REPEAT_32(X)
-#define REPEAT_127(X) REPEAT_64(X) REPEAT_32(X) REPEAT_16(X) REPEAT_8(X) REPEAT_4(X) X X X
+#define REPEAT_125(X) REPEAT_64(X) REPEAT_32(X) REPEAT_16(X) REPEAT_8(X) REPEAT_4(X) X
+#define REPEAT_127(X) REPEAT_125(X) X X
 #define REPEAT_128(X) REPEAT_64(X) REPEAT_64(X)
 #define REPEAT_174(X) REPEAT_128(X) REPEAT_32(X) REPEAT_8(X) X X X X X X
 
@@ -27,6 +28,8 @@ void copy_payload(uint16_t msg_len) {
     REPEAT_15(lnic_copy();)
   } else if (msg_len == 512) {
     REPEAT_63(lnic_copy();)
+  } else if (msg_len == 1008) {
+    REPEAT_125(lnic_copy();)
   } else if (msg_len == 1024) {
     REPEAT_127(lnic_copy();)
   } else if (msg_len == 1400) {

@@ -57,11 +57,6 @@ static int nic_recv(void *dest)
 	return len;
 }
 
-static inline uint64_t nic_macaddr(void)
-{
-	return reg_read64(SIMPLENIC_MACADDR);
-}
-
 #define IPV4_ETHTYPE 0x0800
 #define ARP_ETHTYPE 0x0806
 #define ICMP_PROTO 1
@@ -189,24 +184,77 @@ static int checksum(uint16_t *data, int len)
         return sum;
 }
 
+/* Post a send request
+ */
+static void nic_post_send(void *buf, uint64_t len)
+{
+  uintptr_t addr = ((uintptr_t) buf) & ((1L << 48) - 1);
+  unsigned long packet = (len << 48) | addr;
+  while (nic_send_req_avail() == 0);
+  reg_write64(SIMPLENIC_SEND_REQ, packet);
+}
+
+/* Wait for all send operations to complete
+ */
+static void nic_wait_send_batch(int tx_count)
+{
+  int i;
+
+  for (i=0; i < tx_count; i++) {
+    // Poll for completion
+    while (nic_send_comp_avail() == 0);
+    reg_read16(SIMPLENIC_SEND_COMP);
+  }
+}
+
+/* Post a batch of RX requests
+ */
+static void nic_post_recv_batch(uint64_t bufs[][ETH_MAX_WORDS], int rx_count)
+{
+  int i;
+  for (i=0; i < rx_count; i++) {
+    uintptr_t addr = (uintptr_t) bufs[i];
+    while (nic_recv_req_avail() == 0);
+    reg_write64(SIMPLENIC_RECV_REQ, addr);
+  }
+}
+
+/* Wait for a receive to complete
+ */
+static int nic_wait_recv()
+{
+  int len;
+
+  // Poll for completion
+  while (nic_recv_comp_avail() == 0);
+  len = reg_read16(SIMPLENIC_RECV_COMP);
+  asm volatile ("fence");
+
+  return len;
+}
+
+static inline uint64_t nic_macaddr(void)
+{
+  return reg_read64(SIMPLENIC_MACADDR);
+}
+
 /**
  * Receive and parse Eth/IP/LNIC headers.
  * Only return once lnic pkt is received.
  */
 static int nic_recv_lnic(void *buf, struct lnic_header **lnic)
 {
-  struct eth_header *eth;
   struct ipv4_header *ipv4;
+  int len;
 
   // receive pkt
-  nic_recv(buf);
+  len = nic_recv(buf);
 
-  eth = buf;
   ipv4 = buf + ETH_HEADER_SIZE;
   // parse lnic hdr
   int ihl = ipv4->ver_ihl & 0xf;
   *lnic = (void *)ipv4 + (ihl << 2);
-  return 0;
+  return len;
 }
 
 /**
