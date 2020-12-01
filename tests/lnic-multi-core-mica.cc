@@ -21,6 +21,15 @@
 // Expected address of the load generator
 uint64_t load_gen_ip = 0x0a000001;
 
+extern "C" {
+    extern int _end;
+    char* data_end = (char*)&_end + 16384*4;
+    extern void sbrk_init(long int* init_addr);
+    extern void __libc_init_array();
+    extern void __libc_fini_array();
+}
+
+
 bool server_up = false;
 
 typedef struct {
@@ -64,17 +73,17 @@ arch_spinlock_t up_lock;
 #if USE_MICA
 
 #define NCORES 4
-#define MICA_SHM_BUFFER_SIZE (9233952) // 10K 512B items
+#define MICA_SHM_BUFFER_SIZE (8697016) // 10K 512B items
 //#define MICA_SHM_BUFFER_SIZE (500040) // 500 512B items
-//#define MICA_SHM_BUFFER_SIZE (67648) // 100 512B items
-//#define MICA_SHM_BUFFER_SIZE (8456) // 100 512B items
+//#define MICA_SHM_BUFFER_SIZE (63424) // 100 512B items
+//#define MICA_SHM_BUFFER_SIZE (7928) // 10 512B items
 
 #include "mica/table/fixedtable.h"
 
 static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
 struct MyFixedTableConfig {
-  static constexpr size_t kBucketCap = 16;
+  static constexpr size_t kBucketCap = 15;
 
   // Support concurrent access. The actual concurrent access is enabled by
   // concurrent_read and concurrent_write in the configuration.
@@ -93,6 +102,7 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentWrite = false;
 
   static constexpr size_t itemCount = 10000;
+  //static constexpr size_t itemCount = 10;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
@@ -383,71 +393,33 @@ int run_server(int cid, uint64_t context_id) {
 }
 
 extern "C" {
-
-#include <string.h>
-
-// These are defined in syscalls.c
-int inet_pton4(const char *src, const char *end, unsigned char *dst);
-uint32_t swap32(uint32_t in);
-
 bool is_single_core() { return false; }
 
 int core_main(int argc, char** argv, int cid, int nc) {
-  (void)nc;
-  printf("args: ");
-  for (int i = 1; i < argc; i++) {
-    printf("%s ", argv[i]);
-  }
-  printf("\n");
+  (void)argc; (void)argv; (void)nc;
+  uint64_t context_id, priority = 0;
 
-  if (argc < 3) {
-    printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
-    return EXIT_FAILURE;
-  }
+  int use_one_context = 0;
+  if (use_one_context) context_id = 0;
+  else                 context_id = cid;
 
-  char* nic_ip_str = argv[2];
-  uint32_t nic_ip_addr_lendian = 0;
-  int retval = inet_pton4(nic_ip_str, nic_ip_str + strlen(nic_ip_str), (unsigned char *)&nic_ip_addr_lendian);
-
-  // Risc-v is little-endian, but we store ip's as big-endian since the NIC works in big-endian
-  uint32_t nic_ip_addr = swap32(nic_ip_addr_lendian);
-  if (retval != 1 || nic_ip_addr == 0) {
-    printf("Supplied NIC IP address is invalid.\n");
-    return EXIT_FAILURE;
-  }
-
-  uint64_t context_id;
-  if (strcmp(argv[3], "ONE_CONTEXT_FOUR_CORES") == 0)
-    context_id = 0;
-  else if (strcmp(argv[3], "FOUR_CONTEXTS_FOUR_CORES") == 0)
-    context_id = cid;
-  else {
-    printf("Unknown experiment type: %s\n", argv[3]);
-    return EXIT_FAILURE;
-  }
-  uint64_t priority = 0;
   lnic_add_context(context_id, priority);
 
-  // wait for all cores to boot -- TODO: is there a better way than this?
-  for (int i = 0; i < 1000; i++) {
-    asm volatile("nop");
+  if (cid > (NCORES-1)) {
+    send_startup_msg(cid, context_id);
+    return EXIT_SUCCESS;
   }
 
-  if (nic_ip_addr == SERVER_IP && cid == SERVER_CONTEXT)
-    printf("Each core serving %ld items.\n", MyFixedTableConfig::itemCount);
+  if (cid == 0) {
+    // Setup the C++ libraries
+    sbrk_init((long int*)data_end);
+    atexit(__libc_fini_array);
+    __libc_init_array();
 
-  int ret;
-  //if (nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
-  //if (0 && nic_ip_addr == CLIENT_IP && cid == CLIENT_CONTEXT)
-  //  ret = run_client(cid);
-  //else if (nic_ip_addr == SERVER_IP && cid == SERVER_CONTEXT)
-  //  ret = run_server(cid);
-  //else if (cid == SERVER_CONTEXT) {
-  //  while (1) { }
-  //}
-  //else
-  //  ret = EXIT_SUCCESS;
-  ret = run_server(cid, context_id);
+    printf("Each core serving %ld items.\n", MyFixedTableConfig::itemCount);
+  }
+
+  int ret = run_server(cid, context_id);
 
   return ret;
 }
