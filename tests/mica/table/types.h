@@ -1,0 +1,87 @@
+#pragma once
+#ifndef MICA_TABLE_TYPES_H_
+#define MICA_TABLE_TYPES_H_
+
+#include <string>
+#include "mica/common.h"
+
+namespace mica {
+namespace table {
+enum class Result {
+  kSuccess = 0,
+  kError,
+  kInsufficientSpacePool,
+  kInsufficientSpaceIndex,
+  kExists,
+  kNotFound,
+  kPartialValue,
+  kNotProcessed,
+  kNotSupported,
+  kTimedOut,
+  kRejected,
+};
+
+//static std::string ResultString(enum Result r)
+//{
+//	switch(r) {
+//		case Result::kSuccess:
+//			return std::string("Success");
+//		case Result::kError:
+//			return std::string("Error");
+//		case Result::kInsufficientSpacePool:
+//			return std::string("Insufficient space in pool");
+//		case Result::kInsufficientSpaceIndex:
+//			return std::string("Insufficient space in index");
+//		case Result::kExists:
+//			return std::string("Exists");
+//		case Result::kNotFound:
+//			return std::string("Not found");
+//		case Result::kPartialValue:
+//			return std::string("Partial value");
+//		case Result::kNotProcessed:
+//			return std::string("Not processed");
+//		case Result::kNotSupported:
+//			return std::string("Not supported");
+//		case Result::kTimedOut:
+//			return std::string("Timed out");
+//		case Result::kRejected:
+//			return std::string("Rejected");
+//		default:
+//			return std::string("Invalid ::mica::table Result type");
+//	};
+//}
+
+static const char *cResultString(enum Result r)
+{
+	switch(r) {
+		case Result::kSuccess:
+			return "Success";
+		case Result::kError:
+			return "Error";
+		case Result::kInsufficientSpacePool:
+			return "Insufficient space in pool";
+		case Result::kInsufficientSpaceIndex:
+			return "Insufficient space in index";
+		case Result::kExists:
+			return "Exists";
+		case Result::kNotFound:
+			return "Not found";
+		case Result::kPartialValue:
+			return "Partial value";
+		case Result::kNotProcessed:
+			return "Not processed";
+		case Result::kNotSupported:
+			return "Not supported";
+		case Result::kTimedOut:
+			return "Timed out";
+		case Result::kRejected:
+			return "Rejected";
+		default:
+			return "Invalid ::mica::table Result type";
+	};
+}
+
+}
+}
+
+#endif
