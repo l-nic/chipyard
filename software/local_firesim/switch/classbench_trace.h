@@ -1,0 +1,1 @@
+../../../sims/firesim/target-design/switch/classbench_trace.h

@@ -129,3 +129,6 @@
 [submodule "tools/dromajo/dromajo-src"]
 	path = tools/dromajo/dromajo-src
 	url = https://github.com/riscv-boom/dromajo.git
+[submodule "software/local_firesim/PcapPlusPlus"]
+	path = software/local_firesim/PcapPlusPlus
+	url = https://github.com/l-nic/PcapPlusPlus

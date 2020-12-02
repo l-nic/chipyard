@@ -1,0 +1,96 @@
+import sys
+from fabric.api import *
+import time
+import datetime
+import os
+
+link_latency = 140
+switch_latency = 0
+high_priority_obuf = 4375
+low_priority_obuf = 4375
+timeout_cycles = 4480
+enable_waveforms = False
+simulator = 'VFireSim-debug' if enable_waveforms else 'VFireSim'
+
+# cmdline args for load generator RISC-V program
+# NOTE: the test type must match what is specified in switchconfig1.h!
+
+#test_type = "ONE_CONTEXT_FOUR_CORES"
+test_type = "ONE_CONTEXT_ONE_CORE"
+#test_type = "FOUR_CONTEXTS_FOUR_CORES"
+
+#test_type = "DIF_PRIORITY_LNIC_DRIVEN"
+#test_type = "DIF_PRIORITY_TIMER_DRIVEN"
+
+#test_type = "HIGH_PRIORITY_C1_STALL"
+#test_type = "LOW_PRIORITY_C1_STALL"
+c1_stall_factor = 10
+c1_stall_freq = 5
+
+# NOTE: if use_load_prog is set then MUST pass in the lnic-evaluation.riscv binary
+use_load_prog = False
+server_ip_addrs = ["10.0.0.2", "10.0.0.3", "10.0.0.4"]
+load_gen_args = "{} {} {}".format(test_type, c1_stall_factor, c1_stall_freq) if use_load_prog else "{} {} {}".format(server_ip_addrs[0], server_ip_addrs[1], server_ip_addrs[2])
+
+# Note that this doesn't rebuild the simulator by default, since that can be pretty slow even when nothing has changed.
+def build_components(num_sims, current_run):
+    with cd("chipyard/software/local_firesim/PcapPlusPlus"):
+        run("make -j16")
+        run("sudo make install")
+    with cd("chipyard/software/local_firesim/switch"):
+        run("make")
+    with cd("chipyard/software/local_firesim/logs/"):
+        run("mkdir " + current_run)
+        run("rm -f recent")
+        run("ln -s " + current_run + " recent")
+    with cd("chipyard/tests"):
+        run("make -j16")
+
+def launch_switch(num_sims, current_run):
+    with cd("chipyard/software/local_firesim/switch"):
+        run("script -f -c \'sudo ./switch " + str(link_latency) + " " + str(switch_latency) + " 200 " + \
+             str(high_priority_obuf) + " " + str(low_priority_obuf) + "\' ../logs/" + current_run + "switchlog > /dev/null")
+
+def launch_sim(sim, current_run, test_name):
+    time.sleep(1)
+    with cd("chipyard/sims/firesim/sim/generated-src/f1/FireSim-WithNIC_DDR3FRFCFSLLC4MB_FireSimQuadRocketConfig-F90MHz_BaseF1Config"):
+        run("script -f -c \'sudo ./" + simulator + " +permissive +vcs+initreg+0 +vcs+initmem+0 +fesvr-step-size=128 +mm_relaxFunctionalModel_0=0 +mm_openPagePolicy_0=1 +mm_backendLatency_0=2 +mm_schedulerWindowSize_0=8 +mm_transactionQueueDepth_0=8 +mm_dramTimings_tAL_0=0 +mm_dramTimings_tCAS_0=14 +mm_dramTimings_tCMD_0=1 +mm_dramTimings_tCWD_0=10 +mm_dramTimings_tCCD_0=4 +mm_dramTimings_tFAW_0=25 +mm_dramTimings_tRAS_0=33 +mm_dramTimings_tREFI_0=7800 +mm_dramTimings_tRC_0=47 +mm_dramTimings_tRCD_0=14 +mm_dramTimings_tRFC_0=160 +mm_dramTimings_tRRD_0=8 +mm_dramTimings_tRP_0=14 +mm_dramTimings_tRTP_0=8 +mm_dramTimings_tRTRS_0=2 +mm_dramTimings_tWR_0=15 +mm_dramTimings_tWTR_0=8 +mm_rowAddr_offset_0=18 +mm_rowAddr_mask_0=65535 +mm_rankAddr_offset_0=16 +mm_rankAddr_mask_0=3 +mm_bankAddr_offset_0=13 +mm_bankAddr_mask_0=7 +mm_llc_wayBits_0=3 +mm_llc_setBits_0=12 +mm_llc_blockBits_0=7 +mm_llc_activeMSHRs_0=8 +shmemportname0=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" + str(sim + 2) + " +nic_mac_addr0=00:26:E1:00:00:0" + str(sim + 2) + " +switch_mac_addr0=08:55:66:77:88:08 +nic_ip_addr0=10.0.0." + str(sim + 2) + "  +timeout_cycles0=" + str(timeout_cycles) + "  +rtt_pkts0=2 +niclog0=../../../../../../software/local_firesim/logs/" + current_run + "niclog" + str(sim) + " +linklatency0=" + str(link_latency) + " +waveform=../../../../../../software/local_firesim/logs/" + current_run + "wavelog" + str(sim) + " +netbw0=200 +netburst0=8 +tracefile0=TRACEFILE0 +blkdev-in-mem0=128 +blkdev-log0=blkdev-log0 +autocounter-readrate0=1000 +autocounter-filename0=AUTOCOUNTERFILE0 +dramsim +permissive-off " + test_name + " 1 10.0.0." + str(sim + 2) + " " + load_gen_args + " 3>&1 1>&2 2>&3 | ~/chipyard/riscv-tools-install/bin/spike-dasm > ../../../../../../software/local_firesim/logs/" + current_run + "simlog" + str(sim) + "\' ../../../../../../software/local_firesim/logs/" + current_run + "uartlog" + str(sim) + " > /dev/null")
+
+def main():
+    if len(sys.argv) < 3:
+        print "This program requires passing in the number of simulations to run and the name of the test binary"
+        exit(-1)
+    num_sims = int(sys.argv[1])
+    test_name = os.path.abspath(sys.argv[2])
+
+    env.password = "vagrant"
+    current_run = "local_firesim_" + str(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")) + "/"
+
+    # use the correct switchconfig
+    os.system('rm -f switch/switchconfig.h && ln -s switchconfig{}.h switch/switchconfig.h'.format(num_sims))
+
+    execute(build_components, num_sims, current_run, hosts=["127.0.0.1"])
+
+    local_addr_id_map = {}
+    hosts = []
+    hosts.append("127.0.0.1")
+    local_addr_id_map["127.0.0.1"] = num_sims
+    for i in range(num_sims):
+        localhost_addr = "127.0.0." + str(i + 2)
+        local_addr_id_map[localhost_addr] = i
+        hosts.append(localhost_addr)
+
+
+    @parallel
+    def launch_wrapper(local_addr_id_map, current_run, test_name):
+        if env.host_string == "127.0.0.1":
+            launch_switch(local_addr_id_map[env.host_string], current_run)
+        else:
+            launch_sim(local_addr_id_map[env.host_string], current_run, test_name)
+    execute(launch_wrapper, local_addr_id_map, current_run, test_name, hosts=hosts)
+
+
+
+
+if __name__ == "__main__":
+    main()
