@@ -456,17 +456,17 @@ static void init_tls()
 
 void _init(int cid, int nc)
 {
-  printf("early init\n");
+  //printf("early init\n");
   init_tls();
   if (cid == 0) {
     // uart_init();
     getmainvars(&mainvars[0], MAX_ARGS_BYTES);
     argc = mainvars[0];
     argv = mainvars + 1;
-    if (argc == 0 || argv == 0) {
-      printf("Unable to parse program arguments.\n");
-      exit(-1);
-    }
+    //if (argc == 0 || argv == 0) {
+    //  printf("Unable to parse program arguments 2.\n");
+    //  exit(-1);
+    //}
     arch_spin_lock(&init_lock);
     did_init = true;
     arch_spin_unlock(&init_lock);
