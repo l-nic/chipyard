@@ -30,6 +30,7 @@ class Resp(Packet):
     name = "Resp"
     fields_desc = [
         LongField("result", 0),
+        LongField("cache_misses", 0),
         IntField("timestamp", 0),
         IntField("latency", 0)
     ]

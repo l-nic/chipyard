@@ -5,7 +5,12 @@
 #include "lnic.h"
 #include "dot-product.h"
 
-#define RESP_MSG_LEN 24
+// If DOT_PROD_OPT is not defined then the whole msg will be copied
+// from the register file to memory before computing the dot product.
+#define DOT_PROD_OPT
+#define MAX_MSG_WORDS 258
+
+#define RESP_MSG_LEN 32
 
 /* Dot Product:
  * - Compute the dot product of each msg with the in-memory data.
@@ -19,11 +24,17 @@ int main(void)
   int msg_cnt;
   int configured;
   int i;
+  uint64_t start_misses, num_misses;
  
+  uint64_t msg_words[MAX_MSG_WORDS];
+
   // register context ID with L-NIC
   uint64_t context_id = 0;
   uint64_t priority = 0;
   lnic_add_context(context_id, priority);
+
+  // Setup mhpmcounter3 performance counter to count D$ misses
+  write_csr(mhpmevent3, 0x202);
 
   printf("Initializing...\n");
   // Initialize the working set
@@ -34,6 +45,7 @@ int main(void)
 
   printf("Ready!\n");
   while (1) {
+    start_misses = read_csr(mhpmcounter3);
     msg_cnt = 0;
     configured = 0;
     // Wait for a Config msg, which indicates how many msgs to process
@@ -69,11 +81,24 @@ int main(void)
       // the msg word. Accumulate for all msg words.
       uint64_t num_words = lnic_read();
       uint64_t result = 0;
+#ifdef DOT_PROD_OPT
       for (i = 0; i < num_words; i++) {
         uint64_t word = lnic_read();
         result += word * weights[word];
       }
+#else
+      for (i = 0; i < num_words; i++) {
+        msg_words[i] = lnic_read();
+      }
+
+      for (i = 0; i < num_words; i++) {
+        result += msg_words[i] * weights[msg_words[i]];
+      }
+#endif
       lnic_write_r(result);
+      // write cache misses into response
+      num_misses = read_csr(mhpmcounter3) - start_misses;
+      lnic_write_r(num_misses);
 
       // discard timestamp on RX msg
       lnic_read();

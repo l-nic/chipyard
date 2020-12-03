@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "encoding.h"
 #include "mmio.h"
 #include "icenic.h"
 #include "dot-product.h"
@@ -27,6 +28,7 @@ struct data_header {
 
 struct resp_header {
   uint64_t result;
+  uint64_t cache_misses;
   uint64_t timestamp;
 };
 
@@ -40,6 +42,7 @@ int main(void)
   int configured;
   int len;
   int i;
+  uint64_t start_misses;
 
   // headers
   struct lnic_header *lnic;
@@ -47,6 +50,9 @@ int main(void)
   struct config_header *config;
   struct data_header *data;
   struct resp_header *resp;
+
+  // Setup mhpmcounter3 performance counter to count D$ misses
+  write_csr(mhpmevent3, 0x202);
 
   printf("Initializing...\n");
   // Initialize the working set
@@ -57,6 +63,7 @@ int main(void)
 
   printf("Ready!\n");
   while(1) {
+    start_misses = read_csr(mhpmcounter3);
     msg_cnt = 0;
     configured = 0;
     // wait for a Config msg
@@ -103,6 +110,7 @@ int main(void)
         dot_prod->type = htonl(RESP_TYPE);
         resp = (void *)data;
         resp->result = htonl(result);
+        resp->cache_misses = htonl(read_csr(mhpmcounter3) - start_misses);
         resp->timestamp = start_time;
 
         int resp_len = 34 + LNIC_HEADER_SIZE + sizeof(struct dot_product_header) + sizeof(struct resp_header);
