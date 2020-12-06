@@ -3,7 +3,7 @@ OBJDUMP=riscv64-unknown-elf-objdump
 CFLAGS= -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall
 LDFLAGS= -static
 CXX=riscv64-unknown-elf-g++
-CXXFLAGS=-mcmodel=medany -I. -Wall -Wextra -pedantic -O2 -ffixed-x30 -ffixed-x31 -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
+CXXFLAGS=-mcmodel=medany -I. -Wall -Wextra -pedantic -O2 -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
 
 include libgloss.mk
 
@@ -28,9 +28,6 @@ dumps: $(addsuffix .dump,$(PROGRAMS))
 
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-icenic-mica.riscv: icenic-mica.o crt.o syscalls.o
-	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
 
 %.o: %.c mmio.h spiflash.h
 	$(GCC) $(CFLAGS) -c $< -o $@

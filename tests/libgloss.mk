@@ -5,7 +5,8 @@ ifndef GCC
 $(error GCC is not defined)
 endif
 
-libgloss_specs := htif_nano.specs
+#libgloss_specs := htif_nano.specs
+libgloss_specs := htif.specs
 
 # Test whether libgloss-htif is globally installed and usable
 # Define BUILD_LIBGLOSS=1 to unconditionally force a local build

@@ -47,13 +47,15 @@ uint64_t bswap64(uint64_t const x) {
 
 #define NCORES 1
 //#define MICA_SHM_BUFFER_SIZE (9233952) // 10K 512B items
-//#define MICA_SHM_BUFFER_SIZE (8697016) // 10K 512B items bucketCap=15
+#define MICA_SHM_BUFFER_SIZE (8697016) // 10K 512B items bucketCap=15
 //#define MICA_SHM_BUFFER_SIZE (1138408) // 1K 512B items bucketCap=7
 //#define MICA_SHM_BUFFER_SIZE (1133104) // 1K 512B items bucketCap=15
 //#define MICA_SHM_BUFFER_SIZE (1061816) // 1K 512B items bucketCap=30
-//#define MICA_SHM_BUFFER_SIZE (566552) // 500 512B items
-//#define MICA_SHM_BUFFER_SIZE (67648) // 100 512B items
-#define MICA_SHM_BUFFER_SIZE (8456) // 10 512B items
+//#define MICA_SHM_BUFFER_SIZE (531176) // 500 512B items bucketCap=15
+//#define MICA_SHM_BUFFER_SIZE (67648) // 100 512B items bucketCap=15
+//#define MICA_SHM_BUFFER_SIZE (90032) // 100 512B items bucketCap=5
+//#define MICA_SHM_BUFFER_SIZE (62968) // 100 512B items bucketCap=7
+//#define MICA_SHM_BUFFER_SIZE (8456) // 10 512B items
 
 #include "mica/table/fixedtable.h"
 
@@ -61,7 +63,7 @@ static constexpr size_t kValSize = VALUE_SIZE_WORDS * 8;
 
 struct MyFixedTableConfig {
   static constexpr size_t kBucketCap = 15;
-  //static constexpr size_t kBucketCap = 5;
+  //static constexpr size_t kBucketCap = 7;
 
   // Support concurrent access. The actual concurrent access is enabled by
   // concurrent_read and concurrent_write in the configuration.
@@ -79,26 +81,20 @@ struct MyFixedTableConfig {
   static constexpr bool concurrentRead = false;
   static constexpr bool concurrentWrite = false;
 
-  //static constexpr size_t itemCount = 10000;
-  static constexpr size_t itemCount = 10;
+  static constexpr size_t itemCount = 10000;
+  //static constexpr size_t itemCount = 10;
 };
 
 typedef mica::table::FixedTable<MyFixedTableConfig> FixedTable;
 typedef mica::table::Result MicaResult;
 
-//static inline uint64_t rotate(uint64_t val, int shift) {
-uint64_t rotate(uint64_t val, int shift) {
+static inline uint64_t rotate(uint64_t val, int shift) {
   // Avoid shifting by 64: doing so yields an undefined result.
   return shift == 0 ? val : ((val >> shift) | (val << (64 - shift)));
 }
-//static inline uint64_t HashLen16(uint64_t u, uint64_t v, uint64_t mul) {
-uint64_t HashLen16(uint64_t u, uint64_t v, uint64_t mul) {
-  if (mul == 0) printf("HashLen16 mul is zero!!!\n");
-  if (v == 0) printf("HashLen16 v is zero!!!\n");
-  if (u == 0) printf("HashLen16 u is zero!!!\n");
+static inline uint64_t HashLen16(uint64_t u, uint64_t v, uint64_t mul) {
   // Murmur-inspired hashing.
   uint64_t a = (u ^ v) * mul;
-  //printf("u=%ld v=%ld mul=%ld\n", u, v, mul);
   a ^= (a >> 47);
   uint64_t b = (v ^ a) * mul;
   b ^= (b >> 47);
@@ -106,23 +102,15 @@ uint64_t HashLen16(uint64_t u, uint64_t v, uint64_t mul) {
   return b;
 }
 
-void mynop() {
-}
 // This was extracted from the cityhash library. It's the codepath for hashing
 // 16 byte values.
-//static inline uint64_t cityhash(const uint64_t *s) {
-uint64_t cityhash(const uint64_t *s) {
+static inline uint64_t cityhash(const uint64_t *s) {
   static const uint64_t k2 = 0x9ae16a3b2f90404fULL;
-  printf("k2=%lx  mul=%ld   x=%ld\n", k2, 0UL, 0x9ae16a3b2f90404f);
-  if (k2 + s[0] == 0) printf("k2=0!!!!\n");
   uint64_t mul = k2 + (KEY_SIZE_WORDS * 8) * 2;
   uint64_t a = s[0] + k2;
   uint64_t b = s[1];
   uint64_t c = rotate(b, 37) * mul + a;
   uint64_t d = (rotate(a, 25) + b) * mul;
-  if (d == 0) printf("d==0!!!!\n");
-  if (a == 0) printf("a==0!!!!\n");
-  if (mul == 0) printf("mul==0!!!!\n");
   return HashLen16(c, d, mul);
 }
 
@@ -265,7 +253,6 @@ static int run_server(uint8_t *mac) {
     ft_key.qword[0] = bswap64(req->msg_key[0]);
     ft_key.qword[1] = bswap64(req->msg_key[1]);
 
-
 #if PRINT_TIMING
     t1 = rdcycle();
 #endif // PRINT_TIMING
@@ -276,7 +263,6 @@ static int run_server(uint8_t *mac) {
 #if PRINT_TIMING
     t2 = rdcycle();
 #endif // PRINT_TIMING
-
 
     if (msg_type == MICA_R_TYPE) {
       uint64_t ingr_ts = req->msg_value[0];
@@ -323,15 +309,6 @@ static int run_server(uint8_t *mac) {
 int main(void) {
   uint64_t macaddr_long;
   uint8_t *macaddr;
-
-  uint64_t myval[2] = {0, 0};
-  uint8_t *myvalp = (uint8_t *)myval;
-  *myvalp = 3;
-  uint64_t h[1];
-  h[0] = cityhash(myval);
-  uint8_t *p = (uint8_t *)&h[0];
-  printf("is the hash==0? %d\n", h[0] == 0);
-  printf("cityhash(0x%lx)=0x%lx %x %x %x %x %x\n", myval[0], h[0], p[0], p[1], p[2], p[3], p[4]);
 
   macaddr_long = nic_macaddr();
   macaddr = (uint8_t *) &macaddr_long;
