@@ -11,7 +11,6 @@ int main(void)
   uint64_t app_hdr;
   uint16_t msg_len;
   uint64_t start_time;
-  uint64_t service_time;
   uint64_t num_msgs;
   int msg_cnt;
   int configured;
@@ -44,22 +43,17 @@ int main(void)
       // extract msg len from app hdr
       app_hdr = lnic_read();
       msg_len = (uint16_t)app_hdr;
+
       lnic_write_r(app_hdr);
-
       lnic_copy(); // msg type
-      service_time = lnic_read();
 
-      // write msg
-      lnic_write_r(service_time);
+      // increment each word in payload, except the first (msg type) and last (timestamp)
+      inc_payload(msg_len - 16);
 
-      // copy over msg payload
-      copy_payload(msg_len - 24);
-      // discard timestamp
+      // discard timestamp from RX msg
       lnic_read();
 
-      // perform the indicated amount of processing
-      process_msg(service_time);
-
+      // write start timestamp at end of TX msg
       lnic_write_r(start_time);
 
       lnic_msg_done();

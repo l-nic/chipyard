@@ -9,8 +9,6 @@ int main(void)
 {
 	uint64_t app_hdr;
 	uint16_t msg_len;
-	int num_words;
-	int i;
 
         // register context ID with L-NIC
         lnic_add_context(0, 0);
@@ -25,7 +23,7 @@ int main(void)
 		lnic_write_r(app_hdr);
 		// extract msg_len
 		msg_len = (uint16_t)app_hdr;
-                inc_payload(msg_len);
+                inc_payload(msg_len - 8);
 		lnic_copy(); // copy timestamp on last word
                 lnic_msg_done();
 	}

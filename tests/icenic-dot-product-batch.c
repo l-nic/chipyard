@@ -55,10 +55,17 @@ int main(void)
   write_csr(mhpmevent3, 0x202);
 
   printf("Initializing...\n");
-  // Initialize the working set
+  // Initialize the weights
   uint64_t weights[NUM_WEIGHTS];
   for (i = 0; i < NUM_WEIGHTS; i++) {
     weights[i] = i;
+  }
+  // read weights to bring into cache
+  for (i = 0; i < NUM_WEIGHTS; i++) {
+    if (weights[i] != i) {
+      printf("Failed to initialize weight: %d\n", i);
+      return -1;
+    }
   }
 
   printf("Ready!\n");

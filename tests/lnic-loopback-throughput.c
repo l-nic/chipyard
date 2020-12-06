@@ -22,7 +22,7 @@ int main(void)
   app_hdr = lnic_read();
   lnic_write_r(app_hdr);
   msg_len = (uint16_t)app_hdr;
-  copy_payload(msg_len);
+  copy_payload(msg_len - 8);
   start_time = lnic_read();
   lnic_write_r(start_time);
   lnic_msg_done();
@@ -33,7 +33,7 @@ int main(void)
     app_hdr = lnic_read();
     lnic_write_r(app_hdr);
     msg_len = (uint16_t)app_hdr;
-    copy_payload(msg_len);
+    copy_payload(msg_len - 8);
     lnic_read(); // discard current pkt's timestamp
     lnic_write_r(start_time);
     lnic_msg_done();

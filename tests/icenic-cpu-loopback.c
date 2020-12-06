@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "encoding.h"
 #include "mmio.h"
 #include "icenic.h"
 

@@ -4,6 +4,7 @@ from scapy.all import *
 from LNIC_headers import LNIC
 from LNIC_utils import *
 import Throughput_headers as Throughput
+import Stream_headers as Stream
 import NN_headers as NN
 import Othello_headers as Othello
 import NBody_headers as NBody
@@ -324,7 +325,7 @@ class Loopback(unittest.TestCase):
 #        print_pkts(sniffer.results)
         return sniffer.results
     def test_latency(self):
-        msg_len = 1024 # bytes
+        msg_len = 256 # bytes
         pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
         rx_pkts = self.do_loopback(pkts)
         self.assertEqual(1, len(rx_pkts))
@@ -339,17 +340,20 @@ class Loopback(unittest.TestCase):
 #        msg_len = 32
 #        num_packets = 50
 
+#        msg_len = 64
+#        num_packets = 50
+
 #        msg_len = 128
 #        num_packets = 50
 
+#        msg_len = 256
+#        num_packets = 50
+
 #        msg_len = 512
-#        num_packets = 50 #30
+#        num_packets = 50
 
 #        msg_len = 1024
-#        num_packets = 20 #15
-
-#        msg_len = 2048
-#        num_packets = 10
+#        num_packets = 50 #20
 
         pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=i) / Raw('\x00'*msg_len) for i in range(num_packets)]
         rx_pkts = self.do_loopback(pkts)
@@ -361,11 +365,11 @@ class Loopback(unittest.TestCase):
         print "total_latency = {} cycles".format(total_latency)
         print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput*8/0.3125)
     def test_latency_sweep(self):
-        msg_lens = [8, 32, 128, 512, 1024]
+        msg_lens = [8, 16, 32, 64, 128, 256, 512, 1024]
         length = []
         latency = []
         for l in msg_lens:
-            for i in range(NUM_SAMPLES):
+            for i in range(10):
                 print 'Testing msg_len = {} bytes'.format(l)
                 length.append(l)
                 pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
@@ -380,6 +384,7 @@ class Loopback(unittest.TestCase):
     def test_throughput_sweep(self):
         # NOTE: this currently does not work as expected because need to reset the start time b/w runs ...
         #   So I'll gather the throughput measurements manually for now ...
+        # NOTE: Should look into why IceNIC is unable to buffer more than 20 1024B pkts
         msg_lens = [8, 32, 128, 512, 1024]
         num_pkts = [50, 50, 50, 30, 15]
         self.assertEqual(len(msg_lens), len(num_pkts))
@@ -833,55 +838,65 @@ class PostcardOptTest(unittest.TestCase):
         throughput = (NUM_PKTS * NUM_HOPS)/total_latency # postcards/second
         print 'throughput = {} M postcards/sec'.format(throughput/1e6)
 
+class StreamTest(unittest.TestCase):
+    num_msgs = 30
+    def setUp(self):
+        bind_layers(LNIC, Stream.Stream)
 
-class Stream(unittest.TestCase):
-    def do_loopback(self, pkts):
-#        print "*********** Request Pkts: ***********"
-#        print_pkts(pkts)
+    def config_msg(self, num_msgs):
+        msg_len = len(Stream.Stream() / Stream.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Stream.Stream() / Stream.Config(num_msgs=num_msgs)
+
+    def data_req(self, msg_len):
+        self.assertTrue(msg_len >= len(Stream.Stream()))
+        pad_bytes = msg_len - len(Stream.Stream())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Stream.Stream(msg_type=Stream.DATA_TYPE) \
+               / ('\x00'*pad_bytes)
+
+    def do_test(self, msg_len):
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
         prn = None if USE_ICENIC else receiver.process_pkt
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
-                    prn=prn, count=len(pkts), timeout=100)
 
+        inputs = []
+        inputs.append(self.config_msg(StreamTest.num_msgs))
+        # generate req msgs
+        inputs += [self.data_req(msg_len) for i in range(StreamTest.num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=StreamTest.num_msgs, timeout=100)
         sniffer.start()
         time.sleep(1)
-        # send in pkts
-        sendp(pkts, iface=TEST_IFACE)
-        # wait for all response pkts
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
         sniffer.join()
-        self.assertEqual(len(pkts), len(sniffer.results))
-#        print "*********** Response Pkts: ***********"
-#        print_pkts(sniffer.results)
-        return sniffer.results
-    def test_latency(self):
-        msg_len = 1024 # bytes
-        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
-        rx_pkts = self.do_loopback(pkts)
-        self.assertEqual(1, len(rx_pkts))
-        p = rx_pkts[0]
-        latency = struct.unpack('!L', str(p)[-4:])[0]
-        time = struct.unpack('!L', str(p)[-8:-4])[0]
-        print "latency = {} cycles".format(latency)
-    def test_latency_sweep(self):
-        msg_lens = [8, 32, 128, 512, 1024]
-        length = []
-        latency = []
-        for l in msg_lens:
-            for i in range(NUM_SAMPLES):
-                print 'Testing msg_len = {} bytes'.format(l)
-                length.append(l)
-                pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
-                rx_pkts = self.do_loopback(pkts)
-                p = rx_pkts[0]
-                lat = struct.unpack('!L', str(p)[-4:])[0]
-                time = struct.unpack('!L', str(p)[-8:-4])[0]
-                latency.append(lat)
-        # record latencies
-        df = pd.DataFrame({'msg_len':length, 'latency':latency})
-        write_csv('stream', 'msg_len_latency.csv', df)
+        p = sniffer.results[-1]
 
+        total_latency = struct.unpack('!L', str(p)[-4:])[0]
+        throughput = sum([len(p) for p in inputs])/float(total_latency) # bytes/cycle
+        throughput_pps = len(inputs)/(float(total_latency) * 0.3125e-3)
+        throughput_gbps = throughput*8/0.3125
+        print "total latency = {} cycles".format(total_latency)
+        print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput_gbps)
+        return throughput_gbps
+
+    def test_basic(self):
+        throughput = self.do_test(1024)
+
+    def test_msg_len(self):
+        msg_len = [32, 64, 128, 256, 512, 1024]
+        tput = []
+        for l in msg_len:
+            tput.append(self.do_test(l))
+        # record throughputs
+        df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
+        write_csv('stream', 'msg_len_throughput.csv', df)
 
 class NNInference(unittest.TestCase):
     def setUp(self):
@@ -1168,6 +1183,7 @@ class ServiceTimeTest(unittest.TestCase):
 
 class DotProdTest(unittest.TestCase):
     num_weights = 2000
+    num_msgs = 30
     def setUp(self):
         bind_layers(LNIC, DotProd.DotProd)
 
@@ -1188,17 +1204,16 @@ class DotProdTest(unittest.TestCase):
         receiver = LNICReceiver(TEST_IFACE)
         prn = None if USE_ICENIC else receiver.process_pkt
 
-        num_msgs = 30
         inputs = []
-        inputs.append(self.config_msg(num_msgs))
+        inputs.append(self.config_msg(DotProdTest.num_msgs))
         # generate req msgs
-        inputs += [self.data_req(num_words) for i in range(num_msgs)]
+        inputs += [self.data_req(num_words) for i in range(DotProdTest.num_msgs)]
         # assign unique ID to each msg
         for p, i in zip(inputs, range(len(inputs))):
             p[LNIC].tx_msg_id = i
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=num_msgs, timeout=100)
+                    prn=prn, count=DotProdTest.num_msgs, timeout=100)
         sniffer.start()
         time.sleep(1)
         # send inputs get response
@@ -1210,20 +1225,25 @@ class DotProdTest(unittest.TestCase):
           exp_result = sum([x**2 for x in req[DotProd.Data].words])
           self.assertEqual(exp_result, resp[DotProd.Resp].result)
         final_resp = sniffer.results[-1]
-        return final_resp[DotProd.Resp].latency
+        misses = final_resp[DotProd.Resp].cache_misses/float(DotProdTest.num_msgs) # misses/msg
+        latency = final_resp[DotProd.Resp].latency/float(DotProdTest.num_msgs) # cycles/msg
+        return latency, misses
 
     def test_basic(self):
-        latency = self.do_test(125)
-        print 'Latency = {} cycles'.format(latency)
+        latency, misses = self.do_test(125)
+        print 'Latency = {} cycles/msg, D$ misses/msg = {}'.format(latency, misses)
 
     def test_num_words(self):
-        word_count = [1, 10, 50, 125]
+        word_count = [1, 5, 10, 25, 50, 125]
         num_words = []
+        misses = []
         latency = []
         for n in word_count:
             num_words.append(n)
-            latency.append(self.do_test(n))
+            l, m = self.do_test(n)
+            misses.append(m)
+            latency.append(l)
         # record latencies
-        df = pd.DataFrame({'num_words':num_words, 'latency':latency})
+        df = pd.DataFrame({'num_words':num_words, 'latency':latency, 'misses':misses})
         write_csv('dot_product', 'num_words_latency.csv', df)
 
