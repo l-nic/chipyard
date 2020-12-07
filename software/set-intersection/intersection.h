@@ -36,6 +36,10 @@ void load_docs(uint32_t *word_cnt, uint32_t **word_to_docids, uint32_t *word_to_
     if (i % 40 == 0) printf("loaded %d words\n", i);
     uint32_t *arr_size = p++;
     word_to_docids[i] = arr_size;
+    // XXX load them into the cache
+    for (unsigned j = 1; j <= *arr_size; j++)
+      if (word_to_docids[i][j] == 0)
+        printf("DocID should not be zero.\n");;
     p += *arr_size;
   }
 }

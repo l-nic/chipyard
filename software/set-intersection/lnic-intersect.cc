@@ -8,7 +8,7 @@
 #define MAX_INSERSECTION_DOCS 64
 
 #define PRINT_TIMING 0
-#define NCORES 1
+#define NCORES 4
 #define USE_ONE_CONTEXT 1
 
 // Expected address of the load generator

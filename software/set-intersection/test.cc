@@ -5,7 +5,7 @@
 #include "intersection.h"
 
 #define MAX_QUERY_WORDS 8
-#define MAX_INSERSECTION_DOCS 128
+#define MAX_INSERSECTION_DOCS 512
 
 
 #if 0
@@ -22,11 +22,30 @@ uint32_t word_to_docids_bin[] = {3, // number of word records
 
 unsigned word_cnt;
 
+uint32_t intersection_tmp[2][1 + MAX_INSERSECTION_DOCS];
+
+uint32_t *search_words(uint32_t *query_word_ids, uint32_t query_word_cnt) {
+  uint32_t *intersection_res, *intermediate_res;
+  uint32_t word_id_ofst = query_word_ids[0]-1;
+  intersection_res = word_to_docids[word_id_ofst];
+
+  for (unsigned intersection_opr_cnt = 1; intersection_opr_cnt < query_word_cnt; intersection_opr_cnt++) {
+    word_id_ofst = query_word_ids[intersection_opr_cnt]-1;
+    intermediate_res = intersection_tmp[intersection_opr_cnt % 2];
+
+    compute_intersection(intersection_res, word_to_docids[word_id_ofst], intermediate_res);
+    intersection_res = intermediate_res;
+
+    if (intersection_res[0] == 0) // stop if the intersection is empty
+      break;
+  }
+
+  return intersection_res;
+}
+
 int main(int argc, char **argv) {
   uint64_t query_word_cnt = 2;
   uint32_t query_word_ids[MAX_QUERY_WORDS];
-  uint32_t *intersection_res, *intermediate_res;
-  uint32_t intersection_tmp[2][1 + MAX_INSERSECTION_DOCS];
 
   query_word_ids[0] = 1;
   query_word_ids[1] = 2;
@@ -44,25 +63,23 @@ int main(int argc, char **argv) {
   load_docs(&word_cnt, word_to_docids, word_to_docids_bin);
   printf("Loaded %d words.\n", word_cnt);
 
-  uint32_t word_id_ofst = query_word_ids[0]-1;
-  intersection_res = word_to_docids[word_id_ofst];
+  uint32_t *intersection_res = search_words(query_word_ids, query_word_cnt);
 
-  for (unsigned intersection_opr_cnt = 1; intersection_opr_cnt < query_word_cnt; intersection_opr_cnt++) {
-    word_id_ofst = query_word_ids[intersection_opr_cnt]-1;
-    intermediate_res = intersection_tmp[intersection_opr_cnt % 2];
-
-    compute_intersection(intersection_res, word_to_docids[word_id_ofst], intermediate_res);
-    intersection_res = intermediate_res;
-
-    if (intersection_res[0] == 0) // stop if the intersection is empty
-      break;
-  }
-
-  printf("result: ");
+  printf("result (%u): ", intersection_res[0]);
   for (unsigned i = 0; i < intersection_res[0]; i++) {
     printf("%ld ", intersection_res[i+1]);
   }
   printf("\n");
+
+  query_word_cnt = 2;
+  for (int i = 0; i < word_cnt-query_word_cnt; i++) {
+    for (int j = 0; j < query_word_cnt; j++)
+      query_word_ids[j] = 1 + i + j;
+  intersection_res = search_words(query_word_ids, query_word_cnt);
+  if (intersection_res[0] > 200)
+    printf("intersection too big (%u): %u %u\n", intersection_res[0], query_word_ids[0], query_word_ids[1]);
+  }
+
 
   return 0;
 }
