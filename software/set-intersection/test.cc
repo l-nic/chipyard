@@ -75,9 +75,9 @@ int main(int argc, char **argv) {
   for (int i = 0; i < word_cnt-query_word_cnt; i++) {
     for (int j = 0; j < query_word_cnt; j++)
       query_word_ids[j] = 1 + i + j;
-  intersection_res = search_words(query_word_ids, query_word_cnt);
-  if (intersection_res[0] > 200)
-    printf("intersection too big (%u): %u %u\n", intersection_res[0], query_word_ids[0], query_word_ids[1]);
+    intersection_res = search_words(query_word_ids, query_word_cnt);
+    if (intersection_res[0] > 200)
+      printf("intersection too big (%u): %u %u\n", intersection_res[0], query_word_ids[0], query_word_ids[1]);
   }
 
 
