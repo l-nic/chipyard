@@ -18,7 +18,7 @@
 // Expected address of the load generator
 uint64_t load_gen_ip = 0x0a000001;
 
-uint16_t vectors[VECTOR_COUNT][VECTOR_SIZE_WORDS];
+uint16_t vectors[VECTOR_COUNT][VECTOR_SIZE];
 
 void send_startup_msg(int cid, uint64_t context_id) {
   uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
