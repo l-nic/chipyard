@@ -12,6 +12,7 @@ PROGRAMS = pwm blkdev accum charcount nic-loopback big-blkdev pingd \
 		   icenic-basic
 PROGRAMS += icenic-mica
 PROGRAMS += icenic-intersect
+PROGRAMS += icenic-euclidean-dist
 
 spiflash.img: spiflash.py
 	python3 $<
