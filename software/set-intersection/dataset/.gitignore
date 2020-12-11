@@ -1,0 +1,6 @@
+make_wiki_index
+corpus-en.txt
+words.txt
+word_to_docids.h
+out_index.txt
+out_freqs.txt
