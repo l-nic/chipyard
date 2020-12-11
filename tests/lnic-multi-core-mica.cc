@@ -15,7 +15,8 @@
 #define CLIENT_CONTEXT 1
 
 #define PRINT_TIMING 0
-
+#define NCORES 4
+#define USE_ONE_CONTEXT 1
 #define USE_MICA 1
 
 // Expected address of the load generator
@@ -72,7 +73,6 @@ arch_spinlock_t up_lock;
 
 #if USE_MICA
 
-#define NCORES 4
 #define MICA_SHM_BUFFER_SIZE (8697016) // 10K 512B items
 //#define MICA_SHM_BUFFER_SIZE (500040) // 500 512B items
 //#define MICA_SHM_BUFFER_SIZE (63424) // 100 512B items
@@ -397,17 +397,16 @@ bool is_single_core() { return false; }
 
 int core_main(int argc, char** argv, int cid, int nc) {
   (void)argc; (void)argv; (void)nc;
-  uint64_t context_id, priority = 0;
-
-  int use_one_context = 0;
-  if (use_one_context) context_id = 0;
-  else                 context_id = cid;
-
-  lnic_add_context(context_id, priority);
+  uint64_t priority = 0;
+  uint64_t context_id = USE_ONE_CONTEXT ? 0 : cid;
 
   if (cid > (NCORES-1)) {
-    send_startup_msg(cid, context_id);
+    //lnic_add_context(context_id, priority);
+    //send_startup_msg(cid, context_id);
     return EXIT_SUCCESS;
+  }
+  else {
+    lnic_add_context(context_id, priority);
   }
 
   if (cid == 0) {
