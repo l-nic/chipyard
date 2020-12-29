@@ -13,25 +13,6 @@
  * Compute dot product of msg data with in-memory data
  */
 
-struct dot_product_header {
-  uint64_t type;
-};
-
-struct config_header {
-  uint64_t num_msgs;
-  uint64_t timestamp;
-};
-
-struct data_header {
-  uint64_t num_words;
-};
-
-struct resp_header {
-  uint64_t result;
-  uint64_t cache_misses;
-  uint64_t timestamp;
-};
-
 uint64_t buffers[NUM_BUFS][ETH_MAX_WORDS];
 
 int main(void)

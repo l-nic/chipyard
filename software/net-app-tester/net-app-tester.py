@@ -325,7 +325,7 @@ class Loopback(unittest.TestCase):
 #        print_pkts(sniffer.results)
         return sniffer.results
     def test_latency(self):
-        msg_len = 256 # bytes
+        msg_len = 8 # bytes
         pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
         rx_pkts = self.do_loopback(pkts)
         self.assertEqual(1, len(rx_pkts))
@@ -334,8 +334,8 @@ class Loopback(unittest.TestCase):
         time = struct.unpack('!L', str(p)[-8:-4])[0]
         print "latency = {} cycles".format(latency)
     def test_throughput(self):
-        msg_len = 8
-        num_packets = 50
+#        msg_len = 8
+#        num_packets = 50
 
 #        msg_len = 32
 #        num_packets = 50
@@ -352,8 +352,8 @@ class Loopback(unittest.TestCase):
 #        msg_len = 512
 #        num_packets = 50
 
-#        msg_len = 1024
-#        num_packets = 50 #20
+        msg_len = 1024
+        num_packets = 50 #20
 
         pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=i) / Raw('\x00'*msg_len) for i in range(num_packets)]
         rx_pkts = self.do_loopback(pkts)
@@ -898,6 +898,34 @@ class StreamTest(unittest.TestCase):
         df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
         write_csv('stream', 'msg_len_throughput.csv', df)
 
+    def test_pkt(self):
+        msg_len = 1024
+        p = lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / ('\x00'*msg_len)
+
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = None if USE_ICENIC else receiver.process_pkt
+
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=1, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+
+        # send pkt
+        sendp(p, iface=TEST_IFACE)
+
+        # wait for response
+        sniffer.join()
+        resp = sniffer.results[0]
+
+#        print "**** Sent Pkt ****"
+#        p.show()
+#        print "**** Response Pkt ****"
+#        resp.show()
+
+        latency = struct.unpack('!L', str(resp)[-4:])[0]
+        print "latency = {} cycles".format(latency)
+
 class NNInference(unittest.TestCase):
     def setUp(self):
         bind_layers(LNIC, NN.NN)
@@ -1246,4 +1274,35 @@ class DotProdTest(unittest.TestCase):
         # record latencies
         df = pd.DataFrame({'num_words':num_words, 'latency':latency, 'misses':misses})
         write_csv('dot_product', 'num_words_latency.csv', df)
+
+    def test_pkt(self):
+        """This is a quick and dirty test for the icenic-dot-prod-test program.
+           It's just for getting cache miss and on-core processing time stats.
+        """
+        num_words = 125
+        p = self.data_req(num_words)
+
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = None if USE_ICENIC else receiver.process_pkt
+
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=1, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+
+        # send pkt
+        sendp(p, iface=TEST_IFACE)
+
+        # wait for response
+        sniffer.join()
+        resp = sniffer.results[0]
+
+#        print "**** Sent Pkt ****"
+#        p.show()
+#        print "**** Response Pkt ****"
+#        resp.show()
+
+        latency = struct.unpack('!L', str(resp)[-4:])[0]
+        print "latency = {} cycles".format(latency)
 
