@@ -1,0 +1,1 @@
+../tests-lnic/othello.h
