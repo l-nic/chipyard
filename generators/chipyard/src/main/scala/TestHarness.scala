@@ -28,3 +28,17 @@ class TestHarness(implicit val p: Parameters) extends Module {
   io.success := false.B
   p(IOBinders).values.map(fn => fn(clock, reset.asBool, io.success, dut))
 }
+
+// TestHarness for IceNIC tests
+
+case object BuildTopIceNIC extends Field[Parameters => Any]((p: Parameters) => Module(LazyModule(new TopIceNIC()(p)).suggestName("top").module))
+
+class TestHarnessIceNIC(implicit val p: Parameters) extends Module {
+  val io = IO(new Bundle {
+    val success = Output(Bool())
+  })
+
+  val dut = p(BuildTopIceNIC)(p)
+  io.success := false.B
+  p(IOBinders).values.map(fn => fn(clock, reset.asBool, io.success, dut))
+}
