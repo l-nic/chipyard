@@ -42,6 +42,7 @@ int main(void)
   struct config_header *config;
 
   printf("Ready!\n");
+  nic_boot_pkt();
   while(1) {
     msg_cnt = 0;
     configured = 0;

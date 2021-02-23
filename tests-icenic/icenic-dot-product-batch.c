@@ -50,6 +50,7 @@ int main(void)
   }
 
   printf("Ready!\n");
+  nic_boot_pkt();
   while(1) {
     start_misses = read_csr(mhpmcounter3);
     msg_cnt = 0;

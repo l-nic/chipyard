@@ -51,6 +51,7 @@ int main(void)
   }
 
   printf("Ready!\n");
+  lnic_boot_msg();
   while (1) {
     start_misses = read_csr(mhpmcounter3);
     msg_cnt = 0;

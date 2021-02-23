@@ -16,6 +16,8 @@ int main(void)
   lnic_add_context(context_id, priority);
 
   printf("Ready!\n");
+  // Send boot pkt to tell test to start
+  lnic_boot_msg();
   while (1) {
     // wait for a pkt to arrive
     lnic_wait();

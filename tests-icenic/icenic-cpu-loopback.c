@@ -21,6 +21,7 @@ int main(void)
   int len;
 
   printf("Ready!\n");
+  nic_boot_pkt();
   while (1) {
     // receive pkt
     len = nic_recv(buffer);

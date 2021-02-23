@@ -12,10 +12,12 @@ uint64_t buffers[NUM_BUFS][ETH_MAX_WORDS];
 
 int main(void)
 {
-  printf("Ready!\n");
   uint8_t start_time[TSTAMP_BYTES];
   int i;
   int len;
+
+  printf("Ready!\n");
+  nic_boot_pkt();
 
   // receive 1st batch of pkt
   nic_post_recv_batch(buffers, NUM_BUFS);

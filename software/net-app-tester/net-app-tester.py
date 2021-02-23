@@ -24,9 +24,6 @@ import time
 random.seed(1)
 np.random.seed(1)
 
-# IceNIC does not require NDP ctrl pkt processing
-USE_ICENIC = False
-
 TEST_IFACE = "tap0"
 TIMEOUT_SEC = 7 # seconds
 
@@ -74,242 +71,23 @@ def packetize(msg, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=
     pkts.append(p)
     return pkts
 
-class SchedulerTest(unittest.TestCase):
-    def setUp(self):
-        bind_layers(LNIC, DummyApp.DummyApp)
-
-    def app_msg(self, dst_context, service_time, pkt_len):
-        msg_len = pkt_len - len(Ether()/IP()/LNIC())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
-               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
-
-    def test_scheduler(self):
-        num_c0_msgs = 30
-        num_c1_msgs = 30
-        service_time = 1600
-        inputs = []
-        # context 0 msgs
-        inputs += [self.app_msg(0, service_time, 80) for i in range(num_c0_msgs)]
-        # context 1 msgs
-        inputs += [self.app_msg(1, service_time, 80) for i in range(num_c1_msgs)]
-        # shuffle pkts
-        random.shuffle(inputs)
-
-        # set tx_msg_ids
-        tx_msg_id = 0
-        for p in inputs:
-            p[LNIC].tx_msg_id = tx_msg_id % 128
-            tx_msg_id += 1
-
-        receiver = LNICReceiver(TEST_IFACE)
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
-                    prn=receiver.process_pkt, count=num_c0_msgs + num_c1_msgs, timeout=200)
-        sniffer.start()
-        # send in pkts
-        sendp(inputs, iface=TEST_IFACE, inter=1.1)
-        # wait for all responses
-        sniffer.join()
-        # check responses
-        self.assertEqual(len(sniffer.results), num_c0_msgs + num_c1_msgs)
-        time = []
-        context = []
-        latency = []
-        service_time = []
-        for p in sniffer.results:
-            self.assertTrue(p.haslayer(LNIC))
-            l = struct.unpack('!L', str(p)[-4:])[0]
-            t = struct.unpack('!L', str(p)[-8:-4])[0]
-            s = p[DummyApp.DummyApp].service_time
-            self.assertTrue(p[LNIC].src_context in [0, 1])
-            time.append(t)
-            context.append(p[LNIC].src_context)
-            latency.append(l)
-            service_time.append(s)
-        # record latencies in a DataFrame
-        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency), 'service_time': pd.Series(service_time)}, dtype=float)
-        print df
-        write_csv('scheduler', 'stats.csv', df)
-
-class LoadBalanceTest(unittest.TestCase):
-    def setUp(self):
-        bind_layers(LNIC, DummyApp.DummyApp)
-
-    def app_msg(self, dst_context, service_time, pkt_len):
-        msg_len = pkt_len - len(Ether()/IP()/LNIC())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
-               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
-
-    def test_load_balance(self):
-        num_msgs = 50
-        num_contexts = 1
-        inputs = []
-        mean_service_times = [500]*3 + [3000]
-        # create msgs
-        for i in range(num_msgs):
-            ctx = random.randint(0, num_contexts-1)
-            service_time = random.choice(mean_service_times) # int(np.random.exponential(mean_service_time))
-            p = self.app_msg(ctx, service_time, 128)
-            inputs.append(p)
-
-        receiver = LNICReceiver(TEST_IFACE)
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
-                    prn=receiver.process_pkt, count=num_msgs, timeout=200)
-        sniffer.start()
-        # send in pkts
-        sendp(inputs, iface=TEST_IFACE, inter=1.2)
-        # wait for all responses
-        sniffer.join()
-        # check responses
-        self.assertEqual(len(sniffer.results), num_msgs)
-        time = []
-        context = []
-        latency = []
-        service_time = []
-        for p in sniffer.results:
-            self.assertTrue(p.haslayer(LNIC))
-            s = p[DummyApp.DummyApp].service_time
-            l = struct.unpack('!L', str(p)[-4:])[0]
-            t = struct.unpack('!L', str(p)[-8:-4])[0]
-            self.assertTrue(p[LNIC].src_context < num_contexts)
-            time.append(t)
-            context.append(p[LNIC].src_context)
-            latency.append(l)
-            service_time.append(s)
-        # record latencies in a DataFrame
-        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency), 'service_time': pd.Series(service_time)}, dtype=float)
-        print df
-        write_csv('load-balance', 'stats.csv', df)
-
-class Mica(unittest.TestCase):
-    def do_loopback(self, pkts):
-        print "*********** Request Pkts: ***********"
-        print_pkts(pkts)
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == DEFAULT_CONTEXT,
-                    prn=receiver.process_pkt, count=len(pkts), timeout=10)
-        sniffer.start()
-        # send in pkts
-        sendp(pkts, iface=TEST_IFACE)
-        # wait for all response pkts
-        sniffer.join()
-        self.assertEqual(len(pkts), len(sniffer.results))
-        print "*********** Response Pkts: ***********"
-        print_pkts(sniffer.results)
-        return receiver.msgs
-    def test_read(self):
-        msg_type_r = '\x00\x00\x00\x00\x00\x00\x00\x01'
-        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
-        payload = Raw(msg_type_r + msg_key)
-        dst_ctx = DST_CONTEXT
-        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
-        rx_msgs = self.do_loopback(pkts)
-    def test_write(self):
-        msg_type_w = '\x00\x00\x00\x00\x00\x00\x00\x02'
-        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
-        msg_val    = '\x00\x00\x00\x00\x00\x00\x00\x07'
-        payload = Raw(msg_type_w + msg_key + msg_val)
-        dst_ctx = DST_CONTEXT
-        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
-        rx_msgs = self.do_loopback(pkts)
-
-class ChainReplication(unittest.TestCase):
-    def setUp(self):
-        bind_layers(LNIC, ChainRep)
-
-    @staticmethod
-    def read_msg(nodes=[NIC_IP], key=0):
-        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_READ, seq=0, key=key, value=0)
-        return Ether(dst=NIC_MAC, src=MY_MAC) / \
-                IP(src=MY_IP, dst=nodes[0][0]) / \
-                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
-    @staticmethod
-    def write_msg(nodes=[NIC_IP], seq=0, key=0, val=0):
-        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_WRITE, seq=seq, key=key, value=val)
-        return Ether(dst=NIC_MAC, src=MY_MAC) / \
-                IP(src=MY_IP, dst=nodes[0][0]) / \
-                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
-
-    def stop_filter(self, p):
-        return p[IP].dst == MY_IP
-
-    def fwd_pkt(self, p):
-        self.assertTrue(p.haslayer(ChainRep))
-        if p[IP].dst == MY_IP: return
-        resp = p.copy()
-        resp[ChainRep].flags = 'FROM_TEST'
-        sendp([resp], iface=TEST_IFACE)
-
-    def test_write(self):
-        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
-                    prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
-        sniffer.start()
-        nodes = [(NIC_IP, 0), (NIC_IP, 1), (NIC_IP, 2)]
-        req = ChainReplication.write_msg(nodes=nodes, key=4, val=7, seq=0)
-        sendp([req], iface=TEST_IFACE)
-        sniffer.join()
-        self.assertEqual(len(sniffer.results), 3)
-        for i,resp in enumerate(sniffer.results):
-            self.assertEqual(resp[ChainRep].op, CHAINREP_OP_WRITE)
-            self.assertEqual(resp[ChainRep].key, req[ChainRep].key)
-            self.assertEqual(resp[ChainRep].value, req[ChainRep].value)
-            self.assertEqual(resp[ChainRep].seq, req[ChainRep].seq)
-            self.assertEqual(resp[ChainRep].node_cnt, max(len(nodes)-2-i, 0))
-        p1, p2, p3 = sniffer.results
-        self.assertEqual(p1[ChainRep].nodes, nodes[2:])
-        self.assertEqual(p1[IP].dst, nodes[1][0])
-        self.assertEqual(p2[IP].dst, nodes[2][0])
-        self.assertEqual(p3[IP].dst, req[ChainRep].client_ip)
-
-    def test_read(self):
-        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
-                    prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
-        sniffer.start()
-        req = ChainReplication.read_msg(nodes=[(NIC_IP, 2)], key=3)
-        sendp([req], iface=TEST_IFACE)
-        sniffer.join()
-        self.assertEqual(len(sniffer.results), 1)
-        resp = sniffer.results[0]
-        self.assertEqual(resp[IP].dst, MY_IP)
-        self.assertEqual(resp[ChainRep].key, 3)
-        self.assertEqual(resp[ChainRep].value, 0)
-
-class CacheTest(unittest.TestCase):
-    def do_loopback(self, pkts):
-        receiver = LNICReceiver(TEST_IFACE)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
-            prn=receiver.process_pkt, count=len(pkts), timeout=100)
-        sniffer.start()
-        sendp(pkts, iface=TEST_IFACE)
-        sniffer.join()
-        self.assertEqual(len(pkts), len(sniffer.results))
-        return sniffer.results
-    
-    def test_cache(self):
-        msg_len = 520 # bytes
-        raw_data = 'abcdefghhqshxxkuceshaixlnicpdvtgvmoapbvejqoomaabnkxuqpuhepdxxvtgprwalyldpicvepcfsucpjmkqwetciufesjsykkcnjhwiqrctmdvigrgqrtytfqylebjkocvgcvtbseoyjbhdoacizwxtieicadsdfhyiogyvkrjvdxwvcaytuqyanpxbsslincyqchbjuycdfzpuvymbnlsocghirctzhjplfaouojkjjkgelrevzpbbmrgivvmohmnvskqqodpkehhcqgxummrfenglgbuifbhfzorervdtvzdxyhecpzvkuqlihzxxbowsfoeeydrfrihuinzppqnmaxfevamcxdotyjrwjphriabthvmhaniqwnbfgywihhwxwsejcjqdcrpytlcjxzromedyfatsjvhqnvaekcfcbtoendzvbxyiupyxgpnlxtfguhxubbowfwsopkcydrfngcuhvthsmgppjnwnynuykwlqszmlervfdqyqlqdalagr'
-        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw(raw_data)]
-        for i in range(8):
-            rx_pkts = self.do_loopback(pkts)
-            self.assertEqual(1, len(rx_pkts))
-            p = rx_pkts[0]
-            latency = struct.unpack('!L', str(p)[-4:])[0]
-            time = struct.unpack('!L', str(p)[-8:-4])[0]
-            print "latency = {} cycles".format(latency)
-            print "first 8 letters = {}".format(str(p)[:8])
+def wait_boot_pkt(disable_ndp):
+    """Wait for a boot pkt from the simulated host.
+    """
+#    prn = None if disable_ndp else receiver.process_pkt
+    prn = lambda p: p.show()
+    filt = lambda p: p.haslayer(LNIC) and p[LNIC].flags.DATA and p[Ether].src == NIC_MAC
+    sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=filt, prn=prn, count=1)
+    sniffer.start()
+    sniffer.join()
 
 class Loopback(unittest.TestCase):
-    def do_loopback(self, pkts):
+    def do_loopback(self, pkts, disable_ndp):
 #        print "*********** Request Pkts: ***********"
 #        print_pkts(pkts)
         # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
+        prn = None if disable_ndp else receiver.process_pkt
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
                     prn=prn, count=len(pkts), timeout=100)
@@ -324,15 +102,44 @@ class Loopback(unittest.TestCase):
 #        print "*********** Response Pkts: ***********"
 #        print_pkts(sniffer.results)
         return sniffer.results
-    def test_latency(self):
+    def test_latency_lnic(self):
+        self.latency_test(disable_ndp=False)
+    def test_latency_icenic(self):
+        self.latency_test(disable_ndp=True)
+    def latency_test(self, disable_ndp):
+        # Wait for boot pkt before running the test
+        wait_boot_pkt(disable_ndp)
         msg_len = 8 # bytes
         pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
-        rx_pkts = self.do_loopback(pkts)
+        rx_pkts = self.do_loopback(pkts, disable_ndp)
         self.assertEqual(1, len(rx_pkts))
         p = rx_pkts[0]
         latency = struct.unpack('!L', str(p)[-4:])[0]
         time = struct.unpack('!L', str(p)[-8:-4])[0]
         print "latency = {} cycles".format(latency)
+    def test_latency_sweep_lnic(self):
+        self.latency_sweep(disable_ndp=False)
+    def test_latency_sweep_icenic(self):
+        self.latency_sweep(disable_ndp=True)
+    def latency_sweep(self, disable_ndp):
+        # Wait for boot pkt before running the test
+        wait_boot_pkt(disable_ndp)
+        msg_lens = [8, 16, 32, 64, 128, 256, 512, 1024]
+        length = []
+        latency = []
+        for l in msg_lens:
+            for i in range(10):
+                print 'Testing msg_len = {} bytes'.format(l)
+                length.append(l)
+                pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
+                rx_pkts = self.do_loopback(pkts, disable_ndp)
+                p = rx_pkts[0]
+                lat = struct.unpack('!L', str(p)[-4:])[0]
+                time = struct.unpack('!L', str(p)[-8:-4])[0]
+                latency.append(lat)
+        # record latencies
+        df = pd.DataFrame({'msg_len':length, 'latency':latency})
+        write_csv('loopback', 'msg_len_latency.csv', df)
     def test_throughput(self):
 #        msg_len = 8
 #        num_packets = 50
@@ -364,27 +171,16 @@ class Loopback(unittest.TestCase):
         throughput_pps = len(pkts)/(float(total_latency) * 0.3125e-3)
         print "total_latency = {} cycles".format(total_latency)
         print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput*8/0.3125)
-    def test_latency_sweep(self):
-        msg_lens = [8, 16, 32, 64, 128, 256, 512, 1024]
-        length = []
-        latency = []
-        for l in msg_lens:
-            for i in range(10):
-                print 'Testing msg_len = {} bytes'.format(l)
-                length.append(l)
-                pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
-                rx_pkts = self.do_loopback(pkts)
-                p = rx_pkts[0]
-                lat = struct.unpack('!L', str(p)[-4:])[0]
-                time = struct.unpack('!L', str(p)[-8:-4])[0]
-                latency.append(lat)
-        # record latencies
-        df = pd.DataFrame({'msg_len':length, 'latency':latency})
-        write_csv('loopback', 'msg_len_latency.csv', df)
-    def test_throughput_sweep(self):
+    def test_throughput_sweep_lnic(self):
+        self.throughput_sweep(disable_ndp=False)
+    def test_throughput_sweep_icenic(self):
+        self.throughput_sweep(disable_ndp=True)
+    def throughput_sweep(self, disable_ndp):
         # NOTE: this currently does not work as expected because need to reset the start time b/w runs ...
         #   So I'll gather the throughput measurements manually for now ...
         # NOTE: Should look into why IceNIC is unable to buffer more than 20 1024B pkts
+        # Wait for boot pkt before running the test
+        wait_boot_pkt(disable_ndp)
         msg_lens = [8, 32, 128, 512, 1024]
         num_pkts = [50, 50, 50, 30, 15]
         self.assertEqual(len(msg_lens), len(num_pkts))
@@ -394,7 +190,7 @@ class Loopback(unittest.TestCase):
             print 'Testing msg_len = {} bytes'.format(msg_lens[i])
             length.append(msg_lens[i])
             pkts = [lnic_pkt(msg_lens[i], 0, src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=j) / Raw('\x00'*msg_lens[i]) for j in range(num_pkts[i])]
-            rx_pkts = self.do_loopback(pkts)
+            rx_pkts = self.do_loopback(pkts, disable_ndp)
             p = rx_pkts[-1]
             total_latency = struct.unpack('!L', str(p)[-4:])[0]
             time = struct.unpack('!L', str(p)[-8:-4])[0]
@@ -415,7 +211,7 @@ class Loopback(unittest.TestCase):
             tx_msgs[(src_ip, src_context)] = msg
             pkts += packetize(msg, src_context, DST_CONTEXT, src_ip)
         random.shuffle(pkts)
-        rx_msgs = self.do_loopback(pkts)
+        rx_msgs = self.do_loopback(pkts, disable_ndp=False)
         self.assertEqual(len(src_ips), len(rx_msgs))
         for ip, context in zip(src_ips, src_contexts):
             self.check_msg(rx_msgs, ip, context, NIC_IP, DST_CONTEXT, tx_msgs[(ip, context)])
@@ -432,6 +228,484 @@ class Loopback(unittest.TestCase):
                 return
         self.assertTrue(False, "Could not find expected msg!")
 
+class StreamTest(unittest.TestCase):
+    num_msgs = 30
+    def setUp(self):
+        bind_layers(LNIC, Stream.Stream)
+
+    def config_msg(self, num_msgs):
+        msg_len = len(Stream.Stream() / Stream.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Stream.Stream() / Stream.Config(num_msgs=num_msgs)
+
+    def data_req(self, msg_len):
+        self.assertTrue(msg_len >= len(Stream.Stream()))
+        pad_bytes = msg_len - len(Stream.Stream())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Stream.Stream(msg_type=Stream.DATA_TYPE) \
+               / ('\x00'*pad_bytes)
+
+    def do_test(self, msg_len, disable_ndp):
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = None if disable_ndp else receiver.process_pkt
+
+        inputs = []
+        inputs.append(self.config_msg(StreamTest.num_msgs))
+        # generate req msgs
+        inputs += [self.data_req(msg_len) for i in range(StreamTest.num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=StreamTest.num_msgs, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        p = sniffer.results[-1]
+
+        total_latency = struct.unpack('!L', str(p)[-4:])[0]
+        throughput = sum([len(p) for p in inputs])/float(total_latency) # bytes/cycle
+        throughput_pps = len(inputs)/(float(total_latency) * 0.3125e-3)
+        throughput_gbps = throughput*8/0.3125
+        print "total latency = {} cycles".format(total_latency)
+        print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput_gbps)
+        return throughput_gbps
+
+    def test_basic_lnic(self):
+        throughput = self.do_test(1024, disable_ndp=False)
+
+    def test_msg_len_lnic(self):
+        self.msg_len_test(disable_ndp=False)
+    def test_msg_len_icenic(self):
+        self.msg_len_test(disable_ndp=True)
+    def msg_len_test(self, disable_ndp):
+        # Wait for boot pkt before running the test
+        wait_boot_pkt(disable_ndp)
+        msg_len = [32, 64, 128, 256, 512, 1024]
+        tput = []
+        for l in msg_len:
+            tput.append(self.do_test(l, disable_ndp))
+        # record throughputs
+        df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
+        write_csv('stream', 'msg_len_throughput.csv', df)
+
+    def test_pkt_lnic(self):
+        msg_len = 1024
+        p = lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / ('\x00'*msg_len)
+
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = receiver.process_pkt
+
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=1, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+
+        # send pkt
+        sendp(p, iface=TEST_IFACE)
+
+        # wait for response
+        sniffer.join()
+        resp = sniffer.results[0]
+
+#        print "**** Sent Pkt ****"
+#        p.show()
+#        print "**** Response Pkt ****"
+#        resp.show()
+
+        latency = struct.unpack('!L', str(resp)[-4:])[0]
+        print "latency = {} cycles".format(latency)
+
+class DotProdTest(unittest.TestCase):
+    num_weights = 2000
+    num_msgs = 30
+    def setUp(self):
+        bind_layers(LNIC, DotProd.DotProd)
+
+    def config_msg(self, num_msgs):
+        msg_len = len(DotProd.DotProd() / DotProd.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / DotProd.DotProd() / DotProd.Config(num_msgs=num_msgs)
+
+    def data_req(self, num_words):
+        msg_words = [random.randint(0, DotProdTest.num_weights-1) for i in range(num_words)]
+        msg_len = len(DotProd.DotProd() / DotProd.Data(num_words=num_words, words=msg_words))
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / DotProd.DotProd() \
+               / DotProd.Data(num_words=num_words, words=msg_words)
+
+    def do_test(self, num_words, disable_ndp):
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = None if disable_ndp else receiver.process_pkt
+
+        inputs = []
+        inputs.append(self.config_msg(DotProdTest.num_msgs))
+        # generate req msgs
+        inputs += [self.data_req(num_words) for i in range(DotProdTest.num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=DotProdTest.num_msgs, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        # check response
+        for req, resp in zip(inputs[1:], sniffer.results):
+          exp_result = sum([x**2 for x in req[DotProd.Data].words])
+          self.assertEqual(exp_result, resp[DotProd.Resp].result)
+        final_resp = sniffer.results[-1]
+        misses = final_resp[DotProd.Resp].cache_misses/float(DotProdTest.num_msgs) # misses/msg
+        latency = final_resp[DotProd.Resp].latency/float(DotProdTest.num_msgs) # cycles/msg
+        return latency, misses
+
+    def test_basic_lnic(self):
+        latency, misses = self.do_test(125, disable_ndp=False)
+        print 'Latency = {} cycles/msg, D$ misses/msg = {}'.format(latency, misses)
+
+    def test_num_words_lnic(self):
+        self.num_words_test(disable_ndp=False)
+    def test_num_words_icenic(self):
+        self.num_words_test(disable_ndp=True)
+    def num_words_test(self, disable_ndp):
+        # Wait for boot pkt before running the test
+        wait_boot_pkt(disable_ndp)
+        word_count = [1, 5, 10, 25, 50, 125]
+        num_words = []
+        misses = []
+        latency = []
+        for n in word_count:
+            num_words.append(n)
+            l, m = self.do_test(n, disable_ndp)
+            misses.append(m)
+            latency.append(l)
+        # record latencies
+        df = pd.DataFrame({'num_words':num_words, 'latency':latency, 'misses':misses})
+        write_csv('dot_product', 'num_words_latency.csv', df)
+
+    def test_pkt_lnic(self):
+        """This is a quick and dirty test for getting cache miss and on-core processing time stats.
+        """
+        num_words = 125
+        p = self.data_req(num_words)
+
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = receiver.process_pkt
+
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=1, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+
+        # send pkt
+        sendp(p, iface=TEST_IFACE)
+
+        # wait for response
+        sniffer.join()
+        resp = sniffer.results[0]
+
+#        print "**** Sent Pkt ****"
+#        p.show()
+#        print "**** Response Pkt ****"
+#        resp.show()
+
+        latency = struct.unpack('!L', str(resp)[-4:])[0]
+        print "latency = {} cycles".format(latency)
+
+class NNInference(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, NN.NN)
+
+    @staticmethod
+    def config_msg(num_edges):
+        msg_len = len(NN.NN() / NN.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / NN.NN() / NN.Config(num_edges=num_edges)
+
+    @staticmethod
+    def weight_msg(index, weight):
+        msg_len = len(NN.NN() / NN.Weight())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / NN.NN() / NN.Weight(index=index, weight=weight)
+
+    @staticmethod
+    def data_msg(index, data):
+        msg_len = len(NN.NN() / NN.Data())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / NN.NN() / NN.Data(index=index, data=data)
+
+    def do_test(self, num_edges):
+        inputs = []
+        inputs.append(NNInference.config_msg(num_edges))
+        # weight = 1 for all edges
+        inputs += [NNInference.weight_msg(i, 1) for i in range(num_edges)]
+        # data = index+1
+        inputs += [NNInference.data_msg(i, i+1) for i in range(num_edges)]
+        # assign unique tx msg ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = receiver.process_pkt
+        # start sniffing for DONE msg
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=1, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for response
+        sniffer.join()
+        # check response
+        self.assertEqual(len(sniffer.results), 1)
+        resp = sniffer.results[0]
+        self.assertTrue(resp.haslayer(NN.Data))
+        self.assertEqual(resp[NN.Data].index, 0)
+        self.assertEqual(resp[NN.Data].data, sum([i+1 for i in range(num_edges)]))
+        # return latency
+        return resp[NN.Data].latency
+
+    def test_basic(self):
+        latency = self.do_test(3)
+        print 'Latency = {} cycles'.format(latency)
+
+    def test_num_edges(self):
+        num_edges = range(2, 10) #21
+        edges = []
+        latency = []
+        for n in num_edges:
+            for i in range(5):
+                edges.append(n)
+                latency.append(self.do_test(n))
+        # record latencies
+        df = pd.DataFrame({'num_edges':edges, 'latency':latency})
+        write_csv('nn', 'num_edges_latency.csv', df)
+
+class OthelloTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, Othello.Othello)
+
+    @staticmethod
+    def map_msg(board, max_depth, cur_depth, src_host_id, src_msg_ptr):
+        msg_len = len(Othello.Othello() / Othello.Map())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Othello.Othello() \
+               / Othello.Map(board=board, max_depth=max_depth, cur_depth=cur_depth, src_host_id=src_host_id, src_msg_ptr=src_msg_ptr)
+
+    @staticmethod
+    def reduce_msg(target_host_id, target_msg_ptr, minimax_val):
+        msg_len = len(Othello.Othello() / Othello.Reduce())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Othello.Othello() \
+               / Othello.Reduce(target_host_id=target_host_id, target_msg_ptr=target_msg_ptr, minimax_val=minimax_val)
+
+    def do_internal_node_test(self, fanout):
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = receiver.process_pkt
+
+        # send in initial map msg and receive outgoing map messages
+        parent_id = 10
+        parent_msg_ptr = 0x1234
+        req = OthelloTest.map_msg(board=fanout, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr)
+        # start sniffing for DONE msg
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=fanout, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send in the request
+        sendp(req, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        # check responses / build reduce msgs
+        self.assertEqual(len(sniffer.results), fanout)
+        reduce_msgs = []
+        map_latency = None
+        for p in sniffer.results:
+            self.assertTrue(p.haslayer(Othello.Map))
+            self.assertEqual(p[Othello.Map].cur_depth, 2)
+            reduce_msgs.append(OthelloTest.reduce_msg(
+                target_host_id=p[Othello.Map].src_host_id,
+                target_msg_ptr=p[Othello.Map].src_msg_ptr,
+                minimax_val=1))
+            map_latency = p[Othello.Map].latency
+        # start sniffing for DONE msg
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=1, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send in reduce messages
+        sendp(reduce_msgs, iface=TEST_IFACE)
+        # wait for response
+        sniffer.join()
+        # check reduce msg responses
+        self.assertEqual(len(sniffer.results), 1)
+        resp = sniffer.results[0]
+        self.assertTrue(resp.haslayer(Othello.Reduce))
+        self.assertEqual(resp[Othello.Reduce].target_host_id, parent_id)
+        self.assertEqual(resp[Othello.Reduce].target_msg_ptr, parent_msg_ptr)
+        self.assertEqual(resp[Othello.Reduce].minimax_val, 1)
+        reduce_latency = resp[Othello.Reduce].latency
+        return map_latency, reduce_latency
+
+    def test_internal_node_basic(self):
+        map_latency, reduce_latency = self.do_internal_node_test(3)
+        print 'Map Latency = {} cycles'.format(map_latency)
+        print 'Reduce Latency = {} cycles'.format(reduce_latency)
+
+    def test_fanout(self):
+        fanout_vals = range(2, 10)
+        fanout = []
+        map_latency = []
+        reduce_latency = []
+        for n in fanout_vals:
+            for i in range(5):
+                fanout.append(n)
+                mlat, rlat = self.do_internal_node_test(n)
+                map_latency.append(mlat)
+                reduce_latency.append(rlat)
+        # record latencies
+        df = pd.DataFrame({'fanout':fanout, 'map_latency':map_latency, 'reduce_latency':reduce_latency})
+        write_csv('othello', 'fanout_latency.csv', df)
+
+class NBodyTest(unittest.TestCase):
+    G = 667e2
+    def setUp(self):
+        bind_layers(LNIC, NBody.NBody)
+
+    def config_msg(self, xcom, ycom, num_msgs):
+        msg_len = len(NBody.NBody() / NBody.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / NBody.NBody() / NBody.Config(xcom=xcom, ycom=ycom, num_msgs=num_msgs)
+
+    def traversal_req(self, xpos, ypos):
+        msg_len = len(NBody.NBody() / NBody.TraversalReq())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / NBody.NBody() / NBody.TraversalReq(xpos=xpos, ypos=ypos)
+
+    def do_test(self, num_msgs):
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = receiver.process_pkt
+
+        inputs = []
+        xcom = 50
+        ycom = 50
+        xpos = 0
+        ypos = 0
+        inputs.append(self.config_msg(xcom, ycom, num_msgs))
+        # generate traversal req msgs
+        inputs += [self.traversal_req(xpos, ypos) for i in range(num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=num_msgs, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        # check response
+        self.assertEqual(len(sniffer.results), num_msgs)
+        final_resp = sniffer.results[-1]
+        self.assertTrue(final_resp.haslayer(NBody.TraversalResp))
+#        # compute expected force
+#        dist = np.sqrt((xcom - xpos)**2 + (ycom - ypos)**2)
+#        expected_force = NBodyTest.G / dist**2
+#        self.assertAlmostEqual(final_resp[NBody.TraversalResp].force, expected_force, delta=1)
+        # return latency
+        return final_resp[NBody.TraversalResp].latency
+
+    def test_basic(self):
+        latency = self.do_test(3)
+        print 'Latency = {} cycles'.format(latency)
+
+    def test_num_msgs(self):
+        num_msgs = range(10, 101, 10)
+        msgs = []
+        latency = []
+        for n in num_msgs:
+            for i in range(1):
+                msgs.append(n)
+                latency.append(self.do_test(n))
+        # record latencies
+        df = pd.DataFrame({'num_msgs':msgs, 'latency':latency})
+        write_csv('nbody', 'num_msgs_latency.csv', df)
+
+class ServiceTimeTest(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, ServiceTime.ServiceTime)
+
+    def config_msg(self, num_msgs):
+        msg_len = len(ServiceTime.ServiceTime() / ServiceTime.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / ServiceTime.ServiceTime() / ServiceTime.Config(num_msgs=num_msgs)
+
+    def data_req(self, service_time, pad_bytes):
+        msg_len = len(ServiceTime.ServiceTime() / ServiceTime.DataReq()) + pad_bytes
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / ServiceTime.ServiceTime() / ServiceTime.DataReq(service_time=service_time) \
+               / Raw('\x00'*pad_bytes)
+
+    def do_test(self, service_time, pad_bytes):
+        # send request pkts / receive response pkts
+        receiver = LNICReceiver(TEST_IFACE)
+        prn = receiver.process_pkt
+
+        num_msgs = 40
+        inputs = []
+        inputs.append(self.config_msg(num_msgs))
+        # generate req msgs
+        inputs += [self.data_req(service_time, pad_bytes) for i in range(num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=num_msgs, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        # check response
+        self.assertEqual(len(sniffer.results), num_msgs)
+        final_resp = sniffer.results[-1]
+        # return latency
+        latency = struct.unpack('!L', str(final_resp)[-4:])[0]
+        return latency
+
+    def test_basic(self):
+        latency = self.do_test(1000, 1008)
+        print 'Latency = {} cycles'.format(latency)
+
+    def test_service_time(self):
+        times = [10, 100, 500, 1000]
+        pad_bytes = 1008
+        service_time = []
+        latency = []
+        for t in times:
+            service_time.append(t)
+            latency.append(self.do_test(t, pad_bytes))
+        # record latencies
+        df = pd.DataFrame({'service_time':service_time, 'latency':latency})
+        write_csv('service_time', 'service_time_latency.csv', df)
 
 class ThroughputTest(unittest.TestCase):
     def setUp(self):
@@ -838,471 +1112,232 @@ class PostcardOptTest(unittest.TestCase):
         throughput = (NUM_PKTS * NUM_HOPS)/total_latency # postcards/second
         print 'throughput = {} M postcards/sec'.format(throughput/1e6)
 
-class StreamTest(unittest.TestCase):
-    num_msgs = 30
+class SchedulerTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, Stream.Stream)
+        bind_layers(LNIC, DummyApp.DummyApp)
 
-    def config_msg(self, num_msgs):
-        msg_len = len(Stream.Stream() / Stream.Config())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / Stream.Stream() / Stream.Config(num_msgs=num_msgs)
+    def app_msg(self, dst_context, service_time, pkt_len):
+        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
-    def data_req(self, msg_len):
-        self.assertTrue(msg_len >= len(Stream.Stream()))
-        pad_bytes = msg_len - len(Stream.Stream())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / Stream.Stream(msg_type=Stream.DATA_TYPE) \
-               / ('\x00'*pad_bytes)
-
-    def do_test(self, msg_len):
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-
+    def test_scheduler(self):
+        num_c0_msgs = 30
+        num_c1_msgs = 30
+        service_time = 1600
         inputs = []
-        inputs.append(self.config_msg(StreamTest.num_msgs))
-        # generate req msgs
-        inputs += [self.data_req(msg_len) for i in range(StreamTest.num_msgs)]
-        # assign unique ID to each msg
-        for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+        # context 0 msgs
+        inputs += [self.app_msg(0, service_time, 80) for i in range(num_c0_msgs)]
+        # context 1 msgs
+        inputs += [self.app_msg(1, service_time, 80) for i in range(num_c1_msgs)]
+        # shuffle pkts
+        random.shuffle(inputs)
+
+        # set tx_msg_ids
+        tx_msg_id = 0
+        for p in inputs:
+            p[LNIC].tx_msg_id = tx_msg_id % 128
+            tx_msg_id += 1
+
+        receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=StreamTest.num_msgs, timeout=100)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
+                    prn=receiver.process_pkt, count=num_c0_msgs + num_c1_msgs, timeout=200)
         sniffer.start()
-        time.sleep(1)
-        # send inputs get response
-        sendp(inputs, iface=TEST_IFACE)
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE, inter=1.1)
         # wait for all responses
         sniffer.join()
-        p = sniffer.results[-1]
-
-        total_latency = struct.unpack('!L', str(p)[-4:])[0]
-        throughput = sum([len(p) for p in inputs])/float(total_latency) # bytes/cycle
-        throughput_pps = len(inputs)/(float(total_latency) * 0.3125e-3)
-        throughput_gbps = throughput*8/0.3125
-        print "total latency = {} cycles".format(total_latency)
-        print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput_gbps)
-        return throughput_gbps
-
-    def test_basic(self):
-        throughput = self.do_test(1024)
-
-    def test_msg_len(self):
-        msg_len = [32, 64, 128, 256, 512, 1024]
-        tput = []
-        for l in msg_len:
-            tput.append(self.do_test(l))
-        # record throughputs
-        df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
-        write_csv('stream', 'msg_len_throughput.csv', df)
-
-    def test_pkt(self):
-        msg_len = 1024
-        p = lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / ('\x00'*msg_len)
-
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=1, timeout=100)
-        sniffer.start()
-        time.sleep(1)
-
-        # send pkt
-        sendp(p, iface=TEST_IFACE)
-
-        # wait for response
-        sniffer.join()
-        resp = sniffer.results[0]
-
-#        print "**** Sent Pkt ****"
-#        p.show()
-#        print "**** Response Pkt ****"
-#        resp.show()
-
-        latency = struct.unpack('!L', str(resp)[-4:])[0]
-        print "latency = {} cycles".format(latency)
-
-class NNInference(unittest.TestCase):
-    def setUp(self):
-        bind_layers(LNIC, NN.NN)
-
-    @staticmethod
-    def config_msg(num_edges):
-        msg_len = len(NN.NN() / NN.Config())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / NN.NN() / NN.Config(num_edges=num_edges)
-
-    @staticmethod
-    def weight_msg(index, weight):
-        msg_len = len(NN.NN() / NN.Weight())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / NN.NN() / NN.Weight(index=index, weight=weight)
-
-    @staticmethod
-    def data_msg(index, data):
-        msg_len = len(NN.NN() / NN.Data())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / NN.NN() / NN.Data(index=index, data=data)
-
-    def do_test(self, num_edges):
-        inputs = []
-        inputs.append(NNInference.config_msg(num_edges))
-        # weight = 1 for all edges
-        inputs += [NNInference.weight_msg(i, 1) for i in range(num_edges)]
-        # data = index+1
-        inputs += [NNInference.data_msg(i, i+1) for i in range(num_edges)]
-        # assign unique tx msg ID to each msg
-        for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-        # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=1, timeout=100)
-        sniffer.start()
-        time.sleep(1)
-        # send inputs
-        sendp(inputs, iface=TEST_IFACE)
-        # wait for response
-        sniffer.join()
-        # check response
-        self.assertEqual(len(sniffer.results), 1)
-        resp = sniffer.results[0]
-        self.assertTrue(resp.haslayer(NN.Data))
-        self.assertEqual(resp[NN.Data].index, 0)
-        self.assertEqual(resp[NN.Data].data, sum([i+1 for i in range(num_edges)]))
-        # return latency
-        return resp[NN.Data].latency
-
-    def test_basic(self):
-        latency = self.do_test(3)
-        print 'Latency = {} cycles'.format(latency)
-
-    def test_num_edges(self):
-        num_edges = range(2, 10) #21
-        edges = []
+        # check responses
+        self.assertEqual(len(sniffer.results), num_c0_msgs + num_c1_msgs)
+        time = []
+        context = []
         latency = []
-        for n in num_edges:
-            for i in range(5):
-                edges.append(n)
-                latency.append(self.do_test(n))
-        # record latencies
-        df = pd.DataFrame({'num_edges':edges, 'latency':latency})
-        write_csv('nn', 'num_edges_latency.csv', df)
-
-class OthelloTest(unittest.TestCase):
-    def setUp(self):
-        bind_layers(LNIC, Othello.Othello)
-
-    @staticmethod
-    def map_msg(board, max_depth, cur_depth, src_host_id, src_msg_ptr):
-        msg_len = len(Othello.Othello() / Othello.Map())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / Othello.Othello() \
-               / Othello.Map(board=board, max_depth=max_depth, cur_depth=cur_depth, src_host_id=src_host_id, src_msg_ptr=src_msg_ptr)
-
-    @staticmethod
-    def reduce_msg(target_host_id, target_msg_ptr, minimax_val):
-        msg_len = len(Othello.Othello() / Othello.Reduce())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / Othello.Othello() \
-               / Othello.Reduce(target_host_id=target_host_id, target_msg_ptr=target_msg_ptr, minimax_val=minimax_val)
-
-    def do_internal_node_test(self, fanout):
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-
-        # send in initial map msg and receive outgoing map messages
-        parent_id = 10
-        parent_msg_ptr = 0x1234
-        req = OthelloTest.map_msg(board=fanout, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr)
-        # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=fanout, timeout=100)
-        sniffer.start()
-        time.sleep(1)
-        # send in the request
-        sendp(req, iface=TEST_IFACE)
-        # wait for all responses
-        sniffer.join()
-        # check responses / build reduce msgs
-        self.assertEqual(len(sniffer.results), fanout)
-        reduce_msgs = []
-        map_latency = None
-        for p in sniffer.results:
-            self.assertTrue(p.haslayer(Othello.Map))
-            self.assertEqual(p[Othello.Map].cur_depth, 2)
-            reduce_msgs.append(OthelloTest.reduce_msg(
-                target_host_id=p[Othello.Map].src_host_id,
-                target_msg_ptr=p[Othello.Map].src_msg_ptr,
-                minimax_val=1))
-            map_latency = p[Othello.Map].latency
-        # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=1, timeout=100)
-        sniffer.start()
-        time.sleep(1)
-        # send in reduce messages
-        sendp(reduce_msgs, iface=TEST_IFACE)
-        # wait for response
-        sniffer.join()
-        # check reduce msg responses
-        self.assertEqual(len(sniffer.results), 1)
-        resp = sniffer.results[0]
-        self.assertTrue(resp.haslayer(Othello.Reduce))
-        self.assertEqual(resp[Othello.Reduce].target_host_id, parent_id)
-        self.assertEqual(resp[Othello.Reduce].target_msg_ptr, parent_msg_ptr)
-        self.assertEqual(resp[Othello.Reduce].minimax_val, 1)
-        reduce_latency = resp[Othello.Reduce].latency
-        return map_latency, reduce_latency
-
-    def test_internal_node_basic(self):
-        map_latency, reduce_latency = self.do_internal_node_test(3)
-        print 'Map Latency = {} cycles'.format(map_latency)
-        print 'Reduce Latency = {} cycles'.format(reduce_latency)
-
-    def test_fanout(self):
-        fanout_vals = range(2, 10)
-        fanout = []
-        map_latency = []
-        reduce_latency = []
-        for n in fanout_vals:
-            for i in range(5):
-                fanout.append(n)
-                mlat, rlat = self.do_internal_node_test(n)
-                map_latency.append(mlat)
-                reduce_latency.append(rlat)
-        # record latencies
-        df = pd.DataFrame({'fanout':fanout, 'map_latency':map_latency, 'reduce_latency':reduce_latency})
-        write_csv('othello', 'fanout_latency.csv', df)
-
-class NBodyTest(unittest.TestCase):
-    G = 667e2
-    def setUp(self):
-        bind_layers(LNIC, NBody.NBody)
-
-    def config_msg(self, xcom, ycom, num_msgs):
-        msg_len = len(NBody.NBody() / NBody.Config())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / NBody.NBody() / NBody.Config(xcom=xcom, ycom=ycom, num_msgs=num_msgs)
-
-    def traversal_req(self, xpos, ypos):
-        msg_len = len(NBody.NBody() / NBody.TraversalReq())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / NBody.NBody() / NBody.TraversalReq(xpos=xpos, ypos=ypos)
-
-    def do_test(self, num_msgs):
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-
-        inputs = []
-        xcom = 50
-        ycom = 50
-        xpos = 0
-        ypos = 0
-        inputs.append(self.config_msg(xcom, ycom, num_msgs))
-        # generate traversal req msgs
-        inputs += [self.traversal_req(xpos, ypos) for i in range(num_msgs)]
-        # assign unique ID to each msg
-        for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=num_msgs, timeout=100)
-        sniffer.start()
-        time.sleep(1)
-        # send inputs get response
-        sendp(inputs, iface=TEST_IFACE)
-        # wait for all responses
-        sniffer.join()
-        # check response
-        self.assertEqual(len(sniffer.results), num_msgs)
-        final_resp = sniffer.results[-1]
-        self.assertTrue(final_resp.haslayer(NBody.TraversalResp))
-#        # compute expected force
-#        dist = np.sqrt((xcom - xpos)**2 + (ycom - ypos)**2)
-#        expected_force = NBodyTest.G / dist**2
-#        self.assertAlmostEqual(final_resp[NBody.TraversalResp].force, expected_force, delta=1)
-        # return latency
-        return final_resp[NBody.TraversalResp].latency
-
-    def test_basic(self):
-        latency = self.do_test(3)
-        print 'Latency = {} cycles'.format(latency)
-
-    def test_num_msgs(self):
-        num_msgs = range(10, 101, 10)
-        msgs = []
-        latency = []
-        for n in num_msgs:
-            for i in range(1):
-                msgs.append(n)
-                latency.append(self.do_test(n))
-        # record latencies
-        df = pd.DataFrame({'num_msgs':msgs, 'latency':latency})
-        write_csv('nbody', 'num_msgs_latency.csv', df)
-
-class ServiceTimeTest(unittest.TestCase):
-    def setUp(self):
-        bind_layers(LNIC, ServiceTime.ServiceTime)
-
-    def config_msg(self, num_msgs):
-        msg_len = len(ServiceTime.ServiceTime() / ServiceTime.Config())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / ServiceTime.ServiceTime() / ServiceTime.Config(num_msgs=num_msgs)
-
-    def data_req(self, service_time, pad_bytes):
-        msg_len = len(ServiceTime.ServiceTime() / ServiceTime.DataReq()) + pad_bytes
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / ServiceTime.ServiceTime() / ServiceTime.DataReq(service_time=service_time) \
-               / Raw('\x00'*pad_bytes)
-
-    def do_test(self, service_time, pad_bytes):
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-
-        num_msgs = 40
-        inputs = []
-        inputs.append(self.config_msg(num_msgs))
-        # generate req msgs
-        inputs += [self.data_req(service_time, pad_bytes) for i in range(num_msgs)]
-        # assign unique ID to each msg
-        for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=num_msgs, timeout=100)
-        sniffer.start()
-        time.sleep(1)
-        # send inputs get response
-        sendp(inputs, iface=TEST_IFACE)
-        # wait for all responses
-        sniffer.join()
-        # check response
-        self.assertEqual(len(sniffer.results), num_msgs)
-        final_resp = sniffer.results[-1]
-        # return latency
-        latency = struct.unpack('!L', str(final_resp)[-4:])[0]
-        return latency
-
-    def test_basic(self):
-        latency = self.do_test(1000, 1008)
-        print 'Latency = {} cycles'.format(latency)
-
-    def test_service_time(self):
-        times = [10, 100, 500, 1000]
-        pad_bytes = 1008
         service_time = []
-        latency = []
-        for t in times:
-            service_time.append(t)
-            latency.append(self.do_test(t, pad_bytes))
-        # record latencies
-        df = pd.DataFrame({'service_time':service_time, 'latency':latency})
-        write_csv('service_time', 'service_time_latency.csv', df)
+        for p in sniffer.results:
+            self.assertTrue(p.haslayer(LNIC))
+            l = struct.unpack('!L', str(p)[-4:])[0]
+            t = struct.unpack('!L', str(p)[-8:-4])[0]
+            s = p[DummyApp.DummyApp].service_time
+            self.assertTrue(p[LNIC].src_context in [0, 1])
+            time.append(t)
+            context.append(p[LNIC].src_context)
+            latency.append(l)
+            service_time.append(s)
+        # record latencies in a DataFrame
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency), 'service_time': pd.Series(service_time)}, dtype=float)
+        print df
+        write_csv('scheduler', 'stats.csv', df)
 
-class DotProdTest(unittest.TestCase):
-    num_weights = 2000
-    num_msgs = 30
+class LoadBalanceTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, DotProd.DotProd)
+        bind_layers(LNIC, DummyApp.DummyApp)
 
-    def config_msg(self, num_msgs):
-        msg_len = len(DotProd.DotProd() / DotProd.Config())
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / DotProd.DotProd() / DotProd.Config(num_msgs=num_msgs)
+    def app_msg(self, dst_context, service_time, pkt_len):
+        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
 
-    def data_req(self, num_words):
-        msg_words = [random.randint(0, DotProdTest.num_weights-1) for i in range(num_words)]
-        msg_len = len(DotProd.DotProd() / DotProd.Data(num_words=num_words, words=msg_words))
-        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / DotProd.DotProd() \
-               / DotProd.Data(num_words=num_words, words=msg_words)
-
-    def do_test(self, num_words):
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-
+    def test_load_balance(self):
+        num_msgs = 50
+        num_contexts = 1
         inputs = []
-        inputs.append(self.config_msg(DotProdTest.num_msgs))
-        # generate req msgs
-        inputs += [self.data_req(num_words) for i in range(DotProdTest.num_msgs)]
-        # assign unique ID to each msg
-        for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+        mean_service_times = [500]*3 + [3000]
+        # create msgs
+        for i in range(num_msgs):
+            ctx = random.randint(0, num_contexts-1)
+            service_time = random.choice(mean_service_times) # int(np.random.exponential(mean_service_time))
+            p = self.app_msg(ctx, service_time, 128)
+            inputs.append(p)
+
+        receiver = LNICReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=DotProdTest.num_msgs, timeout=100)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
+                    prn=receiver.process_pkt, count=num_msgs, timeout=200)
         sniffer.start()
-        time.sleep(1)
-        # send inputs get response
-        sendp(inputs, iface=TEST_IFACE)
+        # send in pkts
+        sendp(inputs, iface=TEST_IFACE, inter=1.2)
         # wait for all responses
         sniffer.join()
-        # check response
-        for req, resp in zip(inputs[1:], sniffer.results):
-          exp_result = sum([x**2 for x in req[DotProd.Data].words])
-          self.assertEqual(exp_result, resp[DotProd.Resp].result)
-        final_resp = sniffer.results[-1]
-        misses = final_resp[DotProd.Resp].cache_misses/float(DotProdTest.num_msgs) # misses/msg
-        latency = final_resp[DotProd.Resp].latency/float(DotProdTest.num_msgs) # cycles/msg
-        return latency, misses
-
-    def test_basic(self):
-        latency, misses = self.do_test(125)
-        print 'Latency = {} cycles/msg, D$ misses/msg = {}'.format(latency, misses)
-
-    def test_num_words(self):
-        word_count = [1, 5, 10, 25, 50, 125]
-        num_words = []
-        misses = []
+        # check responses
+        self.assertEqual(len(sniffer.results), num_msgs)
+        time = []
+        context = []
         latency = []
-        for n in word_count:
-            num_words.append(n)
-            l, m = self.do_test(n)
-            misses.append(m)
+        service_time = []
+        for p in sniffer.results:
+            self.assertTrue(p.haslayer(LNIC))
+            s = p[DummyApp.DummyApp].service_time
+            l = struct.unpack('!L', str(p)[-4:])[0]
+            t = struct.unpack('!L', str(p)[-8:-4])[0]
+            self.assertTrue(p[LNIC].src_context < num_contexts)
+            time.append(t)
+            context.append(p[LNIC].src_context)
             latency.append(l)
-        # record latencies
-        df = pd.DataFrame({'num_words':num_words, 'latency':latency, 'misses':misses})
-        write_csv('dot_product', 'num_words_latency.csv', df)
+            service_time.append(s)
+        # record latencies in a DataFrame
+        df = pd.DataFrame({'time': pd.Series(time), 'context': pd.Series(context), 'latency': pd.Series(latency), 'service_time': pd.Series(service_time)}, dtype=float)
+        print df
+        write_csv('load-balance', 'stats.csv', df)
 
-    def test_pkt(self):
-        """This is a quick and dirty test for the icenic-dot-prod-test program.
-           It's just for getting cache miss and on-core processing time stats.
-        """
-        num_words = 125
-        p = self.data_req(num_words)
-
+class Mica(unittest.TestCase):
+    def do_loopback(self, pkts):
+        print "*********** Request Pkts: ***********"
+        print_pkts(pkts)
+        # send request pkts / receive response pkts
         receiver = LNICReceiver(TEST_IFACE)
-        prn = None if USE_ICENIC else receiver.process_pkt
-
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=1, timeout=100)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == DEFAULT_CONTEXT,
+                    prn=receiver.process_pkt, count=len(pkts), timeout=10)
         sniffer.start()
-        time.sleep(1)
-
-        # send pkt
-        sendp(p, iface=TEST_IFACE)
-
-        # wait for response
+        # send in pkts
+        sendp(pkts, iface=TEST_IFACE)
+        # wait for all response pkts
         sniffer.join()
+        self.assertEqual(len(pkts), len(sniffer.results))
+        print "*********** Response Pkts: ***********"
+        print_pkts(sniffer.results)
+        return receiver.msgs
+    def test_read(self):
+        msg_type_r = '\x00\x00\x00\x00\x00\x00\x00\x01'
+        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        payload = Raw(msg_type_r + msg_key)
+        dst_ctx = DST_CONTEXT
+        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
+        rx_msgs = self.do_loopback(pkts)
+    def test_write(self):
+        msg_type_w = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        msg_key    = '\x00\x00\x00\x00\x00\x00\x00\x02'
+        msg_val    = '\x00\x00\x00\x00\x00\x00\x00\x07'
+        payload = Raw(msg_type_w + msg_key + msg_val)
+        dst_ctx = DST_CONTEXT
+        pkts = packetize(str(payload), DEFAULT_CONTEXT, dst_ctx)
+        rx_msgs = self.do_loopback(pkts)
+
+class ChainReplication(unittest.TestCase):
+    def setUp(self):
+        bind_layers(LNIC, ChainRep)
+
+    @staticmethod
+    def read_msg(nodes=[NIC_IP], key=0):
+        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_READ, seq=0, key=key, value=0)
+        return Ether(dst=NIC_MAC, src=MY_MAC) / \
+                IP(src=MY_IP, dst=nodes[0][0]) / \
+                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+    @staticmethod
+    def write_msg(nodes=[NIC_IP], seq=0, key=0, val=0):
+        cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_WRITE, seq=seq, key=key, value=val)
+        return Ether(dst=NIC_MAC, src=MY_MAC) / \
+                IP(src=MY_IP, dst=nodes[0][0]) / \
+                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+
+    def stop_filter(self, p):
+        return p[IP].dst == MY_IP
+
+    def fwd_pkt(self, p):
+        self.assertTrue(p.haslayer(ChainRep))
+        if p[IP].dst == MY_IP: return
+        resp = p.copy()
+        resp[ChainRep].flags = 'FROM_TEST'
+        sendp([resp], iface=TEST_IFACE)
+
+    def test_write(self):
+        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
+                    prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
+        sniffer.start()
+        nodes = [(NIC_IP, 0), (NIC_IP, 1), (NIC_IP, 2)]
+        req = ChainReplication.write_msg(nodes=nodes, key=4, val=7, seq=0)
+        sendp([req], iface=TEST_IFACE)
+        sniffer.join()
+        self.assertEqual(len(sniffer.results), 3)
+        for i,resp in enumerate(sniffer.results):
+            self.assertEqual(resp[ChainRep].op, CHAINREP_OP_WRITE)
+            self.assertEqual(resp[ChainRep].key, req[ChainRep].key)
+            self.assertEqual(resp[ChainRep].value, req[ChainRep].value)
+            self.assertEqual(resp[ChainRep].seq, req[ChainRep].seq)
+            self.assertEqual(resp[ChainRep].node_cnt, max(len(nodes)-2-i, 0))
+        p1, p2, p3 = sniffer.results
+        self.assertEqual(p1[ChainRep].nodes, nodes[2:])
+        self.assertEqual(p1[IP].dst, nodes[1][0])
+        self.assertEqual(p2[IP].dst, nodes[2][0])
+        self.assertEqual(p3[IP].dst, req[ChainRep].client_ip)
+
+    def test_read(self):
+        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
+                    prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
+        sniffer.start()
+        req = ChainReplication.read_msg(nodes=[(NIC_IP, 2)], key=3)
+        sendp([req], iface=TEST_IFACE)
+        sniffer.join()
+        self.assertEqual(len(sniffer.results), 1)
         resp = sniffer.results[0]
+        self.assertEqual(resp[IP].dst, MY_IP)
+        self.assertEqual(resp[ChainRep].key, 3)
+        self.assertEqual(resp[ChainRep].value, 0)
 
-#        print "**** Sent Pkt ****"
-#        p.show()
-#        print "**** Response Pkt ****"
-#        resp.show()
-
-        latency = struct.unpack('!L', str(resp)[-4:])[0]
-        print "latency = {} cycles".format(latency)
+class CacheTest(unittest.TestCase):
+    def do_loopback(self, pkts):
+        receiver = LNICReceiver(TEST_IFACE)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+            prn=receiver.process_pkt, count=len(pkts), timeout=100)
+        sniffer.start()
+        sendp(pkts, iface=TEST_IFACE)
+        sniffer.join()
+        self.assertEqual(len(pkts), len(sniffer.results))
+        return sniffer.results
+    
+    def test_cache(self):
+        msg_len = 520 # bytes
+        raw_data = 'abcdefghhqshxxkuceshaixlnicpdvtgvmoapbvejqoomaabnkxuqpuhepdxxvtgprwalyldpicvepcfsucpjmkqwetciufesjsykkcnjhwiqrctmdvigrgqrtytfqylebjkocvgcvtbseoyjbhdoacizwxtieicadsdfhyiogyvkrjvdxwvcaytuqyanpxbsslincyqchbjuycdfzpuvymbnlsocghirctzhjplfaouojkjjkgelrevzpbbmrgivvmohmnvskqqodpkehhcqgxummrfenglgbuifbhfzorervdtvzdxyhecpzvkuqlihzxxbowsfoeeydrfrihuinzppqnmaxfevamcxdotyjrwjphriabthvmhaniqwnbfgywihhwxwsejcjqdcrpytlcjxzromedyfatsjvhqnvaekcfcbtoendzvbxyiupyxgpnlxtfguhxubbowfwsopkcydrfngcuhvthsmgppjnwnynuykwlqszmlervfdqyqlqdalagr'
+        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw(raw_data)]
+        for i in range(8):
+            rx_pkts = self.do_loopback(pkts)
+            self.assertEqual(1, len(rx_pkts))
+            p = rx_pkts[0]
+            latency = struct.unpack('!L', str(p)[-4:])[0]
+            time = struct.unpack('!L', str(p)[-8:-4])[0]
+            print "latency = {} cycles".format(latency)
+            print "first 8 letters = {}".format(str(p)[:8])
 

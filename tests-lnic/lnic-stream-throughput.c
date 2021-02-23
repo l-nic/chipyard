@@ -21,6 +21,7 @@ int main(void)
   lnic_add_context(context_id, priority);
 
   printf("Ready!\n");
+  lnic_boot_msg();
   while (1) {
     msg_cnt = 0;
     configured = 0;

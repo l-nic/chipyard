@@ -304,4 +304,58 @@ static int swap_addresses(void *buf)
   return 0;
 }
 
+/**
+ * Send one LNIC pkt to indicate that the system has booted
+ * and is ready to start processing pkts.
+ * Some Python unit tests wait for this boot pkt to arrive
+ * before starting the tests.
+ */
+#define BOOT_PKT_LEN 72
+static void nic_boot_pkt(void) {
+  unsigned long len = BOOT_PKT_LEN;
+  uint8_t buf[BOOT_PKT_LEN];
+
+  struct eth_header *eth;
+  struct ipv4_header *ipv4;
+  struct lnic_header *lnic;
+
+  uint64_t macaddr_long;
+  uint8_t *macaddr;
+  
+  macaddr_long = ntohl(nic_macaddr());
+  macaddr = ((uint8_t *)&macaddr_long) + 2;
+
+  eth = (void *)buf;
+  ipv4 = (void *)eth + ETH_HEADER_SIZE;
+  lnic = (void *)ipv4 + 20;
+
+  // Fill out header fields
+  memset(&(eth->dst_mac), 0, MAC_ADDR_SIZE);
+  memcpy(&(eth->src_mac), macaddr, MAC_ADDR_SIZE);
+  eth->ethtype = htons(IPV4_ETHTYPE);
+
+  ipv4->ver_ihl = 0x45;
+  ipv4->dscp_ecn = 0;
+  ipv4->length = htons(BOOT_PKT_LEN - ETH_HEADER_SIZE);
+  ipv4->ident = htons(1);
+  ipv4->flags_frag_off = htons(0);
+  ipv4->ttl = 64;
+  ipv4->proto = LNIC_PROTO;
+  ipv4->cksum = 0; // NOTE: not implemented
+  ipv4->src_addr = htoni(0);
+  ipv4->dst_addr = htoni(0);
+
+  lnic->flags = 1; // DATA pkt
+  lnic->src = htons(0);
+  lnic->dst = htons(0);
+  lnic->msg_len = htons(BOOT_PKT_LEN - 64);
+  lnic->pkt_offset = 0;
+  lnic->pull_offset = 0;
+  lnic->msg_id = 0;
+  lnic->buf_ptr = 0;
+  lnic->buf_size_class = 0;
+
+  nic_send(buf, len);
+}
+
 #endif // RISCV_ICENIC_H

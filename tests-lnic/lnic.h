@@ -33,6 +33,6 @@
 
 #define lnic_branch(inst, val, target) asm goto (inst" %0, " LREAD ", %1\n\t" : /*no outputs*/ : "r"(val) : /*no clobbers*/ : target)
 
-#define lnic_boot() lnic_write_i(16); lnic_write_i(0); lnic_write_i(0)
+#define lnic_boot_msg() lnic_write_i(8); lnic_write_i(0)
 
 #endif // RISCV_LNIC_H
