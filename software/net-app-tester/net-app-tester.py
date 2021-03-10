@@ -79,7 +79,7 @@ def wait_boot_pkt(prn):
     sniffer.join()
 
 class LoopbackTest(unittest.TestCase):
-    num_msgs = 30
+    num_msgs = 20
     def setUp(self):
         bind_layers(LNIC, Loopback.Loopback)
 
@@ -121,7 +121,7 @@ class LoopbackTest(unittest.TestCase):
     def latency_basic_test(self, prn):
         # Wait for boot pkt before running the test
         wait_boot_pkt(prn)
-        msg_len = 8 # bytes
+        msg_len = 1024 # bytes
         rx_pkts = self.do_latency_test(msg_len, prn)
         self.assertEqual(1, len(rx_pkts))
         p = rx_pkts[0]
@@ -205,66 +205,6 @@ class LoopbackTest(unittest.TestCase):
         df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
         write_csv('loopback', fname, df)
 
-    # TODO(sibanez): the following methods are probably not needed anymore.
-    def test_throughput(self):
-#        msg_len = 8
-#        num_packets = 50
-
-#        msg_len = 32
-#        num_packets = 50
-
-#        msg_len = 64
-#        num_packets = 50
-
-#        msg_len = 128
-#        num_packets = 50
-
-#        msg_len = 256
-#        num_packets = 50
-
-#        msg_len = 512
-#        num_packets = 50
-
-        msg_len = 1024
-        num_packets = 50 #20
-
-        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=i) / Raw('\x00'*msg_len) for i in range(num_packets)]
-        rx_pkts = self.do_loopback(pkts)
-        p = rx_pkts[-1]
-        total_latency = struct.unpack('!L', str(p)[-4:])[0]
-        time = struct.unpack('!L', str(p)[-8:-4])[0]
-        throughput = sum([len(p) for p in pkts])/float(total_latency) # bytes/cycle
-        throughput_pps = len(pkts)/(float(total_latency) * 0.3125e-3)
-        print "total_latency = {} cycles".format(total_latency)
-        print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput*8/0.3125)
-    def test_throughput_sweep_lnic(self):
-        self.throughput_sweep(disable_ndp=False)
-    def test_throughput_sweep_icenic(self):
-        self.throughput_sweep(disable_ndp=True)
-    def throughput_sweep(self, disable_ndp):
-        # NOTE: this currently does not work as expected because need to reset the start time b/w runs ...
-        #   So I'll gather the throughput measurements manually for now ...
-        # NOTE: Should look into why IceNIC is unable to buffer more than 20 1024B pkts
-        # Wait for boot pkt before running the test
-        wait_boot_pkt(disable_ndp)
-        msg_lens = [8, 32, 128, 512, 1024]
-        num_pkts = [50, 50, 50, 30, 15]
-        self.assertEqual(len(msg_lens), len(num_pkts))
-        length = []
-        throughput = []
-        for i in range(len(msg_lens)):
-            print 'Testing msg_len = {} bytes'.format(msg_lens[i])
-            length.append(msg_lens[i])
-            pkts = [lnic_pkt(msg_lens[i], 0, src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=j) / Raw('\x00'*msg_lens[i]) for j in range(num_pkts[i])]
-            rx_pkts = self.do_loopback(pkts, disable_ndp)
-            p = rx_pkts[-1]
-            total_latency = struct.unpack('!L', str(p)[-4:])[0]
-            time = struct.unpack('!L', str(p)[-8:-4])[0]
-            tput = sum([len(p) for p in pkts])/float(total_latency) * 8.0/(0.3125) # Gbps
-            throughput.append(tput)
-        # record latencies
-        df = pd.DataFrame({'msg_len':length, 'throughput':throughput})
-        write_csv('loopback', 'msg_len_throughput.csv', df)
     def test_multi_host(self):
         num_hosts = 32
         src_ips = ['10.0.0.{}'.format(i) for i in range(3, 3 + num_hosts)]

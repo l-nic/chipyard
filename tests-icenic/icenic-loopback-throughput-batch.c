@@ -6,7 +6,7 @@
 #include "mmio.h"
 #include "icenic.h"
 
-#define NUM_BUFS 30
+#define NUM_BUFS 20
 #define TSTAMP_BYTES 8
 
 #define CONFIG_TYPE 0
