@@ -355,7 +355,7 @@ class DotProdTest(unittest.TestCase):
         self.basic_test(prn=None)
     def basic_test(self, prn):
         wait_boot_pkt(prn)
-        num_words = 125
+        num_words = 50
         latency, misses = self.do_test(num_words, prn)
         print 'Latency = {} cycles/msg, D$ misses/msg = {}'.format(latency, misses)
 
@@ -370,7 +370,7 @@ class DotProdTest(unittest.TestCase):
     def num_words_test(self, prn, fname):
         # Wait for boot pkt before running the test
         wait_boot_pkt(prn)
-        word_count = [1, 5, 10, 25, 50, 125]
+        word_count = [1, 5, 10, 25, 50]
         num_words = []
         misses = []
         latency = []
