@@ -5,39 +5,63 @@
 #include "lnic.h"
 #include "lnic-loopback.h"
 
+#define CONFIG_TYPE 0
+#define DATA_REQ_TYPE 1
+
 int main(void)
 {
-  printf("Ready!\n");
   uint64_t app_hdr;
   uint16_t msg_len;
   uint64_t start_time;
- 
+  uint64_t num_msgs;
+  int msg_cnt;
+  int configured;
+
   // register context ID with L-NIC
   uint64_t context_id = 0;
   uint64_t priority = 0;
   lnic_add_context(context_id, priority);
 
-  // forward 1st pkt and extract timestamp
-  lnic_wait();
-  app_hdr = lnic_read();
-  lnic_write_r(app_hdr);
-  msg_len = (uint16_t)app_hdr;
-  copy_payload(msg_len - 8);
-  start_time = lnic_read();
-  lnic_write_r(start_time);
-  lnic_msg_done();
-
-  // forward all subsequent pkts and insert start timestamp
+  printf("Ready!\n");
+  lnic_boot_msg();
   while (1) {
-    lnic_wait();
-    app_hdr = lnic_read();
-    lnic_write_r(app_hdr);
-    msg_len = (uint16_t)app_hdr;
-    copy_payload(msg_len - 8);
-    lnic_read(); // discard current pkt's timestamp
-    lnic_write_r(start_time);
-    lnic_msg_done();
+    msg_cnt = 0;
+    configured = 0;
+    // Wait for a Config msg
+    while (!configured) {
+      lnic_wait();
+      lnic_read(); // discard app hdr
+      if (lnic_read() != CONFIG_TYPE) {
+        printf("Expected Config msg.\n");
+        return -1;
+      }
+      num_msgs = lnic_read();
+      start_time = lnic_read();
+      lnic_msg_done();
+      configured = 1;
+    }
+    // Process all requests
+    while (msg_cnt < num_msgs) {
+      lnic_wait();
+      // extract msg len from app hdr
+      app_hdr = lnic_read();
+      msg_len = (uint16_t)app_hdr;
+
+      lnic_write_r(app_hdr);
+      lnic_copy(); // msg type
+
+      // loopback each word in payload, except the first (msg type) and last (timestamp)
+      copy_payload(msg_len - 16);
+
+      // discard timestamp from RX msg
+      lnic_read();
+
+      // write start timestamp at end of TX msg
+      lnic_write_r(start_time);
+
+      lnic_msg_done();
+      msg_cnt++;
+    }
   }
   return 0;
 }
-

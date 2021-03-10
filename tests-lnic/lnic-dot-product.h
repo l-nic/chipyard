@@ -1,22 +1,11 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 
-#include "lnic.h"
-#include "dot-product.h"
+#define MAX_MSG_WORDS 258
+#define RESP_MSG_LEN 32
 
 // If DOT_PROD_OPT is not defined then the whole msg will be copied
 // from the register file to memory before computing the dot product.
-#define DOT_PROD_OPT
-#define MAX_MSG_WORDS 258
 
-#define RESP_MSG_LEN 32
-
-/* Dot Product:
- * - Compute the dot product of each msg with the in-memory data.
- */
-
-int main(void)
+int lnic_dot_prod(void)
 {
   uint64_t app_hdr;
   uint64_t start_time;
@@ -25,7 +14,7 @@ int main(void)
   int configured;
   int i;
   uint64_t start_misses, num_misses;
- 
+
   uint64_t msg_words[MAX_MSG_WORDS];
 
   // register context ID with L-NIC
@@ -117,6 +106,6 @@ int main(void)
       msg_cnt++;
     }
   }
-  return 0;
+  return 0; // unreachable
 }
 

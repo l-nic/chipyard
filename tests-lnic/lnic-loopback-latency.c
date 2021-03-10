@@ -27,8 +27,9 @@ int main(void)
     lnic_write_r(app_hdr);
     // extract msg_len
     msg_len = (uint16_t)app_hdr;
-    // copy over payload and timestamp
-    copy_payload(msg_len - 8);
+    // copy over msg type, payload, and timestamp
+    lnic_copy(); // msg type, unused
+    copy_payload(msg_len - 16);
     lnic_copy();
     lnic_msg_done();
   }

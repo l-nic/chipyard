@@ -3,14 +3,14 @@ import unittest
 from scapy.all import *
 from LNIC_headers import LNIC
 from LNIC_utils import *
+import Loopback_headers as Loopback
+import DotProd_headers as DotProd
 import Throughput_headers as Throughput
-import Stream_headers as Stream
 import NN_headers as NN
 import Othello_headers as Othello
 import NBody_headers as NBody
 import DummyApp_headers as DummyApp
 import ServiceTime_headers as ServiceTime
-import DotProd_headers as DotProd
 from ChainRep_headers import ChainRep, CHAINREP_OP_READ, CHAINREP_OP_WRITE
 import INT_headers as INT
 import struct
@@ -37,9 +37,7 @@ DST_CONTEXT = 0
 LATENCY_CONTEXT = 0x1234 # use this when we want the HW to insert timestamps into DATA pkts
 DEFAULT_CONTEXT = 0x5678
 
-LOG_DIR = '/vagrant/logs'
-
-NUM_SAMPLES = 10
+LOG_DIR = 'results'
 
 def lnic_pkt(msg_len, pkt_offset, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=MY_IP, tx_msg_id=0):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
@@ -71,75 +69,143 @@ def packetize(msg, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=
     pkts.append(p)
     return pkts
 
-def wait_boot_pkt(disable_ndp):
+def wait_boot_pkt(prn):
     """Wait for a boot pkt from the simulated host.
+       prn: a function to process each received packet.
     """
-#    prn = None if disable_ndp else receiver.process_pkt
-    prn = lambda p: p.show()
     filt = lambda p: p.haslayer(LNIC) and p[LNIC].flags.DATA and p[Ether].src == NIC_MAC
     sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=filt, prn=prn, count=1)
     sniffer.start()
     sniffer.join()
 
-class Loopback(unittest.TestCase):
-    def do_loopback(self, pkts, disable_ndp):
+class LoopbackTest(unittest.TestCase):
+    num_msgs = 30
+    def setUp(self):
+        bind_layers(LNIC, Loopback.Loopback)
+
+    def config_msg(self, num_msgs):
+        msg_len = len(Loopback.Loopback() / Loopback.Config())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Loopback.Loopback() / Loopback.Config(num_msgs=num_msgs)
+
+    def data_req(self, msg_len):
+        self.assertTrue(msg_len >= len(Loopback.Loopback()))
+        pad_bytes = msg_len - len(Loopback.Loopback())
+        return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
+               / Loopback.Loopback(msg_type=Loopback.DATA_TYPE) \
+               / ('\x00'*pad_bytes)
+
+    def do_latency_test(self, msg_len, prn):
+        pkt = lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)
 #        print "*********** Request Pkts: ***********"
 #        print_pkts(pkts)
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if disable_ndp else receiver.process_pkt
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
-                    prn=prn, count=len(pkts), timeout=100)
+                    prn=prn, count=1, timeout=100)
 
         sniffer.start()
         time.sleep(1)
         # send in pkts
-        sendp(pkts, iface=TEST_IFACE)
+        sendp(pkt, iface=TEST_IFACE)
         # wait for all response pkts
         sniffer.join()
-        self.assertEqual(len(pkts), len(sniffer.results))
+        self.assertEqual(1, len(sniffer.results))
 #        print "*********** Response Pkts: ***********"
 #        print_pkts(sniffer.results)
         return sniffer.results
-    def test_latency_lnic(self):
-        self.latency_test(disable_ndp=False)
-    def test_latency_icenic(self):
-        self.latency_test(disable_ndp=True)
-    def latency_test(self, disable_ndp):
+    def test_latency_basic_lnic(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.latency_basic_test(prn=receiver.process_pkt)
+    def test_latency_basic_icenic(self):
+        self.latency_basic_test(prn=None)
+    def latency_basic_test(self, prn):
         # Wait for boot pkt before running the test
-        wait_boot_pkt(disable_ndp)
+        wait_boot_pkt(prn)
         msg_len = 8 # bytes
-        pkts = [lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)]
-        rx_pkts = self.do_loopback(pkts, disable_ndp)
+        rx_pkts = self.do_latency_test(msg_len, prn)
         self.assertEqual(1, len(rx_pkts))
         p = rx_pkts[0]
         latency = struct.unpack('!L', str(p)[-4:])[0]
         time = struct.unpack('!L', str(p)[-8:-4])[0]
         print "latency = {} cycles".format(latency)
-    def test_latency_sweep_lnic(self):
-        self.latency_sweep(disable_ndp=False)
-    def test_latency_sweep_icenic(self):
-        self.latency_sweep(disable_ndp=True)
-    def latency_sweep(self, disable_ndp):
+    def test_latency_lnic(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.latency_test(prn=receiver.process_pkt, fname='lnic_msg_len_latency.csv')
+    def test_latency_icenic(self):
+        self.latency_test(prn=None, fname='icenic_msg_len_latency.csv')
+    def latency_test(self, prn, fname):
         # Wait for boot pkt before running the test
-        wait_boot_pkt(disable_ndp)
-        msg_lens = [8, 16, 32, 64, 128, 256, 512, 1024]
+        wait_boot_pkt(prn)
+        msg_lens = [16, 32, 64, 128, 256, 512, 1024]
         length = []
         latency = []
         for l in msg_lens:
             for i in range(10):
                 print 'Testing msg_len = {} bytes'.format(l)
                 length.append(l)
-                pkts = [lnic_pkt(l, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*l)]
-                rx_pkts = self.do_loopback(pkts, disable_ndp)
+                rx_pkts = self.do_latency_test(l, prn)
                 p = rx_pkts[0]
                 lat = struct.unpack('!L', str(p)[-4:])[0]
                 time = struct.unpack('!L', str(p)[-8:-4])[0]
                 latency.append(lat)
         # record latencies
         df = pd.DataFrame({'msg_len':length, 'latency':latency})
-        write_csv('loopback', 'msg_len_latency.csv', df)
+        write_csv('loopback', fname, df)
+
+    def do_throughput_test(self, msg_len, prn):
+        inputs = []
+        inputs.append(self.config_msg(LoopbackTest.num_msgs))
+        # generate req msgs
+        inputs += [self.data_req(msg_len) for i in range(LoopbackTest.num_msgs)]
+        # assign unique ID to each msg
+        for p, i in zip(inputs, range(len(inputs))):
+            p[LNIC].tx_msg_id = i
+        # start sniffing for responses
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+                    prn=prn, count=LoopbackTest.num_msgs, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        # send inputs get response
+        sendp(inputs, iface=TEST_IFACE)
+        # wait for all responses
+        sniffer.join()
+        p = sniffer.results[-1]
+
+        total_latency = struct.unpack('!L', str(p)[-4:])[0]
+        throughput = sum([len(p) for p in inputs])/float(total_latency) # bytes/cycle
+        throughput_pps = len(inputs)/(float(total_latency) * 0.3125e-3)
+        throughput_gbps = throughput*8/0.3125
+        print "total latency = {} cycles".format(total_latency)
+        print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput_gbps)
+        return throughput_gbps
+
+    def test_throughput_basic_lnic(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.throughput_basic_test(prn=receiver.process_pkt)
+    def test_throughput_basic_icenic(self):
+        self.throughput_basic_test(prn=None)
+    def throughput_basic_test(self, prn):
+        wait_boot_pkt(prn)
+        msg_len = 1024
+        throughput = self.do_throughput_test(msg_len, prn)
+
+    def test_throughput_lnic(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.throughput_test(prn=receiver.process_pkt, fname='lnic_msg_len_throughput.csv')
+    def test_throughput_icenic(self):
+        self.throughput_test(prn=None, fname='icenic_msg_len_throughput.csv')
+    def throughput_test(self, prn, fname):
+        # Wait for boot pkt before running the test
+        wait_boot_pkt(prn)
+        msg_len = [16, 32, 64, 128, 256, 512, 1024]
+        tput = []
+        for l in msg_len:
+            tput.append(self.do_throughput_test(l, prn))
+        # record throughputs
+        df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
+        write_csv('loopback', fname, df)
+
+    # TODO(sibanez): the following methods are probably not needed anymore.
     def test_throughput(self):
 #        msg_len = 8
 #        num_packets = 50
@@ -231,25 +297,21 @@ class Loopback(unittest.TestCase):
 class StreamTest(unittest.TestCase):
     num_msgs = 30
     def setUp(self):
-        bind_layers(LNIC, Stream.Stream)
+        bind_layers(LNIC, Loopback.Loopback)
 
     def config_msg(self, num_msgs):
-        msg_len = len(Stream.Stream() / Stream.Config())
+        msg_len = len(Loopback.Loopback() / Loopback.Config())
         return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / Stream.Stream() / Stream.Config(num_msgs=num_msgs)
+               / Loopback.Loopback() / Loopback.Config(num_msgs=num_msgs)
 
     def data_req(self, msg_len):
-        self.assertTrue(msg_len >= len(Stream.Stream()))
-        pad_bytes = msg_len - len(Stream.Stream())
+        self.assertTrue(msg_len >= len(Loopback.Loopback()))
+        pad_bytes = msg_len - len(Loopback.Loopback())
         return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) \
-               / Stream.Stream(msg_type=Stream.DATA_TYPE) \
+               / Loopback.Loopback(msg_type=Loopback.DATA_TYPE) \
                / ('\x00'*pad_bytes)
 
-    def do_test(self, msg_len, disable_ndp):
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if disable_ndp else receiver.process_pkt
-
+    def do_test(self, msg_len, prn):
         inputs = []
         inputs.append(self.config_msg(StreamTest.num_msgs))
         # generate req msgs
@@ -276,51 +338,31 @@ class StreamTest(unittest.TestCase):
         print "throughput = {} bytes/cycle = {} Mpps = {} Gbps".format(throughput, throughput_pps, throughput_gbps)
         return throughput_gbps
 
-    def test_basic_lnic(self):
-        throughput = self.do_test(1024, disable_ndp=False)
+    def test_throughput_basic_lnic(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.throughput_basic_test(prn=receiver.process_pkt)
+    def test_throughput_basic_icenic(self):
+        self.throughput_basic_test(prn=None)
+    def throughput_basic_test(self, prn):
+        wait_boot_pkt(prn)
+        msg_len = 1024
+        throughput = self.do_test(msg_len, prn)
 
-    def test_msg_len_lnic(self):
-        self.msg_len_test(disable_ndp=False)
-    def test_msg_len_icenic(self):
-        self.msg_len_test(disable_ndp=True)
-    def msg_len_test(self, disable_ndp):
+    def test_throughput_lnic(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.throughput_test(prn=receiver.process_pkt, fname='lnic_msg_len_throughput.csv')
+    def test_throughput_icenic(self):
+        self.throughput_test(prn=None, fname='icenic_msg_len_throughput.csv')
+    def throughput_test(self, prn, fname):
         # Wait for boot pkt before running the test
-        wait_boot_pkt(disable_ndp)
+        wait_boot_pkt(prn)
         msg_len = [32, 64, 128, 256, 512, 1024]
         tput = []
         for l in msg_len:
-            tput.append(self.do_test(l, disable_ndp))
+            tput.append(self.do_test(l, prn))
         # record throughputs
         df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
-        write_csv('stream', 'msg_len_throughput.csv', df)
-
-    def test_pkt_lnic(self):
-        msg_len = 1024
-        p = lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / ('\x00'*msg_len)
-
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = receiver.process_pkt
-
-        # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
-                    prn=prn, count=1, timeout=100)
-        sniffer.start()
-        time.sleep(1)
-
-        # send pkt
-        sendp(p, iface=TEST_IFACE)
-
-        # wait for response
-        sniffer.join()
-        resp = sniffer.results[0]
-
-#        print "**** Sent Pkt ****"
-#        p.show()
-#        print "**** Response Pkt ****"
-#        resp.show()
-
-        latency = struct.unpack('!L', str(resp)[-4:])[0]
-        print "latency = {} cycles".format(latency)
+        write_csv('stream', fname, df)
 
 class DotProdTest(unittest.TestCase):
     num_weights = 2000
@@ -340,11 +382,7 @@ class DotProdTest(unittest.TestCase):
                / DotProd.DotProd() \
                / DotProd.Data(num_words=num_words, words=msg_words)
 
-    def do_test(self, num_words, disable_ndp):
-        # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
-        prn = None if disable_ndp else receiver.process_pkt
-
+    def do_test(self, num_words, prn):
         inputs = []
         inputs.append(self.config_msg(DotProdTest.num_msgs))
         # generate req msgs
@@ -371,28 +409,39 @@ class DotProdTest(unittest.TestCase):
         return latency, misses
 
     def test_basic_lnic(self):
-        latency, misses = self.do_test(125, disable_ndp=False)
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.basic_test(prn=receiver.process_pkt)
+    def test_basic_icenic(self):
+        self.basic_test(prn=None)
+    def basic_test(self, prn):
+        wait_boot_pkt(prn)
+        num_words = 125
+        latency, misses = self.do_test(num_words, prn)
         print 'Latency = {} cycles/msg, D$ misses/msg = {}'.format(latency, misses)
 
-    def test_num_words_lnic(self):
-        self.num_words_test(disable_ndp=False)
+    def test_num_words_lnic_opt(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.num_words_test(prn=receiver.process_pkt, fname='lnic_opt_num_words_latency.csv')
+    def test_num_words_lnic_naive(self):
+        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        self.num_words_test(prn=receiver.process_pkt, fname='lnic_naive_num_words_latency.csv')
     def test_num_words_icenic(self):
-        self.num_words_test(disable_ndp=True)
-    def num_words_test(self, disable_ndp):
+        self.num_words_test(prn=None, fname='icenic_num_words_latency.csv')
+    def num_words_test(self, prn, fname):
         # Wait for boot pkt before running the test
-        wait_boot_pkt(disable_ndp)
+        wait_boot_pkt(prn)
         word_count = [1, 5, 10, 25, 50, 125]
         num_words = []
         misses = []
         latency = []
         for n in word_count:
             num_words.append(n)
-            l, m = self.do_test(n, disable_ndp)
+            l, m = self.do_test(n, prn)
             misses.append(m)
             latency.append(l)
         # record latencies
         df = pd.DataFrame({'num_words':num_words, 'latency':latency, 'misses':misses})
-        write_csv('dot_product', 'num_words_latency.csv', df)
+        write_csv('dot_product', fname, df)
 
     def test_pkt_lnic(self):
         """This is a quick and dirty test for getting cache miss and on-core processing time stats.

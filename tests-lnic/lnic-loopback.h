@@ -25,24 +25,20 @@ void copy_payload(uint16_t num_bytes) {
 
   if (num_bytes == 0) {
     return;
-  } else if (num_bytes == 8) {
-    goto copy_1;
-  } else if (num_bytes == 24) {
-    goto copy_3;
-  } else if (num_bytes == 56) {
-    goto copy_7;
-  } else if (num_bytes == 120) {
-    goto copy_15;
-  } else if (num_bytes == 248) {
-    goto copy_31;
-  } else if (num_bytes == 504) {
-    goto copy_63;
-  } else if (num_bytes == 1000) {
-    goto copy_125;
-  } else if (num_bytes == 1016) {
-    goto copy_127;
+  } else if (num_bytes == 16) {
+    goto copy_2;
+  } else if (num_bytes == 48) {
+    goto copy_6;
+  } else if (num_bytes == 112) {
+    goto copy_14;
+  } else if (num_bytes == 240) {
+    goto copy_30;
+  } else if (num_bytes == 496) {
+    goto copy_62;
+  } else if (num_bytes == 1008) {
+    goto copy_126;
   } else {
-    printf("Application is not optimized to copy %d bytes:\n", num_bytes);
+    printf("Application is not optimized to increment %d bytes:\n", num_bytes);
     int num_words = num_bytes/LNIC_WORD_SIZE;
     if (num_bytes % LNIC_WORD_SIZE != 0) { num_words++; }
     int i;
@@ -52,22 +48,18 @@ void copy_payload(uint16_t num_bytes) {
     return;
   }
 
-copy_127:
-  REPEAT_2(lnic_copy();)
-copy_125:
-  REPEAT_62(lnic_copy();)
-copy_63:
+copy_126:
+  REPEAT_64(lnic_copy();)
+copy_62:
   REPEAT_32(lnic_copy();)
-copy_31:
+copy_30:
   REPEAT_16(lnic_copy();)
-copy_15:
+copy_14:
   REPEAT_8(lnic_copy();)
-copy_7:
+copy_6:
   REPEAT_4(lnic_copy();)
-copy_3:
+copy_2:
   REPEAT_2(lnic_copy();)
-copy_1:
-  lnic_copy();
 
 }
 

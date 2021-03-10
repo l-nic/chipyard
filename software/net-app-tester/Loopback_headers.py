@@ -4,8 +4,8 @@ from scapy.all import *
 CONFIG_TYPE = 0
 DATA_TYPE = 1
 
-class Stream(Packet):
-    name = "Stream"
+class Loopback(Packet):
+    name = "Loopback"
     fields_desc = [
         LongField("msg_type", CONFIG_TYPE)
     ]
@@ -17,5 +17,5 @@ class Config(Packet):
         LongField("timestamp", 0)
     ]
 
-bind_layers(Stream, Config, msg_type=CONFIG_TYPE)
+bind_layers(Loopback, Config, msg_type=CONFIG_TYPE)
 

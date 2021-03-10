@@ -3,8 +3,10 @@
 #include <string.h>
 
 #include "lnic.h"
-#include "service-time.h"
 #include "lnic-loopback.h"
+
+#define CONFIG_TYPE 0
+#define DATA_REQ_TYPE 1
 
 int main(void)
 {

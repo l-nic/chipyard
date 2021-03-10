@@ -7,22 +7,22 @@ CPPFLAGS=-mcmodel=medany -I. -Wall -Wextra -pedantic -O2 -ffixed-x30 -ffixed-x31
 
 
 PROGRAMS = hello pwm blkdev accum charcount nic-loopback big-blkdev pingd
-PROGRAMS += icenic-nic-loopback
-PROGRAMS += icenic-cpu-loopback
-PROGRAMS += simple-icenic-cpu-loopback
-PROGRAMS += icenic-tx-rx-throughput
+PROGRAMS += icenic-loopback-latency
 PROGRAMS += icenic-loopback-throughput
 PROGRAMS += icenic-loopback-throughput-batch
+PROGRAMS += icenic-stream-batch
+PROGRAMS += icenic-dot-product-batch
+PROGRAMS += icenic-dot-product-test
+PROGRAMS += icenic-nic-loopback
+PROGRAMS += simple-icenic-cpu-loopback
+PROGRAMS += icenic-tx-rx-throughput
 PROGRAMS += icenic-nn-inference
 PROGRAMS += icenic-othello
 PROGRAMS += icenic-stream-test
-PROGRAMS += icenic-stream-batch
 PROGRAMS += icenic-nbody-node
 PROGRAMS += cache_profile
 PROGRAMS += icenic-service-time
 PROGRAMS += icenic-service-time-batch
-PROGRAMS += icenic-dot-product-batch
-PROGRAMS += icenic-dot-product-test
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
