@@ -29,6 +29,9 @@
 //    char* test_type = "HIGH_PRIORITY_C1_STALL";
 //    char* test_type = "LOW_PRIORITY_C1_STALL";
 
+    // Application to generate load for
+    char* load_type = "DEFAULT";
+
     // Distribution parameters
 //    char* dist_type = "BIMODAL";
     char* service_dist_type = "FIXED";
@@ -39,6 +42,8 @@
     uint64_t request_rate_lambda_inverse_dec = 0;
     uint64_t min_service_time = 300;
     uint64_t max_service_time = 10000;
+    uint64_t min_service_key = 0;
+    uint64_t max_service_key = 0;
     double exp_dist_scale_factor = 10000;
     double exp_dist_decay_const = 3.5;
     double bimodal_dist_high_mean = 9000;

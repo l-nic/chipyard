@@ -14,19 +14,19 @@
 bool is_single_core() { return false; }
 
 // IP addr's are assigned by firesim starting at 10.0.0.2. Root will be the first one.
-uint64_t root_addr = 0x0a000002;
+#define ROOT_ADDR 0x0a000002
 
 // Expected address of the load generator
-uint64_t load_gen_ip = 0x0a000001;
+#define LOAD_GEN_IP 0x0a000001
 
 // Whether context 1 should sometimes stall a message
-bool c1_stall = false;
+bool c1_stall;
 
 // If context 1 stalls, it will stall for STALL_FACTOR times the message-specified stall duration
-uint64_t c1_stall_factor = 0; // Default is 100
+uint64_t c1_stall_factor;
 
 // If context 1 stalls, it will do so every STALL_FREQ messages
-uint64_t c1_stall_freq = 0; // Default is 10
+uint64_t c1_stall_freq;
 
 // Types of tests to run
 enum test_type_t {
@@ -105,11 +105,12 @@ int core_main(int argc, char** argv, int cid, int nc) {
       return -1;
     }
 
+    c1_stall = false; // default
     c1_stall_factor = atol(argv[4]);
     c1_stall_freq = atol(argv[5]);
 
     // Start the test
-    if (nic_ip_addr == root_addr) {
+    if (nic_ip_addr == ROOT_ADDR) {
         // Only use the root node
         if (cid == 0) {
           printf("Root node running test type %s\n", name_for_test(test_type));
@@ -187,10 +188,13 @@ int core_main(int argc, char** argv, int cid, int nc) {
 }
 
 void send_startup_msg(int cid, uint64_t context_id) {
+    uint64_t load_gen_ip = LOAD_GEN_IP;
     uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
-    uint64_t cid_to_send = cid;
+    printf("core: %d\n", cid);
+    printf("context: %ld\n", context_id);
+    printf("app_hdr: %lx\n", app_hdr);
     lnic_write_r(app_hdr);
-    lnic_write_r(cid_to_send);
+    lnic_write_r(cid);
     lnic_write_r(context_id);
 }
 
@@ -214,7 +218,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
       // Process the header
       // Check src IP
       rx_src_ip = (app_hdr & IP_MASK) >> 32;
-      if (rx_src_ip != load_gen_ip) {
+      if (rx_src_ip != LOAD_GEN_IP) {
           printf("Root node received address not from load generator: %lx\n", rx_src_ip);
           return -1;
       }

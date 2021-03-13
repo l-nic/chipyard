@@ -27,7 +27,7 @@ c1_stall_factor = 10
 c1_stall_freq = 5
 
 # NOTE: if use_load_prog is set then MUST pass in the lnic-evaluation.riscv binary
-use_load_prog = False
+use_load_prog = True
 server_ip_addrs = ["10.0.0.2", "10.0.0.3", "10.0.0.4"]
 load_gen_args = "{} {} {}".format(test_type, c1_stall_factor, c1_stall_freq) if use_load_prog else "{} {} {}".format(server_ip_addrs[0], server_ip_addrs[1], server_ip_addrs[2])
 
@@ -42,7 +42,7 @@ def build_components(num_sims, current_run):
         run("mkdir " + current_run)
         run("rm -f recent")
         run("ln -s " + current_run + " recent")
-    with cd("chipyard/tests"):
+    with cd("chipyard/tests-lnic"):
         run("make -j16")
 
 def launch_switch(num_sims, current_run):
