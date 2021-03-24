@@ -44,6 +44,7 @@ PROGRAMS += lnic-service-time
 #PROGRAMS += lnic-int-collector-opt
 #PROGRAMS += lnic-int-heavy-hitter
 #PROGRAMS += lnic-int-path-latency
+PROGRAMS += lnic-sim-network
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
