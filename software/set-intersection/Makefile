@@ -1,12 +1,12 @@
 CXX=riscv64-unknown-elf-g++
 CXXFLAGS=-std=c++11 -Wall -fPIC
 CXXFLAGS+=-mcmodel=medany -I. -O2 -ffixed-x30 -ffixed-x31 -fno-common -fno-builtin-printf -fno-use-cxa-atexit
-CXXFLAGS+=-I ../../tests
-LDFLAGS=-T ../../tests/link.ld -static -nostartfiles -lgcc
+CXXFLAGS+=-I ../../tests-lnic
+LDFLAGS=-T ../../tests-lnic/link.ld -static -nostartfiles -lgcc
 
 .SUFFIXES:
 
-lnic-intersect.riscv: lnic-intersect.cc ../../tests/crt.o ../../tests/syscalls.o
+lnic-intersect.riscv: lnic-intersect.cc ../../tests-lnic/crt.o ../../tests-lnic/syscalls.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $^ -o $@
 
 clean:

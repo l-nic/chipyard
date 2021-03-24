@@ -2,6 +2,7 @@ GCC=riscv64-unknown-elf-gcc
 OBJDUMP=riscv64-unknown-elf-objdump
 CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31 -fno-use-cxa-atexit
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
+LDFLAGS_MICA=-static -nostartfiles -lgcc
 CXX=riscv64-unknown-elf-g++
 CPPFLAGS=-mcmodel=medany -I. -Wall -Wextra -pedantic -O2 -ffixed-x30 -ffixed-x31 -fno-common -fno-builtin-printf -Wno-unused-function -fno-exceptions -std=c++11
 
@@ -35,7 +36,7 @@ PROGRAMS += lnic-incast-nolock
 PROGRAMS += lnic-evaluation
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
-#PROGRAMS += lnic-multi-core-mica
+PROGRAMS += lnic-multi-core-mica
 PROGRAMS += lnic-postcard-agg-sw
 PROGRAMS += lnic-postcard-agg-opt
 PROGRAMS += lnic-cache-test
@@ -60,7 +61,7 @@ dumps: $(addsuffix .dump,$(PROGRAMS))
 	$(CXX) $(CPPFLAGS) -c $< -o $@
 
 lnic-multi-core-mica.riscv: lnic-multi-core-mica.o crt.o syscalls.o
-	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
+	$(CXX) -T link.ld $(LDFLAGS_MICA) $^ -o $@
 
 lnic-multi-core-chain-rep.riscv: lnic-multi-core-chain-rep.o crt.o syscalls.o
 	$(CXX) -T link.ld $(LDFLAGS) $^ -o $@
