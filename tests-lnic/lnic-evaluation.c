@@ -190,9 +190,6 @@ int core_main(int argc, char** argv, int cid, int nc) {
 void send_startup_msg(int cid, uint64_t context_id) {
     uint64_t load_gen_ip = LOAD_GEN_IP;
     uint64_t app_hdr = (load_gen_ip << 32) | (0 << 16) | (2*8);
-    printf("core: %d\n", cid);
-    printf("context: %ld\n", context_id);
-    printf("app_hdr: %lx\n", app_hdr);
     lnic_write_r(app_hdr);
     lnic_write_r(cid);
     lnic_write_r(context_id);
