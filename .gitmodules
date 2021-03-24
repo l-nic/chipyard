@@ -1,7 +1,7 @@
 [submodule "rocket-chip"]
 	path = generators/rocket-chip
 	url = https://github.com/l-nic/rocket-chip.git
-	branch = lnic-dev
+	branch = lnic-transport-dev
 [submodule "testchipip"]
 	path = generators/testchipip
 	url = https://github.com/ucb-bar/testchipip.git
@@ -129,6 +129,7 @@
 [submodule "generators/lnic"]
 	path = generators/lnic
 	url = https://github.com/l-nic/lnic.git
+	branch = transport-dev
 [submodule "software/local_firesim/PcapPlusPlus"]
 	path = software/local_firesim/PcapPlusPlus
 	url = https://github.com/l-nic/PcapPlusPlus
