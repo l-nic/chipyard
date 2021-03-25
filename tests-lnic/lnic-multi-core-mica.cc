@@ -15,7 +15,7 @@
 #define CLIENT_CONTEXT 1
 
 #define PRINT_TIMING 0
-#define NCORES 4
+#define NCORES 1
 #define USE_ONE_CONTEXT 1
 #define USE_MICA 1
 

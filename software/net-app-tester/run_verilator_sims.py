@@ -30,73 +30,91 @@ def run_fig3():
     #### LNIC simulation
     # start python test
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_lnic'))
+    time.sleep(1)
     # start simulation
     sim = start_proc(LNIC_CMD.format(binary='lnic-loopback-latency.riscv'))
     # wait for test to complete
     test.wait()
     # kill the simulation
     sim.kill()
+    time.sleep(1)
 
     #### IceNIC simulation
     # start python test
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_icenic'))
+    time.sleep(1)
     # start simulation
     sim = start_proc(ICENIC_CMD.format(binary='icenic-loopback-latency.riscv'))
     # wait for test to complete
     test.wait()
     # kill the simulation
     sim.kill()
+    time.sleep(1)
 
 def run_fig4():
     print 'Running sim for Figure 4 (Loopback Throughput) ...'
     test_class = 'LoopbackTest'
     # LNIC simulation
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_throughput_lnic'))
+    time.sleep(1)
     sim = start_proc(LNIC_CMD.format(binary='lnic-loopback-throughput.riscv'))
     test.wait()
     sim.kill()
+    time.sleep(1)
 
     # IceNIC simulation
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_throughput_icenic'))
+    time.sleep(1)
     sim = start_proc(ICENIC_CMD.format(binary='icenic-loopback-throughput-batch.riscv'))
     test.wait()
     sim.kill()
+    time.sleep(1)
 
 def run_fig5():
     print 'Running sim for Figure 5 (Stateless Processing Throughput) ...'
     test_class = 'StreamTest'
     # LNIC simulation
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_throughput_lnic'))
+    time.sleep(1)
     sim = start_proc(LNIC_CMD.format(binary='lnic-stream-throughput.riscv'))
     test.wait()
     sim.kill()
+    time.sleep(1)
 
     # IceNIC simulation
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_throughput_icenic'))
+    time.sleep(1)
     sim = start_proc(ICENIC_CMD.format(binary='icenic-stream-batch.riscv'))
     test.wait()
     sim.kill()
+    time.sleep(1)
 
 def run_fig6():      
     print 'Running sim for Figure 6 (Dot Product Microbenchmark) ...'
     test_class = 'DotProdTest'
     # LNIC Optimal simulation
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_num_words_lnic_opt'))
+    time.sleep(1)
     sim = start_proc(LNIC_CMD.format(binary='lnic-dot-product-opt.riscv'))
     test.wait()
     sim.kill()
+    time.sleep(1)
 
     # LNIC Naive simulation
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_num_words_lnic_naive'))
+    time.sleep(1)
     sim = start_proc(LNIC_CMD.format(binary='lnic-dot-product-naive.riscv'))
     test.wait()
     sim.kill()
+    time.sleep(1)
 
     # IceNIC simulation
     test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_num_words_icenic'))
+    time.sleep(1)
     sim = start_proc(ICENIC_CMD.format(binary='icenic-dot-product-batch.riscv'))
     test.wait()
     sim.kill()
+    time.sleep(1)
 
 def main():
     args = cmd_parser.parse_args()
