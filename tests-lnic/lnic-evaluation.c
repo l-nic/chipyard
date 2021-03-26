@@ -227,7 +227,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
       // Check msg length
       rx_msg_len = app_hdr & LEN_MASK;
       if (rx_msg_len != 2*8) {
-          printf("Expected: msg_len = %d, Received: msg_len = %d\n", 2*8, rx_msg_len);
+          printf("Expected: msg_len = %d, Received: msg_len = %ld\n", 2*8, rx_msg_len);
           return -1;
       }
 
@@ -236,7 +236,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
       sent_time = lnic_read();
 
       // Exit if specified
-      if (service_time == -1) {
+      if (service_time == 0) {
         break;
       }
 
@@ -260,5 +260,7 @@ int root_node(uint64_t argc, char** argv, int cid, int nc, uint64_t context_id, 
       lnic_write_r(sent_time);
       lnic_msg_done();
     }
+    // shutdown the whole system (all threads) when one thread receives a msg with service_time == 0
+    exit(0);
     return 0;
 }

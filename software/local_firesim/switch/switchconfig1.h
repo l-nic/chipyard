@@ -36,10 +36,10 @@
 //    char* dist_type = "BIMODAL";
     char* service_dist_type = "FIXED";
     char* request_dist_type = "EXP";
-    uint64_t num_requests = 10;
+    uint64_t num_requests = 1;
     uint64_t request_rate_lambda_inverse_start = 3200;
-    uint64_t request_rate_lambda_inverse_stop = 3200;
-    uint64_t request_rate_lambda_inverse_dec = 0;
+    uint64_t request_rate_lambda_inverse_stop = 1600;
+    uint64_t request_rate_lambda_inverse_dec = 90;
     uint64_t min_service_time = 300;
     uint64_t max_service_time = 10000;
     uint64_t min_service_key = 0;
