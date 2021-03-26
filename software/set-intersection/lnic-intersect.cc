@@ -68,6 +68,7 @@ int run_server(int cid, uint64_t context_id) {
     app_hdr = lnic_read();
     //printf("[%d] --> Received msg of length: %u bytes\n", cid, (uint16_t)app_hdr);
     service_time = lnic_read();
+    if (service_time == 0) exit(0); // the simulation is complete, shutdown the whole system
     sent_time = lnic_read();
     uint64_t query_word_cnt = lnic_read();
     // TODO: store two word_ids per 8-byte word in the packet

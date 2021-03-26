@@ -339,6 +339,7 @@ int run_server(int cid, uint64_t context_id) {
     app_hdr = lnic_read();
     //printf("[%d] --> Received msg of length: %u bytes\n", cid, (uint16_t)app_hdr);
     service_time = lnic_read();
+    if (service_time == 0) exit(0); // the experiment is complete, shutdown the whole system
     sent_time = lnic_read();
     msg_type = lnic_read();
     ft_key.qword[0] = lnic_read();
