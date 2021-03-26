@@ -12,6 +12,7 @@ ICENIC_CMD = '../../sims/verilator/simulator-chipyard-IceNICSimNetworkRocketConf
 
 # default cmdline args
 cmd_parser = argparse.ArgumentParser()
+cmd_parser.add_argument('--test', action='store_true', help='Run simple test simulation', required=False)
 cmd_parser.add_argument('--all', action='store_true', help='Run sims for all figures', required=False)
 cmd_parser.add_argument('--fig3', action='store_true', help='Run sim for figure 3 (Loopback Latency)', required=False)
 cmd_parser.add_argument('--fig4', action='store_true', help='Run sim for figure 4 (Loopback Throughput)', required=False)
@@ -24,12 +25,12 @@ def start_proc(cmd):
     print '--------------------------------------------------------'
     return subprocess.Popen(cmd, shell=True, stdout=sys.stdout, stderr=sys.stderr)
 
-def run_fig3():
-    print 'Running sim for Figure 3 (Loopback Latency) ...'
+def run_test():
+    print 'Running basic test simulation ...'
     test_class = 'LoopbackTest'
     #### LNIC simulation
     # start python test
-    test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_lnic'))
+    test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_basic_lnic'))
     time.sleep(1)
     # start simulation
     sim = start_proc(LNIC_CMD.format(binary='lnic-loopback-latency.riscv'))
@@ -41,13 +42,31 @@ def run_fig3():
 
     #### IceNIC simulation
     # start python test
-    test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_icenic'))
+    test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_basic_icenic'))
     time.sleep(1)
     # start simulation
     sim = start_proc(ICENIC_CMD.format(binary='icenic-loopback-latency.riscv'))
     # wait for test to complete
     test.wait()
     # kill the simulation
+    sim.kill()
+
+def run_fig3():
+    print 'Running sim for Figure 3 (Loopback Latency) ...'
+    test_class = 'LoopbackTest'
+    #### LNIC simulation
+    test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_lnic'))
+    time.sleep(1)
+    sim = start_proc(LNIC_CMD.format(binary='lnic-loopback-latency.riscv'))
+    test.wait()
+    sim.kill()
+    time.sleep(1)
+
+    #### IceNIC simulation
+    test = start_proc(PYTHON_CMD.format(test_class=test_class, test_name='test_latency_icenic'))
+    time.sleep(1)
+    sim = start_proc(ICENIC_CMD.format(binary='icenic-loopback-latency.riscv'))
+    test.wait()
     sim.kill()
     time.sleep(1)
 
@@ -119,6 +138,8 @@ def run_fig6():
 def main():
     args = cmd_parser.parse_args()
     # Run the simulations
+    if args.test:
+        run_test()
     if args.all or args.fig3:
         run_fig3()
     if args.all or args.fig4:
@@ -127,6 +148,7 @@ def main():
         run_fig5()
     if args.all or args.fig6:
         run_fig6()
+    print "Simulations Complete!"
 
 if __name__ == '__main__':
     main()

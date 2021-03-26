@@ -79,6 +79,9 @@ def wait_boot_pkt(prn):
     sniffer.join()
 
 class LoopbackTest(unittest.TestCase):
+    """Basic loopback testing.
+       Measure both latency and throughput.
+    """
     num_msgs = 20
     def setUp(self):
         bind_layers(LNIC, Loopback.Loopback)
@@ -97,8 +100,6 @@ class LoopbackTest(unittest.TestCase):
 
     def do_latency_test(self, msg_len, prn):
         pkt = lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=0) / Raw('\x00'*msg_len)
-#        print "*********** Request Pkts: ***********"
-#        print_pkts(pkts)
         # start sniffing for responses
         sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
                     prn=prn, count=1, timeout=100)
@@ -110,8 +111,6 @@ class LoopbackTest(unittest.TestCase):
         # wait for all response pkts
         sniffer.join()
         self.assertEqual(1, len(sniffer.results))
-#        print "*********** Response Pkts: ***********"
-#        print_pkts(sniffer.results)
         return sniffer.results
     def test_latency_basic_lnic(self):
         receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
@@ -127,7 +126,7 @@ class LoopbackTest(unittest.TestCase):
         p = rx_pkts[0]
         latency = struct.unpack('!L', str(p)[-4:])[0]
         time = struct.unpack('!L', str(p)[-8:-4])[0]
-        print "latency = {} cycles".format(latency)
+        print "Success!"
     def test_latency_lnic(self):
         receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
         self.latency_test(prn=receiver.process_pkt, fname='lnic_msg_len_latency.csv')
@@ -205,36 +204,9 @@ class LoopbackTest(unittest.TestCase):
         df = pd.DataFrame({'msg_len':msg_len, 'throughput':tput})
         write_csv('loopback', fname, df)
 
-    def test_multi_host(self):
-        num_hosts = 32
-        src_ips = ['10.0.0.{}'.format(i) for i in range(3, 3 + num_hosts)]
-        src_contexts = range(num_hosts)
-        tx_msgs = {}
-        pkts = []
-        for src_ip, src_context in zip(src_ips, src_contexts):
-            num_words = random.randint(1, 256)
-            msg = ''.join(['{:0>8}'.format(x) for x in range(num_words)])
-            tx_msgs[(src_ip, src_context)] = msg
-            pkts += packetize(msg, src_context, DST_CONTEXT, src_ip)
-        random.shuffle(pkts)
-        rx_msgs = self.do_loopback(pkts, disable_ndp=False)
-        self.assertEqual(len(src_ips), len(rx_msgs))
-        for ip, context in zip(src_ips, src_contexts):
-            self.check_msg(rx_msgs, ip, context, NIC_IP, DST_CONTEXT, tx_msgs[(ip, context)])
-    def check_msg(self, rx_msgs, dst_ip, dst_context, src_ip, src_context, msg):
-        for m in rx_msgs:
-            if m[0][0] == dst_ip and m[0][1] == dst_context and m[0][2] == src_ip and m[0][3] == src_context:
-                if msg != m[1]:
-                    print "ERROR: Incorrect msg for host: {}".format(dst_ip)
-                    print "rx_msgs:"
-                    for rx_msg in rx_msgs:
-                        print "----------------------{}----------------------".format(rx_msg[0][0])
-                        print "{}".format(rx_msg[1])
-                self.assertEqual(msg, m[1])
-                return
-        self.assertTrue(False, "Could not find expected msg!")
-
 class StreamTest(unittest.TestCase):
+    """Loopback with increment test.
+    """
     num_msgs = 30
     def setUp(self):
         bind_layers(LNIC, Loopback.Loopback)
@@ -305,6 +277,8 @@ class StreamTest(unittest.TestCase):
         write_csv('stream', fname, df)
 
 class DotProdTest(unittest.TestCase):
+    """Application computes dot product of msg with in-memory weights and returns result.
+    """
     num_weights = 2000
     num_msgs = 30
     def setUp(self):
