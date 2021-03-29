@@ -13,7 +13,7 @@
 uint64_t server_ip = 0x0a000002;
 
 // Server expects messages of distinct sizes from each client
-uint16_t expected_msg_len_pkts[] = {15, 17, 19, 21, 23, 25, 27, 29, 31, 33};
+uint16_t expected_msg_len_pkts[] = {15, 17, 19, 21, 23, 25, 27, 29, 31, 32};
 
 // use the last byte of the IP address to compute a unique ID for each client
 uint8_t client_ip_to_id(uint32_t addr) {
@@ -66,7 +66,7 @@ int run_client(uint32_t client_ip) {
     lnic_write_r(i);
   }
 
-  printf("Client %lx complete!\n", client_ip);
+  printf("Client %x complete!\n", client_ip);
   // Spin until the simulation is complete
   while(1);
   return 0; // will never get here
@@ -74,7 +74,7 @@ int run_client(uint32_t client_ip) {
  
 int run_server() {
   uint64_t app_hdr;
-  uint16_t msg_len;
+  uint16_t msg_len_bytes;
   int num_words;
   int i;
   int n;
@@ -97,16 +97,16 @@ int run_server() {
     // Check src context
     uint64_t src_context = (app_hdr & CONTEXT_MASK) >> 16;
     if (src_context != 0) {
-        printf("SERVER ERROR: Expected: correct_src_context = %ld, Received: src_context = %ld\n", 0, src_context);
+        printf("SERVER ERROR: Expected: correct_src_context = %d, Received: src_context = %ld\n", 0, src_context);
         // return -1;
     }
     // Check msg length
-    uint16_t msg_len_bytes = app_hdr & LEN_MASK;
+    msg_len_bytes = app_hdr & LEN_MASK;
     if (msg_len_bytes % (LNIC_WORD_SIZE * PKT_LEN_WORDS) != 0 ) {
         printf("SERVER ERROR: Received: msg_len_bytes = %d\n doesn't consist of full sized packets", msg_len_bytes);
         return -1;
     }
-    msg_len_pkts = msg_len_bytes / (LNIC_WORD_SIZE * PKT_LEN_WORDS);
+    uint16_t msg_len_pkts = msg_len_bytes / (LNIC_WORD_SIZE * PKT_LEN_WORDS);
     bool unexpected_msg = true;
     for (n = 0; n < NUM_CLIENTS; n++) {
         if (expected_msg_len_pkts[n] == msg_len_pkts) {
@@ -154,7 +154,7 @@ int run_server() {
 }
 
 // Only use core 0, context 0
-int main(uint64_t argc, char** argv) {
+int main(int argc, char** argv) {
   uint64_t context_id = 0;
   uint64_t priority = 0;
 
