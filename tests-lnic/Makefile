@@ -46,6 +46,7 @@ PROGRAMS += lnic-service-time
 #PROGRAMS += lnic-int-heavy-hitter
 #PROGRAMS += lnic-int-path-latency
 PROGRAMS += lnic-sim-network
+PROGRAMS += lnic-proto-eval-incast-single-core
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
