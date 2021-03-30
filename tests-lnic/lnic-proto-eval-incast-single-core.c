@@ -65,6 +65,7 @@ int run_client(uint32_t client_ip) {
   for (i = 1; i < msg_len_words; i++) {
     lnic_write_r(i);
   }
+  printf("&&CSV&&MsgSent,%ld,%d,%d\n", rdcycle(), client_ip_to_id(client_ip), msg_len_bytes);
 
   printf("Client %x complete!\n", client_ip);
   // Spin until the simulation is complete
@@ -123,6 +124,8 @@ int run_server() {
         return -1;
     }
 
+    printf("&&CSV&&MsgRcvd,%ld,%d,%d\n", rdcycle(), client_ip_to_id(src_ip), msg_len_bytes);
+
     // read all words of the msg
     num_words = msg_len_bytes/LNIC_WORD_SIZE;
     if (msg_len_bytes % LNIC_WORD_SIZE != 0) { num_words++; }
@@ -162,6 +165,8 @@ int main(int argc, char** argv) {
     printf("This program requires passing the L-NIC MAC address, followed by the L-NIC IP address.\n");
     return -1;
   }
+
+  printf("___Starting Workload___\n");
 
   char* nic_ip_str = argv[2];
   uint32_t nic_ip_addr_lendian = 0;
