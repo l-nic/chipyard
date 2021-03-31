@@ -18,6 +18,7 @@
 #define NCORES 1
 #define USE_ONE_CONTEXT 1
 #define USE_MICA 1
+#define NAIVE_MICA 0
 
 // Expected address of the load generator
 uint64_t load_gen_ip = 0x0a000001;
@@ -307,19 +308,19 @@ int run_server(int cid, uint64_t context_id) {
   FixedTable table(kValSize, cid);
 #endif // USE_MICA
 
-  uint64_t init_value[VALUE_SIZE_WORDS];
-  memset(init_value, 0, VALUE_SIZE_WORDS*8);
+  uint64_t value[VALUE_SIZE_WORDS];
+  memset(value, 0, VALUE_SIZE_WORDS*8);
 
   printf("[%d] Inserting keys from %ld to %ld.\n", cid, (MyFixedTableConfig::itemCount * context_id) + 1, (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount);
   for (unsigned i = (MyFixedTableConfig::itemCount * context_id) + 1;
       i <= (MyFixedTableConfig::itemCount * context_id) + MyFixedTableConfig::itemCount; i++) {
     ft_key.qword[0] = i;
     ft_key.qword[1] = 0;
-    init_value[0] = i;
-    init_value[1] = i + 1;
-    init_value[2] = i + 2;
+    value[0] = i;
+    value[1] = i + 1;
+    value[2] = i + 2;
     key_hash = cityhash(ft_key.qword);
-    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(init_value));
+    out_result = table.set(key_hash, ft_key, reinterpret_cast<char *>(value));
     if (out_result != MicaResult::kSuccess) printf("[%d] Inserting key %lu failed (%s).\n", cid, ft_key.qword[0], mica::table::cResultString(out_result));
     if (i % 100 == 0) printf("[%d] Inserted keys up to %d.\n", cid, i);
   }
@@ -361,8 +362,76 @@ int run_server(int cid, uint64_t context_id) {
       lnic_write_r(service_time);
       lnic_write_r(sent_time);
 #if USE_MICA
+#if NAIVE_MICA
+      out_result = table.get(key_hash, ft_key, (char *)value);
+      lnic_write_m(value[0]);
+      lnic_write_m(value[1]);
+      lnic_write_m(value[2]);
+      lnic_write_m(value[3]);
+      lnic_write_m(value[4]);
+      lnic_write_m(value[5]);
+      lnic_write_m(value[6]);
+      lnic_write_m(value[7]);
+      lnic_write_m(value[8]);
+      lnic_write_m(value[9]);
+      lnic_write_m(value[10]);
+      lnic_write_m(value[11]);
+      lnic_write_m(value[12]);
+      lnic_write_m(value[13]);
+      lnic_write_m(value[14]);
+      lnic_write_m(value[15]);
+      lnic_write_m(value[16]);
+      lnic_write_m(value[17]);
+      lnic_write_m(value[18]);
+      lnic_write_m(value[19]);
+      lnic_write_m(value[20]);
+      lnic_write_m(value[21]);
+      lnic_write_m(value[22]);
+      lnic_write_m(value[23]);
+      lnic_write_m(value[24]);
+      lnic_write_m(value[25]);
+      lnic_write_m(value[26]);
+      lnic_write_m(value[27]);
+      lnic_write_m(value[28]);
+      lnic_write_m(value[29]);
+      lnic_write_m(value[30]);
+      lnic_write_m(value[31]);
+      lnic_write_m(value[32]);
+      lnic_write_m(value[33]);
+      lnic_write_m(value[34]);
+      lnic_write_m(value[35]);
+      lnic_write_m(value[36]);
+      lnic_write_m(value[37]);
+      lnic_write_m(value[38]);
+      lnic_write_m(value[39]);
+      lnic_write_m(value[40]);
+      lnic_write_m(value[41]);
+      lnic_write_m(value[42]);
+      lnic_write_m(value[43]);
+      lnic_write_m(value[44]);
+      lnic_write_m(value[45]);
+      lnic_write_m(value[46]);
+      lnic_write_m(value[47]);
+      lnic_write_m(value[48]);
+      lnic_write_m(value[49]);
+      lnic_write_m(value[50]);
+      lnic_write_m(value[51]);
+      lnic_write_m(value[52]);
+      lnic_write_m(value[53]);
+      lnic_write_m(value[54]);
+      lnic_write_m(value[55]);
+      lnic_write_m(value[56]);
+      lnic_write_m(value[57]);
+      lnic_write_m(value[58]);
+      lnic_write_m(value[59]);
+      lnic_write_m(value[60]);
+      lnic_write_m(value[61]);
+      lnic_write_m(value[62]);
+      lnic_write_m(value[63]);
+#else
       // XXX We don't pass a pointer to the value, because we moved lnic_write() into MICA:
       out_result = table.get(key_hash, ft_key, NULL);
+#endif // NAIVE_MICA
       if (out_result != MicaResult::kSuccess) {
         printf("[%d] GET failed for key %lu.\n", cid, ft_key.qword[0]);
       }
@@ -370,8 +439,76 @@ int run_server(int cid, uint64_t context_id) {
     }
     else {
 #if USE_MICA
+#if NAIVE_MICA
+      value[0] = lnic_read();
+      value[1] = lnic_read();
+      value[2] = lnic_read();
+      value[3] = lnic_read();
+      value[4] = lnic_read();
+      value[5] = lnic_read();
+      value[6] = lnic_read();
+      value[7] = lnic_read();
+      value[8] = lnic_read();
+      value[9] = lnic_read();
+      value[10] = lnic_read();
+      value[11] = lnic_read();
+      value[12] = lnic_read();
+      value[13] = lnic_read();
+      value[14] = lnic_read();
+      value[15] = lnic_read();
+      value[16] = lnic_read();
+      value[17] = lnic_read();
+      value[18] = lnic_read();
+      value[19] = lnic_read();
+      value[20] = lnic_read();
+      value[21] = lnic_read();
+      value[22] = lnic_read();
+      value[23] = lnic_read();
+      value[24] = lnic_read();
+      value[25] = lnic_read();
+      value[26] = lnic_read();
+      value[27] = lnic_read();
+      value[28] = lnic_read();
+      value[29] = lnic_read();
+      value[30] = lnic_read();
+      value[31] = lnic_read();
+      value[32] = lnic_read();
+      value[33] = lnic_read();
+      value[34] = lnic_read();
+      value[35] = lnic_read();
+      value[36] = lnic_read();
+      value[37] = lnic_read();
+      value[38] = lnic_read();
+      value[39] = lnic_read();
+      value[40] = lnic_read();
+      value[41] = lnic_read();
+      value[42] = lnic_read();
+      value[43] = lnic_read();
+      value[44] = lnic_read();
+      value[45] = lnic_read();
+      value[46] = lnic_read();
+      value[47] = lnic_read();
+      value[48] = lnic_read();
+      value[49] = lnic_read();
+      value[50] = lnic_read();
+      value[51] = lnic_read();
+      value[52] = lnic_read();
+      value[53] = lnic_read();
+      value[54] = lnic_read();
+      value[55] = lnic_read();
+      value[56] = lnic_read();
+      value[57] = lnic_read();
+      value[58] = lnic_read();
+      value[59] = lnic_read();
+      value[60] = lnic_read();
+      value[61] = lnic_read();
+      value[62] = lnic_read();
+      value[63] = lnic_read();
+      out_result = table.set(key_hash, ft_key, (char *)value);
+#else
       // XXX We don't pass a pointer to the value, because we moved lnic_read() into MICA:
       out_result = table.set(key_hash, ft_key, NULL);
+#endif // NAIVE_MICA
       if (out_result != MicaResult::kSuccess) {
         printf("[%d] Inserting key %lu failed.\n", cid, ft_key.qword[0]);
       }
