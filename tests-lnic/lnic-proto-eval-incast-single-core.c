@@ -187,6 +187,7 @@ int main(int argc, char** argv) {
   }
   // Non-active nodes should just spin for the duration of the simulation
   if (!is_active_ip(nic_ip_addr)) {
+    printf("This node is not active! Will spin indefinitely\n");
     while(1);
   }
 
@@ -194,8 +195,10 @@ int main(int argc, char** argv) {
 
   int ret = 0;
   if (nic_ip_addr == server_ip) {
+    printf("__Starting Server Node__\n");
     ret = run_server();
   } else if (is_client(nic_ip_addr)) {
+    printf("__Starting Client Node__\n");
     ret = run_client(nic_ip_addr);
   }
  
