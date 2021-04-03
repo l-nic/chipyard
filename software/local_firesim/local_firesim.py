@@ -96,6 +96,8 @@ def main():
     env.password = "vagrant"
     current_run = "local_firesim_" + str(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")) + "/"
 
+    # make sure the switch binary is re-compiled with the most recent switchconfig
+    os.system('rm -f switch/switch')
     # use the correct switchconfig
     os.system('rm -f switch/switchconfig.h && ln -s switchconfig{}.h switch/switchconfig.h'.format(num_sims))
 
