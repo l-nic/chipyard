@@ -6,10 +6,10 @@ import os
 
 link_latency = 280 # 140
 switch_latency = 0
-# Buffer size: 99KB=100093 or 57KB=58751 
+# Buffer size: 93Pkt=101184 or 57KB=58751 
 # Note that we leave extra room for ctrl packets
-high_priority_obuf = 100093 # 4375
-low_priority_obuf = 100093 # 4375
+high_priority_obuf = 93*1088+1 # 4375
+low_priority_obuf = 93*1088+1 # 4375
 # RTO of 6 us = 19200
 timeout_cycles = 19200 # 2240 
 rtt_pkts=10
@@ -58,6 +58,7 @@ def launch_switch(num_sims, current_run):
 def launch_sim(sim, current_run, test_name):
     time.sleep(1)
     with cd("chipyard/sims/firesim/sim/generated-src/f1/FireSim-DDR3FRFCFSLLC4MB_FireSimLNICSingleRocketConfig-F90MHz_BaseF1Config"):
+        # TODO: The nic_mac_addr0 generation below is not generic enough!
         run("script -f -c \'sudo ./" + simulator +\
             " +permissive +vcs+initreg+0 +vcs+initmem+0 +fesvr-step-size=128 "\
             "+mm_relaxFunctionalModel=0 +mm_openPagePolicy=1 +mm_backendLatency=2 "\
@@ -70,8 +71,8 @@ def launch_sim(sim, current_run, test_name):
             "+mm_dramTimings_tWTR=8 +mm_rowAddr_offset=18 +mm_rowAddr_mask=65535 "\
             "+mm_rankAddr_offset=16 +mm_rankAddr_mask=3 +mm_bankAddr_offset=13 "\
             "+mm_bankAddr_mask=7 +mm_llc_wayBits=3 +mm_llc_setBits=12 +mm_llc_blockBits=7 +mm_llc_activeMSHRs=8 "\
-            "+shmemportname0=000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" + str(sim + 2) +\
-            " +nic_mac_addr0=00:26:E1:00:00:0" + str(sim + 2) + \
+            "+shmemportname0=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000%02d" % (sim + 2,) +\
+            " +nic_mac_addr0=00:26:E1:00:00:0" + (hex(sim + 2))[2:].upper() + \
             " +switch_mac_addr0=08:55:66:77:88:08 +nic_ip_addr0=10.0.0." + str(sim + 2) + \
             " +timeout_cycles0=" + str(timeout_cycles) + " +rtt_pkts0=" + str(rtt_pkts) + \
             " +niclog0=../../../../../../software/local_firesim/logs/" + current_run + "niclog" + str(sim) + \
