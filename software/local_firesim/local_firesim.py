@@ -4,15 +4,15 @@ import time
 import datetime
 import os
 
-link_latency = 280 # 140
+link_latency = 420 # 140
 switch_latency = 0
-# Buffer size: 93Pkt=101184 or 57KB=58751 
+# Buffer size: 110Pkt=119681 or 58Pkt=63105
 # Note that we leave extra room for ctrl packets
-high_priority_obuf = 93*1088+1 # 4375
-low_priority_obuf = 93*1088+1 # 4375
+high_priority_obuf = 58*1088+1 # 4375
+low_priority_obuf = 58*1088+1 # 4375
 # RTO of 6 us = 19200
-timeout_cycles = 19200 # 2240 
-rtt_pkts=10
+timeout_cycles = 100000 #19200 # 2240 
+rtt_pkts=12
 enable_waveforms = True
 simulator = 'VFireSim-debug' if enable_waveforms else 'VFireSim'
 
