@@ -5,6 +5,33 @@
 
 #include "lnic.h"
 
+#define REPEAT_2(X) X X
+#define REPEAT_4(X) REPEAT_2(X) REPEAT_2(X)
+#define REPEAT_8(X) REPEAT_4(X) REPEAT_4(X)
+#define REPEAT_16(X) REPEAT_8(X) REPEAT_8(X)
+#define REPEAT_32(X) REPEAT_16(X) REPEAT_16(X)
+#define REPEAT_64(X) REPEAT_32(X) REPEAT_32(X)
+#define REPEAT_128(X) REPEAT_64(X) REPEAT_64(X) // 1 pkt
+#define REPEAT_256(X) REPEAT_128(X) REPEAT_128(X) // 2 pkt
+#define REPEAT_512(X) REPEAT_256(X) REPEAT_256(X) // 4 pkt
+#define REPEAT_768(X) REPEAT_512(X) REPEAT_256(X) // 6 pkt
+#define REPEAT_1024(X) REPEAT_512(X) REPEAT_512(X) // 8 pkt
+#define REPEAT_1280(X) REPEAT_1024(X) REPEAT_256(X) // 10 pkt
+#define REPEAT_1536(X) REPEAT_1024(X) REPEAT_512(X) // 12 pkt
+#define REPEAT_1792(X) REPEAT_1024(X) REPEAT_768(X) // 14 pkt
+#define REPEAT_2048(X) REPEAT_1024(X) REPEAT_1024(X) // 16 pkt
+#define REPEAT_2304(X) REPEAT_1280(X) REPEAT_1024(X) // 18 pkt
+#define REPEAT_2560(X) REPEAT_1280(X) REPEAT_1280(X) // 20 pkt
+#define REPEAT_2816(X) REPEAT_2560(X) REPEAT_256(X) // 22 pkt
+#define REPEAT_3072(X) REPEAT_2560(X) REPEAT_512(X) // 24 pkt
+#define REPEAT_3328(X) REPEAT_2560(X) REPEAT_768(X) // 26 pkt
+#define REPEAT_3584(X) REPEAT_2560(X) REPEAT_1024(X) // 28 pkt
+#define REPEAT_3840(X) REPEAT_2560(X) REPEAT_1280(X) // 30 pkt
+#define REPEAT_4096(X) REPEAT_2560(X) REPEAT_1536(X) // 32 pkt
+#define REPEAT_4352(X) REPEAT_2560(X) REPEAT_1792(X) // 34 pkt
+#define REPEAT_4608(X) REPEAT_2560(X) REPEAT_2048(X) // 36 pkt
+#define REPEAT_4864(X) REPEAT_2560(X) REPEAT_2304(X) // 38 pkt
+
 #define PKT_LEN_WORDS 128
 
 #define NUM_CLIENTS 10
@@ -13,7 +40,7 @@
 uint64_t server_ip = 0x0a000002;
 
 // Server expects messages of distinct sizes from each client
-uint16_t expected_msg_len_pkts[] = {15, 17, 19, 21, 23, 25, 27, 29, 31, 32};
+uint16_t expected_msg_len_pkts[] = {14, 16, 18, 20, 22, 24, 26, 28, 30, 32};
 
 // use the last byte of the IP address to compute a unique ID for each client
 uint8_t client_ip_to_id(uint32_t addr) {
@@ -60,11 +87,96 @@ int run_client(uint32_t client_ip) {
   printf("%ld: Client sending to server!\n", rdcycle());
   app_hdr = (dst_ip << 32) | (dst_context << 16) | (msg_len_bytes);
   lnic_write_r(app_hdr);
-  now = rdcycle();
-  lnic_write_r(now);
-  for (i = 1; i < msg_len_words; i++) {
-    lnic_write_r(i);
+  // now = rdcycle();
+  // lnic_write_r(now);
+  // Optimize the msg sending logic for high throughput
+  if (msg_len_words == 14 * PKT_LEN_WORDS) {
+    goto write_14;
+  } else if (msg_len_words == 16 * PKT_LEN_WORDS) {
+    goto write_16;
+  } else if (msg_len_words == 18 * PKT_LEN_WORDS) {
+    goto write_18;
+  } else if (msg_len_words == 20 * PKT_LEN_WORDS) {
+    goto write_20;
+  } else if (msg_len_words == 22 * PKT_LEN_WORDS) {
+    goto write_22;
+  } else if (msg_len_words == 24 * PKT_LEN_WORDS) {
+    goto write_24;
+  } else if (msg_len_words == 26 * PKT_LEN_WORDS) {
+    goto write_26;
+  } else if (msg_len_words == 28 * PKT_LEN_WORDS) {
+    goto write_28;
+  } else if (msg_len_words == 30 * PKT_LEN_WORDS) {
+    goto write_30;
+  } else if (msg_len_words == 32 * PKT_LEN_WORDS) {
+    goto write_32;
+  } else if (msg_len_words == 34 * PKT_LEN_WORDS) {
+    goto write_34;
+  } else if (msg_len_words == 36 * PKT_LEN_WORDS) {
+    goto write_36;
+  } else if (msg_len_words == 38 * PKT_LEN_WORDS) {
+    goto write_38;
+  } else {
+    printf("Application is not throughput optimized for this message size: %d Bytes:\n", msg_len_words * LNIC_WORD_SIZE);
+    for (i = 0; i < msg_len_words; i++) {
+      lnic_write_r(i);
+    }
   }
+
+write_14: {
+  REPEAT_1792(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_16: {
+  REPEAT_2048(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_18: {
+  REPEAT_2304(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_20: {
+  REPEAT_2560(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_22: {
+  REPEAT_2816(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_24: {
+  REPEAT_3072(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_26: {
+  REPEAT_3328(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_28: {
+  REPEAT_3584(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_30: {
+  REPEAT_3840(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_32: {
+  REPEAT_4096(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_34: {
+  REPEAT_4352(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_36: {
+  REPEAT_4608(lnic_write_r(1);)
+  goto lnic_finish;
+}
+write_38: {
+  REPEAT_4864(lnic_write_r(1);)
+  goto lnic_finish;
+}
+
+lnic_finish:
   printf("&&CSV&&MsgSent,%ld,%d,%d\n", rdcycle(), client_ip_to_id(client_ip), msg_len_bytes);
 
   printf("Client %x complete!\n", client_ip);
@@ -137,11 +249,95 @@ int run_server() {
     // read all words of the msg
     num_words = msg_len_bytes/LNIC_WORD_SIZE;
     if (msg_len_bytes % LNIC_WORD_SIZE != 0) { num_words++; }
-    for (i = 0; i < num_words; i++) {
-      lnic_read();
+    if (num_words == 14 * PKT_LEN_WORDS) {
+      goto read_14;
+    } else if (num_words == 16 * PKT_LEN_WORDS) {
+      goto read_16;
+    } else if (num_words == 18 * PKT_LEN_WORDS) {
+      goto read_18;
+    } else if (num_words == 20 * PKT_LEN_WORDS) {
+      goto read_20;
+    } else if (num_words == 22 * PKT_LEN_WORDS) {
+      goto read_22;
+    } else if (num_words == 24 * PKT_LEN_WORDS) {
+      goto read_24;
+    } else if (num_words == 26 * PKT_LEN_WORDS) {
+      goto read_26;
+    } else if (num_words == 28 * PKT_LEN_WORDS) {
+      goto read_28;
+    } else if (num_words == 30 * PKT_LEN_WORDS) {
+      goto read_30;
+    } else if (num_words == 32 * PKT_LEN_WORDS) {
+      goto read_32;
+    } else if (num_words == 34 * PKT_LEN_WORDS) {
+      goto read_34;
+    } else if (num_words == 36 * PKT_LEN_WORDS) {
+      goto read_36;
+    } else if (num_words == 38 * PKT_LEN_WORDS) {
+      goto read_38;
+    } else {
+      // printf("Application is not throughput optimized for this message size: %d Bytes:\n", msg_len_bytes);
+      for (i = 0; i < num_words; i++) {
+        lnic_read();
+      }
     }
 
-    lnic_msg_done();
+read_14: {
+  REPEAT_1792(lnic_read();)
+  goto lnic_done;
+}
+read_16: {
+  REPEAT_2048(lnic_read();)
+  goto lnic_done;
+}
+read_18: {
+  REPEAT_2304(lnic_read();)
+  goto lnic_done;
+}
+read_20: {
+  REPEAT_2560(lnic_read();)
+  goto lnic_done;
+}
+read_22: {
+  REPEAT_2816(lnic_read();)
+  goto lnic_done;
+}
+read_24: {
+  REPEAT_3072(lnic_read();)
+  goto lnic_done;
+}
+read_26: {
+  REPEAT_3328(lnic_read();)
+  goto lnic_done;
+}
+read_28: {
+  REPEAT_3584(lnic_read();)
+  goto lnic_done;
+}
+read_30: {
+  REPEAT_3840(lnic_read();)
+  goto lnic_done;
+}
+read_32: {
+  REPEAT_4096(lnic_read();)
+  goto lnic_done;
+}
+read_34: {
+  REPEAT_4352(lnic_read();)
+  goto lnic_done;
+}
+read_36: {
+  REPEAT_4608(lnic_read();)
+  goto lnic_done;
+}
+read_38: {
+  REPEAT_4864(lnic_read();)
+  goto lnic_done;
+}
+
+lnic_done:
+  lnic_msg_done();
+
   }
 
   // make sure all msgs have been received
