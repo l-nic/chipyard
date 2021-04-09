@@ -350,14 +350,33 @@ class IceNICSimNetworkRocketConfig extends Config(
   new chipyard.iobinders.WithIceNICSimNetwork ++ // connect to SimNetwork
   new IceNICRocketConfig)
 
-class LNICSingleRocketConfig extends Config(
+class LNICNDPSingleRocketConfig extends Config(
   new chipyard.iobinders.WithUARTAdapter ++
   new chipyard.iobinders.WithTieOffInterrupts ++
   new chipyard.iobinders.WithBlackBoxSimMem ++
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
   new testchipip.WithTSI ++
-  new lnic.WithLNIC ++                        // add an LNIC
+  new lnic.WithLNIC("NDP") ++              // add an LNIC, which implements NDP
+  new chipyard.config.WithNoGPIO ++
+  new chipyard.config.WithBootROM ++
+  new chipyard.config.WithUART ++
+  new chipyard.config.WithL2TLBs(1024) ++
+  new freechips.rocketchip.subsystem.WithNoMMIOPort ++
+  new freechips.rocketchip.subsystem.WithNoSlavePort ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNExtTopInterrupts(0) ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
+class LNICHomaSingleRocketConfig extends Config(
+  new chipyard.iobinders.WithUARTAdapter ++
+  new chipyard.iobinders.WithTieOffInterrupts ++
+  new chipyard.iobinders.WithBlackBoxSimMem ++
+  new chipyard.iobinders.WithTiedOffDebug ++
+  new chipyard.iobinders.WithSimSerial ++
+  new testchipip.WithTSI ++
+  new lnic.WithLNIC("Homa") ++             // add an LNIC, which implements Homa
   new chipyard.config.WithNoGPIO ++
   new chipyard.config.WithBootROM ++
   new chipyard.config.WithUART ++
@@ -376,7 +395,7 @@ class LNICDualRocketConfig extends Config(
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
   new testchipip.WithTSI ++
-  new lnic.WithLNIC ++                        // add an LNIC
+  new lnic.WithLNIC("NDP") ++                        // add an LNIC
   new chipyard.config.WithNoGPIO ++
   new chipyard.config.WithBootROM ++
   new chipyard.config.WithUART ++
@@ -395,7 +414,7 @@ class LNICQuadRocketConfig extends Config(
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
   new testchipip.WithTSI ++
-  new lnic.WithLNIC ++                        // add an LNIC
+  new lnic.WithLNIC("NDP") ++                        // add an LNIC
   new chipyard.config.WithNoGPIO ++
   new chipyard.config.WithBootROM ++
   new chipyard.config.WithUART ++
@@ -414,7 +433,7 @@ class LNICOctaRocketConfig extends Config(
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
   new testchipip.WithTSI ++
-  new lnic.WithLNIC ++                        // add an LNIC
+  new lnic.WithLNIC("NDP") ++                        // add an LNIC
   new chipyard.config.WithNoGPIO ++
   new chipyard.config.WithBootROM ++
   new chipyard.config.WithUART ++
@@ -433,7 +452,7 @@ class LNICSixteenCoreRocketConfig extends Config(
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
   new testchipip.WithTSI ++
-  new lnic.WithLNIC ++                        // add an LNIC
+  new lnic.WithLNIC("NDP") ++                        // add an LNIC
   new chipyard.config.WithNoGPIO ++
   new chipyard.config.WithBootROM ++
   new chipyard.config.WithUART ++
@@ -452,7 +471,7 @@ class LNICThirtyTwoCoreRocketConfig extends Config(
   new chipyard.iobinders.WithTiedOffDebug ++
   new chipyard.iobinders.WithSimSerial ++
   new testchipip.WithTSI ++
-  new lnic.WithLNIC ++                        // add an LNIC
+  new lnic.WithLNIC("NDP") ++                        // add an LNIC
   new chipyard.config.WithNoGPIO ++
   new chipyard.config.WithBootROM ++
   new chipyard.config.WithUART ++
@@ -464,9 +483,13 @@ class LNICThirtyTwoCoreRocketConfig extends Config(
   new freechips.rocketchip.subsystem.WithNBigCores(32) ++
   new freechips.rocketchip.system.BaseConfig)
 
-class LNICSimNetworkSingleRocketConfig extends Config(
+class LNICNDPSimNetworkSingleRocketConfig extends Config(
   new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
-  new LNICSingleRocketConfig)
+  new LNICNDPSingleRocketConfig)
+
+class LNICHomaSimNetworkSingleRocketConfig extends Config(
+  new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
+  new LNICHomaSingleRocketConfig)
 
 class LNICSimNetworkDualRocketConfig extends Config(
   new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
