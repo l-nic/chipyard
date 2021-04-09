@@ -1,6 +1,7 @@
 
 from scapy.all import *
-from LNIC_headers import LNIC
+from NDP_headers import NDP
+from Homa_headers import Homa
 from heapq import heappush, heappop
 import time
 
@@ -55,19 +56,25 @@ class SimNetwork:
 
         drop = False
 
-        if pkt[LNIC].flags.DATA:
+        proto = None
+        if pkt.haslayer(NDP):
+          proto = NDP
+        elif pkt.haslayer(Homa):
+          proto = Homa
+
+        if pkt[proto].flags.DATA:
             self.data_pkt_counter += 1
 
             # trim data pkts with deterministic frequency
             if TRIM_FREQ > 0 and self.data_pkt_counter % TRIM_FREQ == 0:
-                pkt[LNIC].flags.CHOP = True
+                pkt[proto].flags.CHOP = True
                 if len(pkt) > 65:
                     pkt = Ether(str(pkt)[0:65])
 
             if DATA_DROP_FREQ > 0 and self.data_pkt_counter % DATA_DROP_FREQ == 0:
                 drop = True
 
-        if not pkt[LNIC].flags.DATA:
+        if not pkt[proto].flags.DATA:
             self.ctrl_pkt_counter += 1
 
             if CTRL_DROP_FREQ > 0 and self.ctrl_pkt_counter % CTRL_DROP_FREQ == 0:
@@ -98,8 +105,7 @@ class SimNetwork:
             self.sniffer.stop()
             print 'All TX pkts:'
             for p in self.pkt_log:
-                assert LNIC in p, "LNIC header not in sniffed packet!"
-                print '{} -- DATA ({} bytes)'.format(p.summary(), len(p[LNIC].payload))
+                print '{} -- ({} bytes)'.format(p.summary(), len(p))
 
 def main():
     SimNetwork()

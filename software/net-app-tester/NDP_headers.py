@@ -2,10 +2,10 @@
 from scapy.all import *
 import struct
 
-LNIC_PROTO = 0x99
+NDP_PROTO = 0x99
 
-class LNIC(Packet):
-    name = "LNIC"
+class NDP(Packet):
+    name = "NDP"
     fields_desc = [
         FlagsField("flags", 0, 8, ["DATA", "ACK", "NACK", "PULL",
                                    "CHOP", "F1", "F2", "F3"]),
@@ -22,5 +22,5 @@ class LNIC(Packet):
     def mysummary(self):
         return self.sprintf("flags=%flags%, src=%src_context%, dst=%dst_context%, msg_len=%msg_len%, pkt_offset=%pkt_offset%, pull_offset=%pull_offset%, tx_msg_id=%tx_msg_id%")
 
-bind_layers(IP, LNIC, proto=LNIC_PROTO)
+bind_layers(IP, NDP, proto=NDP_PROTO)
 
