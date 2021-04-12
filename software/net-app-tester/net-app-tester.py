@@ -1,7 +1,7 @@
 
 import unittest
 from scapy.all import *
-from LNIC_headers import LNIC
+from NDP_headers import NDP
 from LNIC_utils import *
 import Loopback_headers as Loopback
 import DotProd_headers as DotProd
@@ -42,7 +42,7 @@ LOG_DIR = 'results'
 def lnic_pkt(msg_len, pkt_offset, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=MY_IP, tx_msg_id=0):
     return Ether(dst=NIC_MAC, src=MY_MAC) / \
             IP(src=src_ip, dst=NIC_IP) / \
-            LNIC(flags='DATA', src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset, tx_msg_id=tx_msg_id)
+            NDP(flags='DATA', src_context=src_context, dst_context=dst_context, msg_len=msg_len, pkt_offset=pkt_offset, tx_msg_id=tx_msg_id)
 
 def write_csv(dname, fname, df):
     log_dir = os.path.join(LOG_DIR, dname)
@@ -58,7 +58,7 @@ def print_pkts(pkts):
       hexdump(pkts[i])
 
 def packetize(msg, src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, src_ip=MY_IP):
-    """Generate LNIC pkts for the given msg
+    """Generate NDP pkts for the given msg
     """
     num_pkts = compute_num_pkts(len(msg))
     pkts = []
@@ -73,7 +73,7 @@ def wait_boot_pkt(prn):
     """Wait for a boot pkt from the simulated host.
        prn: a function to process each received packet.
     """
-    filt = lambda p: p.haslayer(LNIC) and p[LNIC].flags.DATA and p[Ether].src == NIC_MAC
+    filt = lambda p: p.haslayer(NDP) and p[NDP].flags.DATA and p[Ether].src == NIC_MAC
     sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=filt, prn=prn, count=1)
     sniffer.start()
     sniffer.join()
@@ -81,7 +81,7 @@ def wait_boot_pkt(prn):
 class LoopbackTest(unittest.TestCase):
     num_msgs = 20
     def setUp(self):
-        bind_layers(LNIC, Loopback.Loopback)
+        bind_layers(NDP, Loopback.Loopback)
 
     def config_msg(self, num_msgs):
         msg_len = len(Loopback.Loopback() / Loopback.Config())
@@ -100,7 +100,7 @@ class LoopbackTest(unittest.TestCase):
 #        print "*********** Request Pkts: ***********"
 #        print_pkts(pkts)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].src == NIC_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].src == NIC_MAC,
                     prn=prn, count=1, timeout=100)
 
         sniffer.start()
@@ -114,7 +114,7 @@ class LoopbackTest(unittest.TestCase):
 #        print_pkts(sniffer.results)
         return sniffer.results
     def test_latency_basic_lnic(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.latency_basic_test(prn=receiver.process_pkt)
     def test_latency_basic_icenic(self):
         self.latency_basic_test(prn=None)
@@ -129,7 +129,7 @@ class LoopbackTest(unittest.TestCase):
         time = struct.unpack('!L', str(p)[-8:-4])[0]
         print "latency = {} cycles".format(latency)
     def test_latency_lnic(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.latency_test(prn=receiver.process_pkt, fname='lnic_msg_len_latency.csv')
     def test_latency_icenic(self):
         self.latency_test(prn=None, fname='icenic_msg_len_latency.csv')
@@ -159,9 +159,9 @@ class LoopbackTest(unittest.TestCase):
         inputs += [self.data_req(msg_len) for i in range(LoopbackTest.num_msgs)]
         # assign unique ID to each msg
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+            p[NDP].tx_msg_id = i
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=LoopbackTest.num_msgs, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -180,7 +180,7 @@ class LoopbackTest(unittest.TestCase):
         return throughput_gbps
 
     def test_throughput_basic_lnic(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.throughput_basic_test(prn=receiver.process_pkt)
     def test_throughput_basic_icenic(self):
         self.throughput_basic_test(prn=None)
@@ -190,7 +190,7 @@ class LoopbackTest(unittest.TestCase):
         throughput = self.do_throughput_test(msg_len, prn)
 
     def test_throughput_lnic(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.throughput_test(prn=receiver.process_pkt, fname='lnic_msg_len_throughput.csv')
     def test_throughput_icenic(self):
         self.throughput_test(prn=None, fname='icenic_msg_len_throughput.csv')
@@ -237,7 +237,7 @@ class LoopbackTest(unittest.TestCase):
 class StreamTest(unittest.TestCase):
     num_msgs = 30
     def setUp(self):
-        bind_layers(LNIC, Loopback.Loopback)
+        bind_layers(NDP, Loopback.Loopback)
 
     def config_msg(self, num_msgs):
         msg_len = len(Loopback.Loopback() / Loopback.Config())
@@ -258,9 +258,9 @@ class StreamTest(unittest.TestCase):
         inputs += [self.data_req(msg_len) for i in range(StreamTest.num_msgs)]
         # assign unique ID to each msg
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+            p[NDP].tx_msg_id = i
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=StreamTest.num_msgs, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -279,7 +279,7 @@ class StreamTest(unittest.TestCase):
         return throughput_gbps
 
     def test_throughput_basic_lnic(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.throughput_basic_test(prn=receiver.process_pkt)
     def test_throughput_basic_icenic(self):
         self.throughput_basic_test(prn=None)
@@ -289,7 +289,7 @@ class StreamTest(unittest.TestCase):
         throughput = self.do_test(msg_len, prn)
 
     def test_throughput_lnic(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.throughput_test(prn=receiver.process_pkt, fname='lnic_msg_len_throughput.csv')
     def test_throughput_icenic(self):
         self.throughput_test(prn=None, fname='icenic_msg_len_throughput.csv')
@@ -308,7 +308,7 @@ class DotProdTest(unittest.TestCase):
     num_weights = 2000
     num_msgs = 30
     def setUp(self):
-        bind_layers(LNIC, DotProd.DotProd)
+        bind_layers(NDP, DotProd.DotProd)
 
     def config_msg(self, num_msgs):
         msg_len = len(DotProd.DotProd() / DotProd.Config())
@@ -329,9 +329,9 @@ class DotProdTest(unittest.TestCase):
         inputs += [self.data_req(num_words) for i in range(DotProdTest.num_msgs)]
         # assign unique ID to each msg
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+            p[NDP].tx_msg_id = i
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=DotProdTest.num_msgs, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -349,7 +349,7 @@ class DotProdTest(unittest.TestCase):
         return latency, misses
 
     def test_basic_lnic(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.basic_test(prn=receiver.process_pkt)
     def test_basic_icenic(self):
         self.basic_test(prn=None)
@@ -360,10 +360,10 @@ class DotProdTest(unittest.TestCase):
         print 'Latency = {} cycles/msg, D$ misses/msg = {}'.format(latency, misses)
 
     def test_num_words_lnic_opt(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.num_words_test(prn=receiver.process_pkt, fname='lnic_opt_num_words_latency.csv')
     def test_num_words_lnic_naive(self):
-        receiver = LNICReceiver(TEST_IFACE) # Need to send NDP control packets
+        receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         self.num_words_test(prn=receiver.process_pkt, fname='lnic_naive_num_words_latency.csv')
     def test_num_words_icenic(self):
         self.num_words_test(prn=None, fname='icenic_num_words_latency.csv')
@@ -389,11 +389,11 @@ class DotProdTest(unittest.TestCase):
         num_words = 125
         p = self.data_req(num_words)
 
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         prn = receiver.process_pkt
 
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=1, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -415,7 +415,7 @@ class DotProdTest(unittest.TestCase):
 
 class NNInference(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, NN.NN)
+        bind_layers(NDP, NN.NN)
 
     @staticmethod
     def config_msg(num_edges):
@@ -444,12 +444,12 @@ class NNInference(unittest.TestCase):
         inputs += [NNInference.data_msg(i, i+1) for i in range(num_edges)]
         # assign unique tx msg ID to each msg
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+            p[NDP].tx_msg_id = i
         # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         prn = receiver.process_pkt
         # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=1, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -484,7 +484,7 @@ class NNInference(unittest.TestCase):
 
 class OthelloTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, Othello.Othello)
+        bind_layers(NDP, Othello.Othello)
 
     @staticmethod
     def map_msg(board, max_depth, cur_depth, src_host_id, src_msg_ptr):
@@ -502,7 +502,7 @@ class OthelloTest(unittest.TestCase):
 
     def do_internal_node_test(self, fanout):
         # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         prn = receiver.process_pkt
 
         # send in initial map msg and receive outgoing map messages
@@ -510,7 +510,7 @@ class OthelloTest(unittest.TestCase):
         parent_msg_ptr = 0x1234
         req = OthelloTest.map_msg(board=fanout, max_depth=2, cur_depth=1, src_host_id=parent_id, src_msg_ptr=parent_msg_ptr)
         # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=fanout, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -531,7 +531,7 @@ class OthelloTest(unittest.TestCase):
                 minimax_val=1))
             map_latency = p[Othello.Map].latency
         # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=1, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -572,7 +572,7 @@ class OthelloTest(unittest.TestCase):
 class NBodyTest(unittest.TestCase):
     G = 667e2
     def setUp(self):
-        bind_layers(LNIC, NBody.NBody)
+        bind_layers(NDP, NBody.NBody)
 
     def config_msg(self, xcom, ycom, num_msgs):
         msg_len = len(NBody.NBody() / NBody.Config())
@@ -586,7 +586,7 @@ class NBodyTest(unittest.TestCase):
 
     def do_test(self, num_msgs):
         # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         prn = receiver.process_pkt
 
         inputs = []
@@ -599,9 +599,9 @@ class NBodyTest(unittest.TestCase):
         inputs += [self.traversal_req(xpos, ypos) for i in range(num_msgs)]
         # assign unique ID to each msg
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+            p[NDP].tx_msg_id = i
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=num_msgs, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -638,7 +638,7 @@ class NBodyTest(unittest.TestCase):
 
 class ServiceTimeTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, ServiceTime.ServiceTime)
+        bind_layers(NDP, ServiceTime.ServiceTime)
 
     def config_msg(self, num_msgs):
         msg_len = len(ServiceTime.ServiceTime() / ServiceTime.Config())
@@ -653,7 +653,7 @@ class ServiceTimeTest(unittest.TestCase):
 
     def do_test(self, service_time, pad_bytes):
         # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         prn = receiver.process_pkt
 
         num_msgs = 40
@@ -663,9 +663,9 @@ class ServiceTimeTest(unittest.TestCase):
         inputs += [self.data_req(service_time, pad_bytes) for i in range(num_msgs)]
         # assign unique ID to each msg
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i
+            p[NDP].tx_msg_id = i
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[Ether].dst == MY_MAC,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[Ether].dst == MY_MAC,
                     prn=prn, count=num_msgs, timeout=100)
         sniffer.start()
         time.sleep(1)
@@ -698,7 +698,7 @@ class ServiceTimeTest(unittest.TestCase):
 
 class ThroughputTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, Throughput.Throughput)
+        bind_layers(NDP, Throughput.Throughput)
 
     def start_rx_msg(self, num_msgs):
         msg = Throughput.Throughput() / Throughput.StartRx(num_msgs=num_msgs) / Raw('\x00'*8)
@@ -718,9 +718,9 @@ class ThroughputTest(unittest.TestCase):
         pkts += [self.start_rx_msg(num_msgs)]
         for i in range(num_msgs):
             pkts += [self.data_msg(msg_len)]
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # start sniffing for DONE msg
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(NDP) and x[NDP].flags.DATA and x[IP].src == NIC_IP,
                     prn=receiver.process_pkt, count=1, timeout=100)
         sniffer.start()
         # send in pkts
@@ -730,16 +730,16 @@ class ThroughputTest(unittest.TestCase):
         self.assertEqual(1, len(sniffer.results))
         done_msg = sniffer.results[0]
         total_latency = struct.unpack('!L', str(done_msg)[-4:])[0]
-        total_bytes = (len(Ether()/IP()/LNIC()) + msg_len)*num_msgs
+        total_bytes = (len(Ether()/IP()/NDP()) + msg_len)*num_msgs
         throughput = total_bytes/float(total_latency)
         return throughput # bytes/cycle
 
     def do_tx_test(self, num_msgs, msg_len):
         # test TX throughput - how fast can the application generate pkts?
         start_msg = self.start_tx_msg(num_msgs, msg_len)
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # start sniffing for generated msgs
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(NDP) and x[NDP].flags.DATA and x[IP].src == NIC_IP,
                     prn=receiver.process_pkt, count=num_msgs, timeout=100)
         sniffer.start()
         # send in START msg
@@ -748,7 +748,7 @@ class ThroughputTest(unittest.TestCase):
         sniffer.join()
         self.assertEqual(num_msgs, len(sniffer.results))
         for p in sniffer.results:
-            self.assertEqual(len(Ether()/IP()/LNIC()) + msg_len, len(p))
+            self.assertEqual(len(Ether()/IP()/NDP()) + msg_len, len(p))
         final_msg = sniffer.results[-1]
         total_latency = struct.unpack('!L', str(final_msg)[-4:])[0]
         total_bytes = reduce(lambda a,b: a+b, map(len, sniffer.results))
@@ -772,13 +772,13 @@ class ThroughputTest(unittest.TestCase):
 
 class INTCollectorTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, INT.NetworkEvent, dst_context=INT.UPSTREAM_COLLECTOR_PORT)
-        bind_layers(LNIC, INT.DoneMsg, dst_context=LATENCY_CONTEXT)
+        bind_layers(NDP, INT.NetworkEvent, dst_context=INT.UPSTREAM_COLLECTOR_PORT)
+        bind_layers(NDP, INT.DoneMsg, dst_context=LATENCY_CONTEXT)
 
     def INT_report(self, flow_dst_port, tx_msg_id, int_metadata):
         p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
             IP(src=MY_IP, dst=NIC_IP, tos=0x17<<2)/ \
-            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=tx_msg_id)/ \
+            NDP(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=tx_msg_id)/ \
             INT.Padding()/ \
             INT.TelemetryReport_v1(ingressTimestamp=1524138290)/ \
             Ether()/ \
@@ -787,7 +787,7 @@ class INTCollectorTest(unittest.TestCase):
             INT.INT_v1(length=3 + len(int_metadata), hopMLen=8, ins=(1<<7|1<<6|1<<5|1<<4|1<<3|1<<2|1<<1|1)<<8,
                 INTMetadata=int_metadata)/ \
             ('\x00'*8) # padding so the HW can insert a timestamp
-        p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        p[NDP].msg_len = len(p) - len(Ether()/IP()/NDP())
         print "len(INT report) = {} bytes".format(len(p))
         print "len(int_metadata) = {}".format(len(int_metadata))
         return p
@@ -795,7 +795,7 @@ class INTCollectorTest(unittest.TestCase):
     def INT_opt_report(self, flow_dst_port, tx_msg_id, int_metadata):
         p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
             IP(src=MY_IP, dst=NIC_IP, tos=0x17<<2)/ \
-            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=tx_msg_id)/ \
+            NDP(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=0, tx_msg_id=tx_msg_id)/ \
             INT.Padding()/ \
             INT.TelemetryReport_v1(ingressTimestamp=1524138290)/ \
             Ether()/ \
@@ -804,7 +804,7 @@ class INTCollectorTest(unittest.TestCase):
             INT.INT_opt(length=3 + len(int_metadata)*2, hopMLen=16, ins=(1<<7|1<<6|1<<5|1<<4|1<<3|1<<2|1<<1|1)<<8,
                 INTMetadata=int_metadata)/ \
             ('\x00'*8) # padding so the HW can insert a timestamp
-        p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        p[NDP].msg_len = len(p) - len(Ether()/IP()/NDP())
         return p
 
     def INT_metadata(self, swid, l1_ingress_port, l1_egress_port, hop_latency, qid, qsize,
@@ -859,18 +859,18 @@ class INTCollectorTest(unittest.TestCase):
         #NOTE: we will use the flow_dst_port to index the flow state for now ...
         report = self.INT_report(flow_dst_port=0, tx_msg_id=0, int_metadata=int_metadata)
         inputs = [report.copy() for i in range(NUM_REPORTS)]
-        # assign a unique LNIC tx_msg_id to each report so that the NIC can properly reassemble
+        # assign a unique NDP tx_msg_id to each report so that the NIC can properly reassemble
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i % 128
+            p[NDP].tx_msg_id = i % 128
 
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # Create two sniffers, one to listen for NetworkEvents
         # and one to listen for the final done msg
         # start sniffing for responses
         exp_num_events = 2 + 3*NUM_HOPS
-        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.NetworkEvent) and x[LNIC].flags.DATA,
+        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.NetworkEvent) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=exp_num_events, timeout=300)
-        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=1, timeout=300)
         event_sniffer.start()
         done_sniffer.start()
@@ -891,28 +891,28 @@ class INTCollectorTest(unittest.TestCase):
 
 class INTHHTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, INT.HH_header, dst_context=LATENCY_CONTEXT)
+        bind_layers(NDP, INT.HH_header, dst_context=LATENCY_CONTEXT)
 
     def INT_report(self, dst_context, flow_id):
         pkt_len = 1500
         ingress_switch_ip = 0x0a010100
         p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
             IP(src=MY_IP, dst=NIC_IP)/ \
-            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=dst_context)/ \
+            NDP(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=dst_context)/ \
             INT.INT_HH_report(src_ip='10.2.2.2', dst_ip='10.3.3.3', src_port=0, dst_port=flow_id, proto=0,
                           pkt_len=pkt_len, ingress_switch_ip=ingress_switch_ip)
 
-        p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        p[NDP].msg_len = len(p) - len(Ether()/IP()/NDP())
         return p
 
     def do_hh_test(self, inputs, num_cores, exp_num_events):
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # Create two sniffers, one to listen for NetworkEvents
         # and one to listen for the final done msg
         # start sniffing for responses
-        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.HH_event) and x[LNIC].flags.DATA,
+        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.HH_event) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=exp_num_events, timeout=300) if exp_num_events > 0 else None
-        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=num_cores, timeout=300)
         if event_sniffer is not None:
             event_sniffer.start()
@@ -943,7 +943,7 @@ class INTHHTest(unittest.TestCase):
 #        for i in range(NUM_REPORTS_PER_CORE):
 #            for c in range(NUM_CORES):
 #                p = self.INT_report(dst_context=c, flow_id=0)
-#                p[LNIC].tx_msg_id = (c*NUM_REPORTS_PER_CORE + i) % 128
+#                p[NDP].tx_msg_id = (c*NUM_REPORTS_PER_CORE + i) % 128
 #                p[INT.INT_HH_report].report_timestamp = i*5000
 #                p[INT.INT_HH_report].flow_flags.DATA = True
 #                if i == 0:
@@ -962,7 +962,7 @@ class INTHHTest(unittest.TestCase):
 #        for f in range(NUM_FLOWS):
 #            for i in range(NUM_REPORTS_PER_FLOW):
 #                p = self.INT_report(dst_context=0, flow_id=f)
-#                p[LNIC].tx_msg_id = (f*NUM_FLOWS + i) % 128
+#                p[NDP].tx_msg_id = (f*NUM_FLOWS + i) % 128
 #                p[INT.INT_HH_report].report_timestamp = i*5000
 #                p[INT.INT_HH_report].flow_flags.DATA = True
 #                if i == 0:
@@ -980,7 +980,7 @@ class INTHHTest(unittest.TestCase):
         inputs = []
         for i in range(NUM_REPORTS):
             p = self.INT_report(dst_context=0, flow_id=0)
-            p[LNIC].tx_msg_id = i % 128
+            p[NDP].tx_msg_id = i % 128
             p[INT.INT_HH_report].report_timestamp = i*500
             p[INT.INT_HH_report].flow_flags.DATA = True
             if i == 0:
@@ -992,17 +992,17 @@ class INTHHTest(unittest.TestCase):
 
 class INTPathLatencyTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, INT.HH_header, dst_context=LATENCY_CONTEXT)
+        bind_layers(NDP, INT.HH_header, dst_context=LATENCY_CONTEXT)
 
     def INT_report(self, dst_context, flow_id, hop_latencies):
         pkt_len = 1500
         p = Ether(dst=NIC_MAC, src=MY_MAC)/ \
             IP(src=MY_IP, dst=NIC_IP)/ \
-            LNIC(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=dst_context)/ \
+            NDP(flags='DATA', src_context=LATENCY_CONTEXT, dst_context=dst_context)/ \
             INT.INT_PathLatency_report(src_ip='10.2.2.2', dst_ip='10.3.3.3', src_port=0, dst_port=flow_id, proto=0,
                           num_hops=len(hop_latencies), hop_latencies=hop_latencies)
 
-        p[LNIC].msg_len = len(p) - len(Ether()/IP()/LNIC())
+        p[NDP].msg_len = len(p) - len(Ether()/IP()/NDP())
         return p
 
     def test_path_latency(self):
@@ -1023,11 +1023,11 @@ class INTPathLatencyTest(unittest.TestCase):
                 inputs.append(p)
 
         for p, i in zip(inputs, range(len(inputs))):
-            p[LNIC].tx_msg_id = i % 128
+            p[NDP].tx_msg_id = i % 128
 
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
 
-        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[LNIC].flags.DATA,
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.DoneMsg) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=NUM_CORES, timeout=300)
         done_sniffer.start()
         sendp(inputs, iface=TEST_IFACE)
@@ -1039,7 +1039,7 @@ class INTPathLatencyTest(unittest.TestCase):
         p = self.INT_report(dst_context=0, flow_id=0, hop_latencies=hop_latencies)
         p[INT.INT_PathLatency_report].flow_flags.DATA = True
 
-        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.PathLatencyAnomaly_event) and x[LNIC].flags.DATA,
+        event_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(INT.PathLatencyAnomaly_event) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=1, timeout=300)
         event_sniffer.start()
         sendp(p, iface=TEST_IFACE)
@@ -1057,9 +1057,9 @@ class INTPathLatencyTest(unittest.TestCase):
 
 class PostcardOptTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, Postcard.RawPostcard, dst_context=0)
-        bind_layers(LNIC, Postcard.AggPostcard, dst_context=Postcard.UPSTREAM_COLLECTOR_PORT)
-        bind_layers(LNIC, Postcard.DoneMsg, dst_context=LATENCY_CONTEXT)
+        bind_layers(NDP, Postcard.RawPostcard, dst_context=0)
+        bind_layers(NDP, Postcard.AggPostcard, dst_context=Postcard.UPSTREAM_COLLECTOR_PORT)
+        bind_layers(NDP, Postcard.DoneMsg, dst_context=LATENCY_CONTEXT)
 
     def raw_postcard(self, num_hops, pkt_offset, tx_msg_id):
         msg_len = len(Postcard.RawPostcard())*num_hops
@@ -1079,13 +1079,13 @@ class PostcardOptTest(unittest.TestCase):
             # be reassembled by the NIC.
             inputs += [self.raw_postcard(NUM_HOPS, pkt_offset=j, tx_msg_id=i) for j in range(NUM_HOPS)]
 
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # Create two sniffers, one to listen for aggregated postcards
         # and one to listen for the final done msg
         # start sniffing for responses
-        postcard_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.AggPostcard) and x[LNIC].flags.DATA,
+        postcard_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.AggPostcard) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=NUM_PKTS, timeout=200)
-        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.DoneMsg) and x[LNIC].flags.DATA,
+        done_sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Postcard.DoneMsg) and x[NDP].flags.DATA,
                     prn=receiver.process_pkt, count=1, timeout=200)
         postcard_sniffer.start()
         done_sniffer.start()
@@ -1103,12 +1103,12 @@ class PostcardOptTest(unittest.TestCase):
 
 class SchedulerTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, DummyApp.DummyApp)
+        bind_layers(NDP, DummyApp.DummyApp)
 
     def app_msg(self, dst_context, service_time, pkt_len):
-        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        msg_len = pkt_len - len(Ether()/IP()/NDP())
         return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
-               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/NDP()/DummyApp.DummyApp())))
 
     def test_scheduler(self):
         num_c0_msgs = 30
@@ -1125,12 +1125,12 @@ class SchedulerTest(unittest.TestCase):
         # set tx_msg_ids
         tx_msg_id = 0
         for p in inputs:
-            p[LNIC].tx_msg_id = tx_msg_id % 128
+            p[NDP].tx_msg_id = tx_msg_id % 128
             tx_msg_id += 1
 
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[NDP].dst_context == LATENCY_CONTEXT,
                     prn=receiver.process_pkt, count=num_c0_msgs + num_c1_msgs, timeout=200)
         sniffer.start()
         # send in pkts
@@ -1144,13 +1144,13 @@ class SchedulerTest(unittest.TestCase):
         latency = []
         service_time = []
         for p in sniffer.results:
-            self.assertTrue(p.haslayer(LNIC))
+            self.assertTrue(p.haslayer(NDP))
             l = struct.unpack('!L', str(p)[-4:])[0]
             t = struct.unpack('!L', str(p)[-8:-4])[0]
             s = p[DummyApp.DummyApp].service_time
-            self.assertTrue(p[LNIC].src_context in [0, 1])
+            self.assertTrue(p[NDP].src_context in [0, 1])
             time.append(t)
-            context.append(p[LNIC].src_context)
+            context.append(p[NDP].src_context)
             latency.append(l)
             service_time.append(s)
         # record latencies in a DataFrame
@@ -1160,12 +1160,12 @@ class SchedulerTest(unittest.TestCase):
 
 class LoadBalanceTest(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, DummyApp.DummyApp)
+        bind_layers(NDP, DummyApp.DummyApp)
 
     def app_msg(self, dst_context, service_time, pkt_len):
-        msg_len = pkt_len - len(Ether()/IP()/LNIC())
+        msg_len = pkt_len - len(Ether()/IP()/NDP())
         return lnic_pkt(msg_len, 0, src_context=LATENCY_CONTEXT, dst_context=dst_context) / DummyApp.DummyApp(service_time=service_time) / \
-               Raw('\x00'*(pkt_len - len(Ether()/IP()/LNIC()/DummyApp.DummyApp())))
+               Raw('\x00'*(pkt_len - len(Ether()/IP()/NDP()/DummyApp.DummyApp())))
 
     def test_load_balance(self):
         num_msgs = 50
@@ -1179,9 +1179,9 @@ class LoadBalanceTest(unittest.TestCase):
             p = self.app_msg(ctx, service_time, 128)
             inputs.append(p)
 
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == LATENCY_CONTEXT,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[NDP].dst_context == LATENCY_CONTEXT,
                     prn=receiver.process_pkt, count=num_msgs, timeout=200)
         sniffer.start()
         # send in pkts
@@ -1195,13 +1195,13 @@ class LoadBalanceTest(unittest.TestCase):
         latency = []
         service_time = []
         for p in sniffer.results:
-            self.assertTrue(p.haslayer(LNIC))
+            self.assertTrue(p.haslayer(NDP))
             s = p[DummyApp.DummyApp].service_time
             l = struct.unpack('!L', str(p)[-4:])[0]
             t = struct.unpack('!L', str(p)[-8:-4])[0]
-            self.assertTrue(p[LNIC].src_context < num_contexts)
+            self.assertTrue(p[NDP].src_context < num_contexts)
             time.append(t)
-            context.append(p[LNIC].src_context)
+            context.append(p[NDP].src_context)
             latency.append(l)
             service_time.append(s)
         # record latencies in a DataFrame
@@ -1214,9 +1214,9 @@ class Mica(unittest.TestCase):
         print "*********** Request Pkts: ***********"
         print_pkts(pkts)
         # send request pkts / receive response pkts
-        receiver = LNICReceiver(TEST_IFACE)
+        receiver = NDPReceiver(TEST_IFACE)
         # start sniffing for responses
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and x[LNIC].dst_context == DEFAULT_CONTEXT,
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and x[NDP].dst_context == DEFAULT_CONTEXT,
                     prn=receiver.process_pkt, count=len(pkts), timeout=10)
         sniffer.start()
         # send in pkts
@@ -1245,20 +1245,20 @@ class Mica(unittest.TestCase):
 
 class ChainReplication(unittest.TestCase):
     def setUp(self):
-        bind_layers(LNIC, ChainRep)
+        bind_layers(NDP, ChainRep)
 
     @staticmethod
     def read_msg(nodes=[NIC_IP], key=0):
         cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_READ, seq=0, key=key, value=0)
         return Ether(dst=NIC_MAC, src=MY_MAC) / \
                 IP(src=MY_IP, dst=nodes[0][0]) / \
-                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+                NDP(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
     @staticmethod
     def write_msg(nodes=[NIC_IP], seq=0, key=0, val=0):
         cr_hdr = ChainRep(flags='FROM_TEST', nodes=nodes[1:], client_ip=MY_IP, op=CHAINREP_OP_WRITE, seq=seq, key=key, value=val)
         return Ether(dst=NIC_MAC, src=MY_MAC) / \
                 IP(src=MY_IP, dst=nodes[0][0]) / \
-                LNIC(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
+                NDP(flags='DATA', src_context=DEFAULT_CONTEXT, dst_context=nodes[0][1], msg_len=len(cr_hdr), pkt_offset=0) / cr_hdr
 
     def stop_filter(self, p):
         return p[IP].dst == MY_IP
@@ -1271,8 +1271,8 @@ class ChainReplication(unittest.TestCase):
         sendp([resp], iface=TEST_IFACE)
 
     def test_write(self):
-        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
+        receiver = NDPReceiver(TEST_IFACE, prn=self.fwd_pkt)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and not x[ChainRep].flags.FROM_TEST,
                     prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
         sniffer.start()
         nodes = [(NIC_IP, 0), (NIC_IP, 1), (NIC_IP, 2)]
@@ -1293,8 +1293,8 @@ class ChainReplication(unittest.TestCase):
         self.assertEqual(p3[IP].dst, req[ChainRep].client_ip)
 
     def test_read(self):
-        receiver = LNICReceiver(TEST_IFACE, prn=self.fwd_pkt)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(LNIC) and x[LNIC].flags.DATA and not x[ChainRep].flags.FROM_TEST,
+        receiver = NDPReceiver(TEST_IFACE, prn=self.fwd_pkt)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(NDP) and x[NDP].flags.DATA and not x[ChainRep].flags.FROM_TEST,
                     prn=receiver.process_pkt, stop_filter=self.stop_filter, timeout=100)
         sniffer.start()
         req = ChainReplication.read_msg(nodes=[(NIC_IP, 2)], key=3)
@@ -1308,8 +1308,8 @@ class ChainReplication(unittest.TestCase):
 
 class CacheTest(unittest.TestCase):
     def do_loopback(self, pkts):
-        receiver = LNICReceiver(TEST_IFACE)
-        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(LNIC) and x[LNIC].flags.DATA and x[IP].src == NIC_IP,
+        receiver = NDPReceiver(TEST_IFACE)
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(IP) and x.haslayer(NDP) and x[NDP].flags.DATA and x[IP].src == NIC_IP,
             prn=receiver.process_pkt, count=len(pkts), timeout=100)
         sniffer.start()
         sendp(pkts, iface=TEST_IFACE)

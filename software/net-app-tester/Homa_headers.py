@@ -2,7 +2,7 @@
 from scapy.all import *
 import struct
 
-HOMA_PROTO = 0x98
+HOMA_PROTO = 154
 
 class Homa(Packet):
     name = "Homa"

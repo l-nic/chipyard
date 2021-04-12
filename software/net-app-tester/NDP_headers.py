@@ -2,7 +2,7 @@
 from scapy.all import *
 import struct
 
-NDP_PROTO = 0x99
+NDP_PROTO = 155
 
 class NDP(Packet):
     name = "NDP"
