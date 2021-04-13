@@ -8,13 +8,20 @@ link_latency = 420 # 140
 switch_latency = 0
 # Buffer size: 110Pkt=119681 or 58Pkt=63105
 # Note that we leave extra room for ctrl packets
-high_priority_obuf = 58*1088+1 # 4375
-low_priority_obuf = 58*1088+1 # 4375
+high_priority_obuf = 110*1088+1 # 4375
+low_priority_obuf = 110*1088+1 # 4375
 # RTO of 6 us = 19200
-timeout_cycles = 100000 #19200 # 2240 
+timeout_cycles = 19200 # 2240 # 100000 #
 rtt_pkts=12
+
+l4_protocol = "default"
 enable_waveforms = True
 simulator = 'VFireSim-debug' if enable_waveforms else 'VFireSim'
+simulator_dir = {
+    "ndp"     : "FireSim-DDR3FRFCFSLLC4MB_FireSimLNICNDPSingleRocketConfig-F90MHz_BaseF1Config",
+    "homa"    : "FireSim-DDR3FRFCFSLLC4MB_FireSimLNICHomaSingleRocketConfig-F90MHz_BaseF1Config",
+    "default" : "FireSim-DDR3FRFCFSLLC4MB_FireSimLNICSingleRocketConfig-F90MHz_BaseF1Config"
+}
 
 # cmdline args for load generator RISC-V program
 # NOTE: the test type must match what is specified in switchconfig1.h!
@@ -55,9 +62,10 @@ def launch_switch(num_sims, current_run):
         run("script -f -c \'sudo ./switch " + str(link_latency) + " " + str(switch_latency) + " 200 " + \
              str(high_priority_obuf) + " " + str(low_priority_obuf) + "\' ../logs/" + current_run + "switchlog > /dev/null")
 
-def launch_sim(sim, current_run, test_name):
+def launch_sim(sim, current_run, test_name, l4_protocol):
     time.sleep(1)
-    with cd("chipyard/sims/firesim/sim/generated-src/f1/FireSim-DDR3FRFCFSLLC4MB_FireSimLNICSingleRocketConfig-F90MHz_BaseF1Config"):
+    print("**** %s ****" % simulator_dir[l4_protocol])
+    with cd("chipyard/sims/firesim/sim/generated-src/f1/%s" % simulator_dir[l4_protocol]):
         # TODO: The nic_mac_addr0 generation below is not generic enough!
         run("script -f -c \'sudo ./" + simulator +\
             " +permissive +vcs+initreg+0 +vcs+initmem+0 +fesvr-step-size=128 "\
@@ -88,11 +96,14 @@ def launch_sim(sim, current_run, test_name):
             " > /dev/null")
 
 def main():
-    if len(sys.argv) < 3:
-        print "This program requires passing in the number of simulations to run and the name of the test binary"
+    if len(sys.argv) < 4:
+        print "This program requires passing in the number of hosts to run, transport protocol to use, and the name of the test binary"
         exit(-1)
     num_sims = int(sys.argv[1])
-    test_name = os.path.abspath(sys.argv[2])
+    l4_protocol = sys.argv[2].lower()
+    test_name = os.path.abspath(sys.argv[3])
+
+    assert l4_protocol in simulator_dir.keys(), "The L4 protocol entered (%s) is not recognized!" % l4_protocol
 
     env.password = "vagrant"
     current_run = "local_firesim_" + str(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")) + "/"
@@ -119,7 +130,7 @@ def main():
         if env.host_string == "127.0.0.1":
             launch_switch(local_addr_id_map[env.host_string], current_run)
         else:
-            launch_sim(local_addr_id_map[env.host_string], current_run, test_name)
+            launch_sim(local_addr_id_map[env.host_string], current_run, test_name, l4_protocol)
     execute(launch_wrapper, local_addr_id_map, current_run, test_name, hosts=hosts)
 
 
