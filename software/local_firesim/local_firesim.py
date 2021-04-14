@@ -4,15 +4,15 @@ import time
 import datetime
 import os
 
-link_latency = 420 # 140
+link_latency = 280 # 140
 switch_latency = 0
 # Buffer size: 110Pkt=119681 or 58Pkt=63105
 # Note that we leave extra room for ctrl packets
-high_priority_obuf = 110*1088+1 # 4375
-low_priority_obuf = 110*1088+1 # 4375
+high_priority_obuf = 60*1088+1 # 4375
+low_priority_obuf = 60*1088+1 # 4375
 # RTO of 6 us = 19200
 timeout_cycles = 19200 # 2240 # 100000 #
-rtt_pkts=12
+rtt_pkts=9
 
 l4_protocol = "default"
 enable_waveforms = True
