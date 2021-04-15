@@ -215,11 +215,8 @@ class HomaTest(unittest.TestCase):
         self.assertEqual(resp_pkts[0][Homa].pkt_offset, next_pkt_offset)
 
         print ("**** Transmitting pkt {} of the msg as chopped".format(next_pkt_offset))
-        # chop_pkt = Ether(dst=NIC_MAC, src=MY_MAC) / IP(src=MY_IP, dst=NIC_IP) / \
-        #            Homa(flags='CHOP', src_context=DEFAULT_CONTEXT, dst_context=DST_CONTEXT, 
-        #                 msg_len=msg_len, pkt_offset=next_pkt_offset, tx_msg_id=tx_msg_id)
         chop_pkt = pkts[next_pkt_offset]
-        chop_pkt[Homa].flags = "CHOP"
+        chop_pkt[Homa].flags = "DATA+CHOP"
         chop_pkt[Homa].remove_payload()
         chop_pkt = chop_pkt / Raw('\x00')
         # print_pkts([chop_pkt])
@@ -241,6 +238,30 @@ class HomaTest(unittest.TestCase):
         self.assertEqual(resp_pkts[0][Homa].flags, "NACK")
         # self.assertEqual(resp_pkts[0][Homa].grant_offset, next_pkt_offset + RTT_PKTS)
         # self.assertEqual(resp_pkts[0][Homa].grant_prio, NUM_UNSCHEDULED_PRIOS)
+        self.assertEqual(resp_pkts[0][Homa].tx_msg_id, tx_msg_id)
+        self.assertEqual(resp_pkts[0][Homa].pkt_offset, next_pkt_offset)
+
+        print ("**** Transmitting pkt {} of the msg".format(next_pkt_offset))
+        # print_pkts([pkts[next_pkt_offset]])
+
+        expected_num_pkts = 1 
+        sniffer = AsyncSniffer(iface=TEST_IFACE, lfilter=lambda x: x.haslayer(Homa) and x[Ether].src == NIC_MAC,
+                    count=expected_num_pkts, timeout=100)
+        sniffer.start()
+        time.sleep(1)
+        sendp(pkts[next_pkt_offset], iface=TEST_IFACE)
+        sniffer.join()
+        resp_pkts = sniffer.results
+
+        print "**** Received Packet ****"
+        print_pkts(resp_pkts)
+        # Verify that the correct pkts are received
+        self.assertEqual(len(resp_pkts),expected_num_pkts)
+        
+        next_pkt_offset += 1
+        self.assertEqual(resp_pkts[0][Homa].flags, "GRANT")
+        self.assertEqual(resp_pkts[0][Homa].grant_offset, next_pkt_offset + RTT_PKTS)
+        self.assertEqual(resp_pkts[0][Homa].grant_prio, NUM_UNSCHEDULED_PRIOS)
         self.assertEqual(resp_pkts[0][Homa].tx_msg_id, tx_msg_id)
         self.assertEqual(resp_pkts[0][Homa].pkt_offset, next_pkt_offset)
 
