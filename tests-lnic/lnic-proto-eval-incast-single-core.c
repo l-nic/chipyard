@@ -285,8 +285,11 @@ int run_server() {
     msg_len[n] = 0;
   }
 
+  bool all_received = false;
+
   // receive msg from each client
-  for (n = 0; n < NUM_CLIENTS; n++) {
+  // for (n = 0; n < NUM_CLIENTS; n++) {
+  while (!all_received) {
     lnic_wait();
     app_hdr = lnic_read();
 
@@ -326,8 +329,10 @@ int run_server() {
 
     uint8_t client_id = client_ip_to_id(src_ip);
     // mark msg as received
-    msg_arr_times[client_id] = rdcycle();
-    msg_len[client_id] = msg_len_bytes;
+    if (msg_arr_times[client_id] == 0) {
+      msg_arr_times[client_id] = rdcycle();
+      msg_len[client_id] = msg_len_bytes;
+    }
     msg_count[client_id] += 1;
 
     // read all words of the msg
@@ -388,6 +393,7 @@ int run_server() {
       for (i = 0; i < num_words; i++) {
         lnic_read();
       }
+      goto lnic_done;
     }
 
 read_14: {
@@ -494,12 +500,20 @@ read_38: {
 lnic_done:
   lnic_msg_done();
 
+    all_received = true;
+    for (n = 0; n < NUM_CLIENTS; n++) {
+      if (msg_arr_times[n] == 0) {
+          all_received = false;
+          break;
+      }
+    }
   }
 
   // make sure all msgs have been received
   for (n = 0; n < NUM_CLIENTS; n++) {
     if (msg_count[n] != 1) {
       printf("SERVER ERROR: incorrect msg_count for client %d, msg_count = %d\n", n, msg_count[n]);
+      printf("&&CSV&&MsgRcvdWithError,%ld,%d,%d\n", msg_arr_times[n], n, msg_len[n]);
     }
     else {
       printf("&&CSV&&MsgRcvd,%ld,%d,%d\n", msg_arr_times[n], n, msg_len[n]);

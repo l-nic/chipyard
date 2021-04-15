@@ -6,10 +6,10 @@ import os
 
 link_latency = 280 # 140
 switch_latency = 0
-# Buffer size: 110Pkt=119681 or 58Pkt=63105
+# Buffer size: 110Pkt=119681 or 58Pkt=63105 (updated by the input arguments)
 # Note that we leave extra room for ctrl packets
-high_priority_obuf = 60*1088+1 # 4375
-low_priority_obuf = 60*1088+1 # 4375
+high_priority_obuf = 4375
+low_priority_obuf = 4375
 # RTO of 6 us = 19200
 timeout_cycles = 19200 # 2240 # 100000 #
 rtt_pkts=9
@@ -51,13 +51,14 @@ def build_components(num_sims, current_run):
     with cd("chipyard/software/local_firesim/switch"):
         run("make")
     with cd("chipyard/software/local_firesim/logs/"):
-        run("mkdir " + current_run)
+        if (not os.path.exists(os.path.join("./logs",current_run))):
+            run("mkdir " + current_run)
         run("rm -f recent")
         run("ln -s " + current_run + " recent")
     with cd("chipyard/tests-lnic"):
         run("make -j16")
 
-def launch_switch(num_sims, current_run):
+def launch_switch(num_sims, current_run, high_priority_obuf, low_priority_obuf):
     with cd("chipyard/software/local_firesim/switch"):
         run("script -f -c \'sudo ./switch " + str(link_latency) + " " + str(switch_latency) + " 200 " + \
              str(high_priority_obuf) + " " + str(low_priority_obuf) + "\' ../logs/" + current_run + "switchlog > /dev/null")
@@ -96,17 +97,23 @@ def launch_sim(sim, current_run, test_name, l4_protocol):
             " > /dev/null")
 
 def main():
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 5:
         print "This program requires passing in the number of hosts to run, transport protocol to use, and the name of the test binary"
         exit(-1)
     num_sims = int(sys.argv[1])
     l4_protocol = sys.argv[2].lower()
-    test_name = os.path.abspath(sys.argv[3])
+    buff_size = int(sys.argv[3])
+    test_name = os.path.abspath(sys.argv[4])
 
-    assert l4_protocol in simulator_dir.keys(), "The L4 protocol entered (%s) is not recognized!" % l4_protocol
+    high_priority_obuf = buff_size *1088+1
+    low_priority_obuf = buff_size * 1088+1
 
     env.password = "vagrant"
-    current_run = "local_firesim_" + str(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")) + "/"
+    # current_run = "local_firesim_" + str(datetime.datetime.now().strftime("%Y_%m_%d-%H_%M_%S")) + "/"
+    current_run = "local_firesim-" + l4_protocol + "-NHosts_" + str(num_sims) + "-Buff_" + str(buff_size) + "p/"
+
+    l4_protocol = "homa" if l4_protocol == "homatr" else l4_protocol
+    assert l4_protocol in simulator_dir.keys(), "The L4 protocol entered (%s) is not recognized!" % l4_protocol
 
     # make sure the switch binary is re-compiled with the most recent switchconfig
     os.system('rm -f switch/switch')
@@ -128,7 +135,8 @@ def main():
     @parallel
     def launch_wrapper(local_addr_id_map, current_run, test_name):
         if env.host_string == "127.0.0.1":
-            launch_switch(local_addr_id_map[env.host_string], current_run)
+            launch_switch(local_addr_id_map[env.host_string], current_run, 
+                          high_priority_obuf, low_priority_obuf)
         else:
             launch_sim(local_addr_id_map[env.host_string], current_run, test_name, l4_protocol)
     execute(launch_wrapper, local_addr_id_map, current_run, test_name, hosts=hosts)
