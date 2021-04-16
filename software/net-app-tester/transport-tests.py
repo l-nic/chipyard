@@ -215,7 +215,7 @@ class HomaTest(unittest.TestCase):
         self.assertEqual(resp_pkts[0][Homa].pkt_offset, next_pkt_offset)
 
         print ("**** Transmitting pkt {} of the msg as chopped".format(next_pkt_offset))
-        chop_pkt = pkts[next_pkt_offset]
+        chop_pkt = pkts[next_pkt_offset].copy()
         chop_pkt[Homa].flags = "DATA+CHOP"
         chop_pkt[Homa].remove_payload()
         chop_pkt = chop_pkt / Raw('\x00')

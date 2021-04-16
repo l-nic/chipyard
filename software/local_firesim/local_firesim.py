@@ -10,8 +10,8 @@ switch_latency = 0
 # Note that we leave extra room for ctrl packets
 high_priority_obuf = 4375
 low_priority_obuf = 4375
-# RTO of 6 us = 19200
-timeout_cycles = 19200 # 2240 # 100000 #
+# RTO of 6 us = 19200, 7 us = 22400
+timeout_cycles = 22400 # 2240 # 100000 #
 rtt_pkts=9
 
 l4_protocol = "default"
