@@ -4,7 +4,7 @@
 
 #include "lnic.h"
 
-#define MSG_LEN_PKTS 10
+#define MSG_LEN_PKTS 9
 
 #define REPEAT_4(X) X X X X
 #define REPEAT_8(X) REPEAT_4(X) REPEAT_4(X)
@@ -17,7 +17,7 @@ int main(void)
 {
   uint64_t app_hdr;
   int i; 
-  uint64_t dst_ip = 0x0a000003;
+  uint64_t dst_ip = 0x0a000002;
 
   // register context ID with L-NIC
   uint64_t context_id = 0;
