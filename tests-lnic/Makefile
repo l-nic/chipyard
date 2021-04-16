@@ -48,6 +48,7 @@ PROGRAMS += lnic-service-time
 PROGRAMS += lnic-sim-network
 PROGRAMS += lnic-proto-eval-incast-single-core
 PROGRAMS += lnic-dummy-receiver
+PROGRAMS += lnic-dummy-sender
 
 default: $(addsuffix .riscv,$(PROGRAMS))
 
