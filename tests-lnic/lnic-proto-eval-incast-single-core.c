@@ -52,7 +52,7 @@
 uint64_t server_ip = 0x0a000002;
 
 // Server expects messages of distinct sizes from each client
-uint16_t expected_msg_len_pkts[] = {14, 16, 18, 20, 22, 24, 26, 28, 30, 32};
+uint16_t expected_msg_len_pkts[] = {20, 22, 24, 26, 28, 30, 32, 34, 36, 38};
 
 // use the last byte of the IP address to compute a unique ID for each client
 uint8_t client_ip_to_id(uint32_t addr) {
