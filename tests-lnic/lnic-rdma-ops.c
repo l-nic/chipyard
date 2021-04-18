@@ -11,7 +11,7 @@
  * The server processes each request and return a response.
  */
 
-#define NUM_REQUESTS 10
+#define NUM_REQUESTS 100
 #define MEM_SIZE 10
 // one test for each RDMA operation type
 #define NUM_TESTS 5
