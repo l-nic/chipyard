@@ -3,8 +3,10 @@
 
 set vcs_path /usr/synopsys/vcs/P-2019.06/bin
 set proj_dir $::env(CHIPYARD_ROOT)/vivado/ip/managed_ip_project
+# use the AWS FPGA
+set part xcvu9p-flgb2104-2-i
 
-create_project managed_ip_project ${proj_dir} -part xcvu9p-flgb2104-2-i -ip
+create_project managed_ip_project ${proj_dir} -part $part -ip
 set_property target_simulator VCS [current_project]
 
 # Compile simulation libraries
