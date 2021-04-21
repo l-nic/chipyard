@@ -51,18 +51,20 @@ int run_client(uint32_t client_ip) {
   uint16_t msg_len_pkts;
   uint16_t msg_len_words;
   uint16_t msg_len_bytes;
+  uint8_t client_id;
   // uint64_t now;
   int i;
 
+  client_id = client_ip_to_id(client_ip);
   dst_ip = server_ip;
   dst_context = 0;
 
   // wait for a bit to make sure the server is ready
-  for (i = 0; i < 100; i++) {
+  for (i = 0; i < 100 + 10 * client_id; i++) {
     asm volatile("nop");
   }
 
-  msg_len_pkts = expected_msg_len_pkts[client_ip_to_id(client_ip)];
+  msg_len_pkts = expected_msg_len_pkts[client_id];
   msg_len_words = msg_len_pkts * PKT_LEN_WORDS;
   msg_len_bytes = msg_len_words * LNIC_WORD_SIZE;
 
@@ -75,7 +77,7 @@ int run_client(uint32_t client_ip) {
     REPEAT_128(lnic_write_i(1);)
   }
 
-  printf("&&CSV&&MsgSent,%ld,%d,%d\n", rdcycle(), client_ip_to_id(client_ip), msg_len_bytes);
+  printf("&&CSV&&MsgSent,%ld,%d,%d\n", rdcycle(), client_id, msg_len_bytes);
 
   printf("Client %x complete!\n", client_ip);
   // Spin until the simulation is complete
