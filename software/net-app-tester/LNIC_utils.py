@@ -105,20 +105,6 @@ class HomaReceiver(object):
                 self.msgs.append((msg_key, ''.join(self.buffers[msg_key])))
                 del self.buffers[msg_key]
                 del self.received[msg_key]
-            # send ACK and GRANT pkts
-            ack = Ether(dst=p[Ether].src, src=p[Ether].dst) / \
-                  IP(dst=p[IP].src, src=p[IP].dst) / \
-                  Homa(flags="ACK",
-                       src_context=p[Homa].dst_context,
-                       dst_context=p[Homa].src_context,
-                       msg_len=p[Homa].msg_len,
-                       pkt_offset=p[Homa].pkt_offset,
-                       grant_offset=0, # unused
-                       grant_prio=0,   # unused
-                       tx_msg_id=p[Homa].tx_msg_id,
-                       buf_ptr=p[Homa].buf_ptr,
-                       buf_size_class=p[Homa].buf_size_class) / \
-                  Raw("\x00")
             grant_offset = p[Homa].pkt_offset + RTT_PKTS
             grant = Ether(dst=p[Ether].src, src=p[Ether].dst) / \
                     IP(dst=p[IP].src, src=p[IP].dst) / \
@@ -126,16 +112,15 @@ class HomaReceiver(object):
                          src_context=p[Homa].dst_context,
                          dst_context=p[Homa].src_context,
                          msg_len=p[Homa].msg_len,
-                         pkt_offset=p[Homa].pkt_offset,
+                         pkt_offset=p[Homa].pkt_offset + 1,
                          grant_offset=grant_offset,
                          grant_prio=0,
                          tx_msg_id=p[Homa].tx_msg_id,
                          buf_ptr=p[Homa].buf_ptr,
                          buf_size_class=p[Homa].buf_size_class) / \
                     Raw("\x00")
-            print "Sending ACK: {}".format(ack.summary())
             print "Sending GRANT: {}".format(grant.summary())
-            sendp([ack, grant], iface=self.iface)
+            sendp([grant], iface=self.iface)
         if self.prn:
             self.prn(p)
 
