@@ -151,8 +151,8 @@ control MyProcessing(inout headers hdr,
                     ctrlPkt_meta.tx_msg_id      = hdr.ndp.tx_msg_id;
                     ctrlPkt_meta.buf_ptr        = hdr.ndp.buf_ptr;
                     ctrlPkt_meta.buf_size_class = hdr.ndp.buf_size_class;
-                    ctrlPkt_meta.grant_offset   = pull_offset;
-                    ctrlPkt_meta.grant_prio     = 0;
+                    ctrlPkt_meta.credit         = pull_offset;
+                    ctrlPkt_meta.rank           = 0;
                     ctrlPkt_meta.flags          = flags;
                     ctrlPkt_meta.is_new_msg     = false;
                     ctrlPkt_meta.is_rtx         = false;

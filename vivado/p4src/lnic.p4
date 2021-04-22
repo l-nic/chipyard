@@ -64,8 +64,8 @@ struct egress_metadata_t {
     MsgID_t     tx_msg_id;
     bit<16>     buf_ptr;
     bit<8>      buf_size_class;
-    bit<16>     grant_offset;
-    bit<8>      grant_prio;
+    bit<16>     credit;
+    bit<8>      rank;
     bit<8>      flags;
     bool        is_new_msg;
     bool        is_rtx;

@@ -62,7 +62,6 @@ control MyProcessing(inout headers hdr,
         // Fill out IPv4 header fields
         hdr.ipv4.version = 4;
         hdr.ipv4.ihl = 5;
-        hdr.ipv4.tos = 0;
         if (!is_data_pkt) {
             hdr.ipv4.totalLen = IP_HDR_BYTES + LNIC_CTRL_PKT_BYTES;
         } else {
@@ -93,14 +92,25 @@ control MyProcessing(inout headers hdr,
         hdr.ipv4.srcAddr = meta.params.nic_ip_addr;
         hdr.ipv4.dstAddr = meta.meta.dst_ip;
 
+        bit<8> new_prio = 0; // HOMA_NUM_UNSCHEDULED_PRIOS-1 if msg_len_pkts > meta.params.rtt_packets
+        txMsgPrioReg_req_t prio_req;
+        prio_req.index = meta.meta.tx_msg_id;
+        prio_req.update = meta.meta.is_new_msg;
+        prio_req.prio = new_prio;
+        txMsgPrioReg_resp_t prio_resp;
+        txMsgPrioReg.apply(prio_req, prio_resp);
+        bit<8> cur_prio = prio_resp.prio; // HOMA_NUM_UNSCHEDULED_PRIOS if meta.meta.is_rtx && prio_resp.prio < HOMA_NUM_UNSCHEDULED_PRIOS
+
+        hdr.ipv4.tos = cur_prio ? is_data_pkt : 0; 
+
         // Fill out Homa header fields
         hdr.homa.flags          = meta.meta.meta.flags;
         hdr.homa.src            = meta.meta.src_context;
         hdr.homa.dst            = meta.meta.dst_context;
         hdr.homa.msg_len        = meta.meta.msg_len;
         hdr.homa.pkt_offset     = meta.meta.pkt_offset;
-        hdr.homa.grant_offset   = meta.meta.grant_offset;
-        hdr.homa.grant_prio     = 
+        hdr.homa.grant_offset   = meta.meta.credit;
+        hdr.homa.grant_prio     = meta.meta.rank;
         hdr.homa.tx_msg_id      = meta.meta.tx_msg_id;
         hdr.homa.buf_ptr        = meta.meta.buf_ptr;
         hdr.homa.buf_size_class = meta.meta.buf_size_class;
