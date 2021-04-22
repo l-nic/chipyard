@@ -145,14 +145,10 @@ control MyProcessing(inout headers hdr,
                 ctrlPkt_meta.dst_ip         = hdr.ipv4.srcAddr;
                 ctrlPkt_meta.dst_context    = hdr.homa.src;
                 ctrlPkt_meta.msg_len        = hdr.homa.msg_len;
-                // ctrlPkt_meta.pkt_offset     = hdr.ndp.pkt_offset;
                 ctrlPkt_meta.src_context    = hdr.homa.dst;
                 ctrlPkt_meta.tx_msg_id      = hdr.homa.tx_msg_id;
                 ctrlPkt_meta.buf_ptr        = hdr.homa.buf_ptr;
                 ctrlPkt_meta.buf_size_class = hdr.homa.buf_size_class;
-                // ctrlPkt_meta.credit         = pull_offset;
-                // ctrlPkt_meta.rank           = 0;
-                // ctrlPkt_meta.flags          = flags;
                 ctrlPkt_meta.is_new_msg     = false;
                 ctrlPkt_meta.is_rtx         = false;
 
