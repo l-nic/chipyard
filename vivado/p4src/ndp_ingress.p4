@@ -88,7 +88,7 @@ control MyProcessing(inout headers hdr,
                 get_rx_msg_info_req_t req;
                 req.mark_received = !is_chopped;
                 req.src_ip        = hdr.ipv4.srcAddr;
-                req.src_context   = hdr.ndp.src_context;
+                req.src_context   = hdr.ndp.src;
                 req.tx_msg_id     = hdr.ndp.tx_msg_id;
                 req.msg_len       = hdr.ndp.msg_len;
                 req.pkt_offset    = hdr.ndp.pkt_offset;
@@ -144,10 +144,10 @@ control MyProcessing(inout headers hdr,
                     // generate ctrl pkt(s)
                     egress_metadata_t ctrlPkt_meta;
                     ctrlPkt_meta.dst_ip         = hdr.ipv4.srcAddr;
-                    ctrlPkt_meta.dst_context    = hdr.ndp.src_context;
+                    ctrlPkt_meta.dst_context    = hdr.ndp.src;
                     ctrlPkt_meta.msg_len        = hdr.ndp.msg_len;
                     ctrlPkt_meta.pkt_offset     = hdr.ndp.pkt_offset;
-                    ctrlPkt_meta.src_context    = hdr.ndp.dst_context;
+                    ctrlPkt_meta.src_context    = hdr.ndp.dst;
                     ctrlPkt_meta.tx_msg_id      = hdr.ndp.tx_msg_id;
                     ctrlPkt_meta.buf_ptr        = hdr.ndp.buf_ptr;
                     ctrlPkt_meta.buf_size_class = hdr.ndp.buf_size_class;
@@ -171,7 +171,7 @@ control MyProcessing(inout headers hdr,
                     // fire delivered event
                     delivered_meta_t delivered_meta;
                     delivered_meta.tx_msg_id      = hdr.ndp.tx_msg_id;
-                    delivered_meta.delivered_pkts = (1 << hdr.ndp.pkt_offset);
+                    delivered_meta.delivered_pkts = ((PktBitmap_t)1 << hdr.ndp.pkt_offset);
                     delivered_meta.msg_len        = hdr.ndp.msg_len;
                     delivered_meta.buf_ptr        = hdr.ndp.buf_ptr;
                     delivered_meta.buf_size_class = hdr.ndp.buf_size_class;

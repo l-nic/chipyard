@@ -51,14 +51,14 @@ control MyProcessing(inout headers hdr,
         } else {
             // All DATA pkts are 1 MTU long, except (possibly) the last one of a msg.
             // NOTE: the following requires isPow2(MAX_SEG_LEN_BYTES).
-            bit<L2_MAX_SEG_LEN_BYTES> msg_len_mod_mtu = meta.meta.msg_len[L2_MAX_SEG_LEN_BYTES-1:0];
-            bit<16> msg_len_pkts;
+            bit<16> msg_len_mod_mtu = (bit<16>)meta.meta.msg_len[L2_MAX_SEG_LEN_BYTES-1:0];
+            bit<8> msg_len_pkts;
             bit<16> last_bytes;
             if (msg_len_mod_mtu == 0) {
-              msg_len_pkts = (meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES);
+              msg_len_pkts = (bit<8>)(meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES);
               last_bytes = MAX_SEG_LEN_BYTES;
             } else {
-              msg_len_pkts = (meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES) + 1;
+              msg_len_pkts = (bit<8>)((meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES) + 1);
               last_bytes = msg_len_mod_mtu;
             }
             bool is_last_pkt = (meta.meta.pkt_offset == (msg_len_pkts - 1));
@@ -77,7 +77,7 @@ control MyProcessing(inout headers hdr,
         hdr.ipv4.dstAddr = meta.meta.dst_ip;
 
         // Fill out NDP header fields
-        hdr.ndp.flags          = meta.meta.meta.flags;
+        hdr.ndp.flags          = meta.meta.flags;
         hdr.ndp.src            = meta.meta.src_context;
         hdr.ndp.dst            = meta.meta.dst_context;
         hdr.ndp.msg_len        = meta.meta.msg_len;
