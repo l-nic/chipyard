@@ -25,6 +25,12 @@ const bit<16> LNIC_CTRL_PKT_BYTES = 31;
 
 const bit<16> IPV4_TYPE = 0x0800;
 
+// TODO(sarslan): Can we make these runtime configurable 
+//                parameters unique to protocol implementations
+const bit<8> HOMA_NUM_UNSCHEDULED_PRIOS = 1;
+const bit<8> HOMA_NUM_TOTAL_PRIOS       = 4;
+const bit<8> HOMA_OVERCOMMITMENT_LEVEL  = 3;
+
 // ******************************************************************************* //
 // *************************** M E T A D A T A *********************************** //
 // ******************************************************************************* //
