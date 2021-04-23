@@ -1,4 +1,6 @@
 riscv_lib: riscv_lib/
 sdnet_ndp_ingress_lib: ../../vivado/ip/ip_user_files/sim_scripts/sdnet_ndp_ingress/vcs/vcs_lib/sdnet_ndp_ingress_lib
 sdnet_ndp_egress_lib: ../../vivado/ip/ip_user_files/sim_scripts/sdnet_ndp_egress/vcs/vcs_lib/sdnet_ndp_egress_lib
+sdnet_homa_ingress_lib: ../../vivado/ip/ip_user_files/sim_scripts/sdnet_homa_ingress/vcs/vcs_lib/sdnet_homa_ingress_lib
+sdnet_homa_egress_lib: ../../vivado/ip/ip_user_files/sim_scripts/sdnet_homa_egress/vcs/vcs_lib/sdnet_homa_egress_lib
 OTHERS=../../vivado/ip/managed_ip_project/managed_ip_project.cache/compile_simlib/vcs/synopsys_sim.setup
