@@ -125,7 +125,7 @@ control MyProcessing(inout headers hdr,
         // Process all pkts arriving at the NIC
         if (hdr.homa.isValid()) {
             dummy_t dummy; // unused metadata for events
-            if ((hdr.ndp.flags & DATA_MASK) > 0) {
+            if ((hdr.homa.flags & DATA_MASK) > 0) {
                 // This is a DATA pkt, but it might be CHOP'ed
                 bool is_chopped = (hdr.homa.flags & CHOP_MASK) > 0;
 
@@ -156,8 +156,8 @@ control MyProcessing(inout headers hdr,
                     // generate NACK (Only in Homa-Tr)
                     smeta.drop = 1;
 
-                    ctrlPkt_meta.pkt_offset = hdr.ndp.pkt_offset;
-                    ctrlPkt_meta.credit = rx_msg_info.fail ? 0 : rx_msg_info.ackNo;
+                    ctrlPkt_meta.pkt_offset = hdr.homa.pkt_offset;
+                    ctrlPkt_meta.credit = rx_msg_info.fail ? 0 : (bit<16>)rx_msg_info.ackNo;
                     ctrlPkt_meta.flags = NACK_MASK;
 
                     nackPkt_event.apply(ctrlPkt_meta, dummy);
@@ -221,17 +221,17 @@ control MyProcessing(inout headers hdr,
 
                     if (sched_resp.success && sched_resp.prio_level < HOMA_OVERCOMMITMENT_LEVEL) {
                         // generate GRANT
-                        grantMsgReg_req_t granted_msg_ingo_req;
-                        granted_msg_ingo_req.index      = sched_resp.grant_msg_id;
-                        granted_msg_ingo_req.grantedIdx = sched_resp.grant_offset;
+                        grantMsgReg_req_t granted_msg_info_req;
+                        granted_msg_info_req.index      = sched_resp.grant_msg_id;
+                        granted_msg_info_req.grantedIdx = sched_resp.grant_offset;
                         pendingMsgInfo_t granted_msg_info;
-                        grantMsgReg.apply(granted_msg_ingo_req, granted_msg_info);
+                        grantMsgReg.apply(granted_msg_info_req, granted_msg_info);
 
                         ctrlPkt_meta.dst_ip         = granted_msg_info.src_ip;
                         ctrlPkt_meta.dst_context    = granted_msg_info.src_context;
                         ctrlPkt_meta.msg_len        = granted_msg_info.msg_len;
-                        ctrlPkt_meta.pkt_offset     = granted_msg_info.ackNo;
-                        ctrlPkt_meta.src_context    = granted_msg_info,dst_context;
+                        ctrlPkt_meta.pkt_offset     = (bit<8>)granted_msg_info.ackNo;
+                        ctrlPkt_meta.src_context    = granted_msg_info.dst_context;
                         ctrlPkt_meta.tx_msg_id      = granted_msg_info.tx_msg_id;
                         ctrlPkt_meta.buf_ptr        = granted_msg_info.buf_ptr;
                         ctrlPkt_meta.buf_size_class = granted_msg_info.buf_size_class;
@@ -243,7 +243,7 @@ control MyProcessing(inout headers hdr,
 
                     } else {
                         // generate ACK for the current msg, rather than a GRANT
-                        ctrlPkt_meta.pkt_offset = rx_msg_info.ackNo;
+                        ctrlPkt_meta.pkt_offset = (bit<8>)rx_msg_info.ackNo;
                         ctrlPkt_meta.credit = 0; // This is just an ACK, no packet is granted
                         ctrlPkt_meta.flags = ACK_MASK;
 
@@ -263,19 +263,17 @@ control MyProcessing(inout headers hdr,
                     // Update tx_msg_id's priority.
                     txMsgPrioReg_req_t prio_req;
                     prio_req.index  = hdr.homa.tx_msg_id;
-                    prio_req.update = true;
                     prio_req.prio   = hdr.homa.grant_prio;
-                    txMsgPrioReg_resp_t prio_resp;
 
-                    txMsgPrioReg.apply(prio_req, prio_resp);
+                    txMsgPrioReg.apply(prio_req, dummy);
                 }
 
                 if (is_ack || is_nack || is_grant) {
-                    bit<16> ackNo = is_nack ? hdr.homa.grant_offset : hdr.homa.pkt_offset;
+                    bit<16> ackNo = is_nack ? hdr.homa.grant_offset : (bit<16>)hdr.homa.pkt_offset;
                     // fire delivered event
                     delivered_meta_t delivered_meta;
                     delivered_meta.tx_msg_id      = hdr.homa.tx_msg_id;
-                    delivered_meta.delivered_pkts = ((PktBitmap_t)1 << ackNo);
+                    delivered_meta.delivered_pkts = ((PktBitmap_t)1 << (bit<8>)ackNo) - 1;
                     delivered_meta.msg_len        = hdr.homa.msg_len;
                     delivered_meta.buf_ptr        = hdr.homa.buf_ptr;
                     delivered_meta.buf_size_class = hdr.homa.buf_size_class;

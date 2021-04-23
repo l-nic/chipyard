@@ -92,7 +92,7 @@ control MyProcessing(inout headers hdr,
         hdr.ipv4.srcAddr = meta.params.nic_ip_addr;
         hdr.ipv4.dstAddr = meta.meta.dst_ip;
 
-        bit<8> new_prio = msg_len_pkts <= meta.params.rtt_packets ? 0 : HOMA_NUM_UNSCHEDULED_PRIOS-1;
+        bit<8> new_prio = msg_len_pkts <= meta.params.rtt_pkts ? 0 : HOMA_NUM_UNSCHEDULED_PRIOS-1;
         txMsgPrioReg_req_t prio_req;
         prio_req.index  = meta.meta.tx_msg_id;
         prio_req.update = meta.meta.is_new_msg;
@@ -101,7 +101,7 @@ control MyProcessing(inout headers hdr,
         txMsgPrioReg.apply(prio_req, prio_resp);
         bit<8> cur_prio = meta.meta.is_rtx && (prio_resp.prio < HOMA_NUM_UNSCHEDULED_PRIOS) ? HOMA_NUM_UNSCHEDULED_PRIOS : prio_resp.prio; 
 
-        hdr.ipv4.tos = cur_prio ? is_data_pkt : 0; 
+        hdr.ipv4.tos = is_data_pkt ? cur_prio : 0; 
 
         // Fill out Homa header fields
         hdr.homa.flags          = meta.meta.meta.flags;
