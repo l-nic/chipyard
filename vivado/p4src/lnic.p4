@@ -31,8 +31,8 @@ const bit<16> IPV4_TYPE = 0x0800;
 
 // We'll pass runtime configurable parameters in as packet metadata.
 struct parameters_t {
-    EthAddr_t switch_mac_addr;
     EthAddr_t nic_mac_addr;
+    EthAddr_t switch_mac_addr;
     IPv4Addr_t nic_ip_addr;
     bit<16> rtt_pkts;
 }
