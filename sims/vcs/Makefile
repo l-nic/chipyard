@@ -91,21 +91,6 @@ riscv_dpi.so: $(sim_common_files)
 		$(build_dir)/*.cc \
 		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
 
-#riscv_dpi.so: $(sim_common_files)
-#	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir) \
-#		$(build_dir)/mm.cc \
-#		$(build_dir)/mm_dramsim2.cc \
-#		$(build_dir)/remote_bitbang.cc \
-#		$(build_dir)/SimDRAM.cc \
-#		$(build_dir)/SimDTM.cc \
-#		$(build_dir)/SimJTAG.cc \
-#		$(build_dir)/SimSerial.cc \
-#		$(build_dir)/SimUART.cc \
-#		$(build_dir)/uart.cc \
-#		$(build_dir)/LNIC_device.cc \
-#		$(build_dir)/LNIC_SimNetwork.cc \
-#		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
-
 #########################################################################################
 # create a vcs vpd rule
 #########################################################################################
@@ -118,4 +103,4 @@ $(output_dir)/%.vpd: $(output_dir)/% $(sim_debug)
 #########################################################################################
 .PHONY: clean
 clean:
-	rm -rf $(gen_dir) csrc $(sim_prefix)-* ucli.key vc_hdrs.h *.log
+	rm -rf $(gen_dir) riscv_lib *.so csrc 64/ $(sim_prefix)-* ucli.key vc_hdrs.h *.log
