@@ -82,7 +82,7 @@ control MyProcessing(inout headers hdr,
         hdr.ndp.dst            = meta.meta.dst_context;
         hdr.ndp.msg_len        = meta.meta.msg_len;
         hdr.ndp.pkt_offset     = meta.meta.pkt_offset;
-        hdr.ndp.pull_offset    = meta.meta.grant_offset;
+        hdr.ndp.pull_offset    = meta.meta.credit;
         hdr.ndp.tx_msg_id      = meta.meta.tx_msg_id;
         hdr.ndp.buf_ptr        = meta.meta.buf_ptr;
         hdr.ndp.buf_size_class = meta.meta.buf_size_class;

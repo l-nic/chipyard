@@ -9,6 +9,9 @@ const bit<8> ACK_MASK   = 0b00000010;
 const bit<8> NACK_MASK  = 0b00000100;
 const bit<8> GRANT_MASK = 0b00001000;
 const bit<8> CHOP_MASK  = 0b00010000;
+const bit<8> RSND_MASK  = 0b00100000;
+const bit<8> BUSY_MASK  = 0b01000000;
+const bit<8> BOGS_MASK  = 0b10000000;
 
 header homa_t {
     bit<8> flags;
