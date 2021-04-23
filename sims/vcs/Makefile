@@ -88,18 +88,23 @@ $(sim_debug): $(sim_vsrcs) $(sim_common_files) riscv_dpi.so
 
 riscv_dpi.so: $(sim_common_files)
 	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir) \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/mm.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/mm_dramsim2.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/remote_bitbang.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimDRAM.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimDTM.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimJTAG.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimSerial.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/SimUART.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/uart.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/LNIC_device.cc \
-		./generated-src/chipyard.TestHarness.LNICSimNetworkSingleRocketConfig/LNIC_SimNetwork.cc \
+		$(build_dir)/*.cc \
 		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
+
+#riscv_dpi.so: $(sim_common_files)
+#	g++ -std=c++11 -fPIC -Wall -I$(VCS_HOME)/include -I$(RISCV)/include -I$(dramsim_dir) \
+#		$(build_dir)/mm.cc \
+#		$(build_dir)/mm_dramsim2.cc \
+#		$(build_dir)/remote_bitbang.cc \
+#		$(build_dir)/SimDRAM.cc \
+#		$(build_dir)/SimDTM.cc \
+#		$(build_dir)/SimJTAG.cc \
+#		$(build_dir)/SimSerial.cc \
+#		$(build_dir)/SimUART.cc \
+#		$(build_dir)/uart.cc \
+#		$(build_dir)/LNIC_device.cc \
+#		$(build_dir)/LNIC_SimNetwork.cc \
+#		-shared -o riscv_dpi.so -Wl,--whole-archive $(RISCV)/lib/libfesvr.a -Wl,--no-whole-archive
 
 #########################################################################################
 # create a vcs vpd rule

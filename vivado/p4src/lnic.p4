@@ -50,8 +50,8 @@ struct ingress_metadata_t {
 }
 
 struct full_ingress_metadata_t {
-    parameters_t params;
     ingress_metadata_t meta;
+    parameters_t params;
 }
 
 // Metadata that is passed to the Egress pipeline.
@@ -72,8 +72,8 @@ struct egress_metadata_t {
 }
 
 struct full_egress_metadata_t {
-    parameters_t params;
     egress_metadata_t meta;
+    parameters_t params;
 }
 
 // ****************************************************************************** //

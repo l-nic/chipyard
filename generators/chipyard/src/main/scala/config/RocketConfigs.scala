@@ -369,6 +369,25 @@ class LNICNDPSingleRocketConfig extends Config(
   new freechips.rocketchip.subsystem.WithNBigCores(1) ++
   new freechips.rocketchip.system.BaseConfig)
 
+class LNICP4NDPSingleRocketConfig extends Config(
+  new chipyard.iobinders.WithUARTAdapter ++
+  new chipyard.iobinders.WithTieOffInterrupts ++
+  new chipyard.iobinders.WithBlackBoxSimMem ++
+  new chipyard.iobinders.WithTiedOffDebug ++
+  new chipyard.iobinders.WithSimSerial ++
+  new testchipip.WithTSI ++
+  new lnic.WithLNIC("P4-NDP") ++              // add an LNIC, which implements NDP using P4
+  new chipyard.config.WithNoGPIO ++
+  new chipyard.config.WithBootROM ++
+  new chipyard.config.WithUART ++
+  new chipyard.config.WithL2TLBs(1024) ++
+  new freechips.rocketchip.subsystem.WithNoMMIOPort ++
+  new freechips.rocketchip.subsystem.WithNoSlavePort ++
+  new freechips.rocketchip.subsystem.WithInclusiveCache ++
+  new freechips.rocketchip.subsystem.WithNExtTopInterrupts(0) ++
+  new freechips.rocketchip.subsystem.WithNBigCores(1) ++
+  new freechips.rocketchip.system.BaseConfig)
+
 class LNICHomaSingleRocketConfig extends Config(
   new chipyard.iobinders.WithUARTAdapter ++
   new chipyard.iobinders.WithTieOffInterrupts ++
@@ -486,6 +505,10 @@ class LNICThirtyTwoCoreRocketConfig extends Config(
 class LNICNDPSimNetworkSingleRocketConfig extends Config(
   new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
   new LNICNDPSingleRocketConfig)
+
+class LNICP4NDPSimNetworkSingleRocketConfig extends Config(
+  new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
+  new LNICP4NDPSingleRocketConfig)
 
 class LNICHomaSimNetworkSingleRocketConfig extends Config(
   new chipyard.iobinders.WithSimNetwork ++ // connect to SimNetwork
