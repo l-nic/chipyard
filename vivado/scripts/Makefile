@@ -3,6 +3,9 @@ IP_DIR=../ip/ip_user_files/sim_scripts
 
 all: ndp_ingress ndp_egress homa_ingress homa_egress
 
+proj: build_ip_proj.tcl
+	vivado -nolog -nojournal -mode batch -source ./build_ip_proj.tcl
+
 ndp_ingress:
 	vivado -nolog -nojournal -mode batch -source ./build_sdnet_ndp_ingress.tcl
 	sed -i 's/xil_defaultlib/sdnet_ndp_ingress_lib/g' ${IP_DIR}/sdnet_ndp_ingress/vcs/sdnet_ndp_ingress.sh
