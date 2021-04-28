@@ -30,8 +30,19 @@ struct grantInfo_t {
 
 struct curMsgReg_req_t {
     MsgID_t index;
-    pendingMsgInfo_t msg_info;
-    grantInfo_t grant_info;
+    // Unrolled pendingMsgInfo_t below
+    IPv4Addr_t src_ip;
+    ContextID_t src_context;
+    ContextID_t dst_context;
+    MsgID_t tx_msg_id;
+    bit<16> msg_len;
+    bit<16> buf_ptr;
+    bit<8> buf_size_class;
+    bit<9> ackNo;
+    // Unrolled grantInfo_t below
+    bit<16> grantedIdx;
+    bit<16> grantableIdx;
+    bit<8> remaining_size;
     // is_new_msg is used to determine how to update msg state
     bool is_new_msg;
 }
@@ -158,7 +169,8 @@ control MyProcessing(inout headers hdr,
 
                     ctrlPkt_meta.pkt_offset = hdr.homa.pkt_offset;
                     ctrlPkt_meta.credit = rx_msg_info.fail ? 0 : (bit<16>)rx_msg_info.ackNo;
-                    ctrlPkt_meta.flags = NACK_MASK;
+                    ctrlPkt_meta.flags  = NACK_MASK;
+                    ctrlPkt_meta.rank   = 0;
 
                     nackPkt_event.apply(ctrlPkt_meta, dummy);
 
@@ -185,24 +197,20 @@ control MyProcessing(inout headers hdr,
                         msg_len_pkts = (hdr.homa.msg_len >> L2_MAX_SEG_LEN_BYTES) + 1;
                     }
 
-                    pendingMsgInfo_t cur_msg_info;
-                    cur_msg_info.src_ip         = hdr.ipv4.srcAddr;
-                    cur_msg_info.src_context    = hdr.homa.src;
-                    cur_msg_info.dst_context    = hdr.homa.dst;
-                    cur_msg_info.tx_msg_id      = hdr.homa.tx_msg_id;
-                    cur_msg_info.msg_len        = hdr.homa.msg_len;
-                    cur_msg_info.buf_ptr        = hdr.homa.buf_ptr;
-                    cur_msg_info.buf_size_class = hdr.homa.buf_size_class;
-                    cur_msg_info.ackNo          = rx_msg_info.ackNo;
-                    grantInfo_t cur_msg_grant_info;
-                    cur_msg_grant_info.grantedIdx     = meta.params.rtt_pkts;
-                    cur_msg_grant_info.grantableIdx   = meta.params.rtt_pkts + 1;
-                    cur_msg_grant_info.remaining_size = (bit<8>)(msg_len_pkts - 1);
                     curMsgReg_req_t cur_msg_info_req;
-                    cur_msg_info_req.index      = rx_msg_info.rx_msg_id;
-                    cur_msg_info_req.msg_info   = cur_msg_info;
-                    cur_msg_info_req.grant_info = cur_msg_grant_info;
-                    cur_msg_info_req.is_new_msg = rx_msg_info.is_new_msg;
+                    cur_msg_info_req.index          = rx_msg_info.rx_msg_id;
+                    cur_msg_info_req.src_ip         = hdr.ipv4.srcAddr;
+                    cur_msg_info_req.src_context    = hdr.homa.src;
+                    cur_msg_info_req.dst_context    = hdr.homa.dst;
+                    cur_msg_info_req.tx_msg_id      = hdr.homa.tx_msg_id;
+                    cur_msg_info_req.msg_len        = hdr.homa.msg_len;
+                    cur_msg_info_req.buf_ptr        = hdr.homa.buf_ptr;
+                    cur_msg_info_req.buf_size_class = hdr.homa.buf_size_class;
+                    cur_msg_info_req.ackNo          = rx_msg_info.ackNo;
+                    cur_msg_info_req.grantedIdx     = meta.params.rtt_pkts;
+                    cur_msg_info_req.grantableIdx   = meta.params.rtt_pkts + 1;
+                    cur_msg_info_req.remaining_size = (bit<8>)(msg_len_pkts - 1);
+                    cur_msg_info_req.is_new_msg     = rx_msg_info.is_new_msg;
                     grantInfo_t updated_msg_grant_info;
 
                     curMsgReg.apply(cur_msg_info_req, updated_msg_grant_info);
@@ -245,7 +253,8 @@ control MyProcessing(inout headers hdr,
                         // generate ACK for the current msg, rather than a GRANT
                         ctrlPkt_meta.pkt_offset = (bit<8>)rx_msg_info.ackNo;
                         ctrlPkt_meta.credit = 0; // This is just an ACK, no packet is granted
-                        ctrlPkt_meta.flags = ACK_MASK;
+                        ctrlPkt_meta.flags  = ACK_MASK;
+                        ctrlPkt_meta.rank   = 0;
 
                         ackPkt_event.apply(ctrlPkt_meta, dummy);
                     }

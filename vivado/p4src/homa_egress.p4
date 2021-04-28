@@ -62,19 +62,22 @@ control MyProcessing(inout headers hdr,
         // Fill out IPv4 header fields
         hdr.ipv4.version = 4;
         hdr.ipv4.ihl = 5;
+        bit<8> msg_len_pkts;
         if (!is_data_pkt) {
+            msg_len_pkts = 0; // Not used for control packets.
+
             hdr.ipv4.totalLen = IP_HDR_BYTES + LNIC_CTRL_PKT_BYTES;
+            hdr.ipv4.tos = 0;
         } else {
             // All DATA pkts are 1 MTU long, except (possibly) the last one of a msg.
             // NOTE: the following requires isPow2(MAX_SEG_LEN_BYTES).
-            bit<L2_MAX_SEG_LEN_BYTES> msg_len_mod_mtu = meta.meta.msg_len[L2_MAX_SEG_LEN_BYTES-1:0];
-            bit<16> msg_len_pkts;
+            bit<16> msg_len_mod_mtu = (bit<16>)meta.meta.msg_len[L2_MAX_SEG_LEN_BYTES-1:0];
             bit<16> last_bytes;
             if (msg_len_mod_mtu == 0) {
-              msg_len_pkts = (meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES);
+              msg_len_pkts = (bit<8>)(meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES);
               last_bytes = MAX_SEG_LEN_BYTES;
             } else {
-              msg_len_pkts = (meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES) + 1;
+              msg_len_pkts = (bit<8>)(meta.meta.msg_len >> L2_MAX_SEG_LEN_BYTES) + 1;
               last_bytes = msg_len_mod_mtu;
             }
             bool is_last_pkt = (meta.meta.pkt_offset == (msg_len_pkts - 1));
@@ -82,6 +85,17 @@ control MyProcessing(inout headers hdr,
             hdr.ipv4.totalLen = is_last_pkt ?
                 (last_bytes + IP_HDR_BYTES + LNIC_HDR_BYTES) :
                 (MAX_SEG_LEN_BYTES + IP_HDR_BYTES + LNIC_HDR_BYTES);
+
+            bit<8> new_prio = msg_len_pkts <= (bit<8>)meta.params.rtt_pkts ? 0 : HOMA_NUM_UNSCHEDULED_PRIOS-1;
+            txMsgPrioReg_req_t prio_req;
+            prio_req.index  = meta.meta.tx_msg_id;
+            prio_req.update = meta.meta.is_new_msg;
+            prio_req.prio   = new_prio;
+            txMsgPrioReg_resp_t prio_resp;
+            txMsgPrioReg.apply(prio_req, prio_resp);
+            bit<8> cur_prio = meta.meta.is_rtx && (prio_resp.prio < HOMA_NUM_UNSCHEDULED_PRIOS) ? HOMA_NUM_UNSCHEDULED_PRIOS : prio_resp.prio; 
+
+            hdr.ipv4.tos = cur_prio; 
         }
         hdr.ipv4.identification = 1;
         hdr.ipv4.flags = 0;
@@ -92,19 +106,8 @@ control MyProcessing(inout headers hdr,
         hdr.ipv4.srcAddr = meta.params.nic_ip_addr;
         hdr.ipv4.dstAddr = meta.meta.dst_ip;
 
-        bit<8> new_prio = msg_len_pkts <= meta.params.rtt_pkts ? 0 : HOMA_NUM_UNSCHEDULED_PRIOS-1;
-        txMsgPrioReg_req_t prio_req;
-        prio_req.index  = meta.meta.tx_msg_id;
-        prio_req.update = meta.meta.is_new_msg;
-        prio_req.prio   = new_prio;
-        txMsgPrioReg_resp_t prio_resp;
-        txMsgPrioReg.apply(prio_req, prio_resp);
-        bit<8> cur_prio = meta.meta.is_rtx && (prio_resp.prio < HOMA_NUM_UNSCHEDULED_PRIOS) ? HOMA_NUM_UNSCHEDULED_PRIOS : prio_resp.prio; 
-
-        hdr.ipv4.tos = is_data_pkt ? cur_prio : 0; 
-
         // Fill out Homa header fields
-        hdr.homa.flags          = meta.meta.meta.flags;
+        hdr.homa.flags          = meta.meta.flags;
         hdr.homa.src            = meta.meta.src_context;
         hdr.homa.dst            = meta.meta.dst_context;
         hdr.homa.msg_len        = meta.meta.msg_len;
