@@ -18,14 +18,14 @@
 #define NUM_CLIENTS 10
 
 // IP addr's are assigned by firesim starting at 10.0.0.2. Server will be the first one.
-uint64_t server_ip = 0x0a000002;
+uint64_t server_ip = 0x0a00000a;
 
 // Server expects messages of distinct sizes from each client
 uint16_t expected_msg_len_pkts[] = {20, 22, 24, 26, 28, 30, 32, 34, 36, 38};
 
 // use the last byte of the IP address to compute a unique ID for each client
 uint8_t client_ip_to_id(uint32_t addr) {
-  return ((uint8_t)addr) - 3;
+  return ((uint8_t)addr) - 11;
 }
 
 bool is_client(uint32_t addr) {
