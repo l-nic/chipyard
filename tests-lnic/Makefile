@@ -1,6 +1,6 @@
 GCC=riscv64-unknown-elf-gcc
 OBJDUMP=riscv64-unknown-elf-objdump
-CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31 -fno-use-cxa-atexit
+CFLAGS=-mcmodel=medany -std=gnu99 -O2 -fno-common -fno-builtin-printf -Wall -ffixed-x30 -ffixed-x31
 LDFLAGS=-static -nostdlib -nostartfiles -lgcc
 LDFLAGS_MICA=-static -nostartfiles -lgcc
 CXX=riscv64-unknown-elf-g++
@@ -37,6 +37,7 @@ PROGRAMS += lnic-evaluation
 PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
 PROGRAMS += lnic-multi-core-mica
+PROGRAMS += lnic-sort
 PROGRAMS += lnic-postcard-agg-sw
 PROGRAMS += lnic-postcard-agg-opt
 PROGRAMS += lnic-cache-test
