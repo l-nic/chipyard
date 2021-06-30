@@ -640,16 +640,18 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
       uint64_t median = ks_ksmall(uint64_t, recvd_pivots_cnt, recvd_pivots, recvd_pivots_cnt/2);
 
 #if DO_STEP2_OPTION2
-      // Send my median to the first node of my column
-      send_key(MSG_TYPE_STEP2, my_group_offset + (c*my_i), median);
+      if (c > 1) {
+        // Send my median to the first node of my column
+        send_key(MSG_TYPE_STEP2, my_group_offset + (c*my_i), median);
 
-      if (my_j == 0) { // If I'm the first node of the column
-        recvd_pivots_cnt = 0;
-        for (unsigned j = 0; j < K; j++) { // Receive the median from the first K nodes in my column
-          recv_key(MSG_TYPE_STEP2, NULL, &recvd_pivots[recvd_pivots_cnt++], NULL, &ss->rb);
+        if (my_j == 0) { // If I'm the first node of the column
+          recvd_pivots_cnt = 0;
+          for (unsigned j = 0; j < K; j++) { // Receive the median from the first K nodes in my column
+            recv_key(MSG_TYPE_STEP2, NULL, &recvd_pivots[recvd_pivots_cnt++], NULL, &ss->rb);
+          }
+          // Compute median of medians
+          median = ks_ksmall(uint64_t, recvd_pivots_cnt, recvd_pivots, recvd_pivots_cnt/2);
         }
-        // Compute median of medians
-        median = ks_ksmall(uint64_t, recvd_pivots_cnt, recvd_pivots, recvd_pivots_cnt/2);
       }
 #endif
 
@@ -691,7 +693,6 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
     myassert(keys_for_col[chosen_spl_idx].size+1 < MAX_KEYS_PER_NODE);
     keys_for_col[chosen_spl_idx].v[keys_for_col[chosen_spl_idx].size++] = key;
   }
-  //printf("g_dst_node_addrs:"); for (unsigned i = 0; i < M; i++) printf(" %lx", g_dst_node_addrs[i]); printf("\n");
   //printf("[%d] recvd_splitters_cnt=%d\n", ss->nid, recvd_splitters_cnt);
   //printf("[%d] buckets dst_nodes: ", ss->nid); for (unsigned i = 0; i < recvd_splitters_cnt; i++) printf(" %d", node_for_splitter[recvd_splitters[i]]); printf("\n");
 
