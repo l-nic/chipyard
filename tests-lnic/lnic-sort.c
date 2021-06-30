@@ -269,6 +269,13 @@ struct recv_buffer {
   uint16_t flags_for_type[MAX_MSG_TYPES+1][RECV_BUFF_SIZE];
 };
 
+bool recv_buf_empty(struct recv_buffer *rb) {
+  for (unsigned msg_type = 1; msg_type < MAX_MSG_TYPES+1; msg_type++)
+    if (rb->head_for_type[msg_type] != rb->tail_for_type[msg_type])
+      return false;
+  return true;
+}
+
 // Returns true iff a packet was found
 bool recv_already_enqueued(int exp_msg_type, uint8_t *flags, unsigned *key_cnt, uint64_t *keys, uint64_t *node_ids, struct recv_buffer *rb) {
   unsigned recv_key_cnt;
@@ -589,15 +596,8 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
   unsigned num_groups = pow(N, rec_level);
   unsigned M = GLOBAL_M / num_groups;
   myassert((M%N) == 0 || M<N);
-  unsigned columns, c;
-  if (M > N) {
-    c = M / N;
-    columns = N;
-  }
-  else {
-    c = 1;
-    columns = M;
-  }
+  unsigned c       = M > N ? M/N : 1;
+  unsigned columns = M > N ? N   : M;
   unsigned my_group_id = ss->nid / M;
   unsigned my_group_offset = my_group_id * M;
   unsigned my_offset_in_group = ss->nid - my_group_offset;
@@ -605,13 +605,15 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
   unsigned my_j = my_offset_in_group % c;
   unsigned num_medians = columns - 1;
 
-
 #define DO_STEP2_OPTION2 1
+#if DO_STEP2_OPTION2
+  unsigned K = MIN(c, (unsigned)10);
+#endif
 
   // Step 1a: send kth smallest key
-  // If finding a single median, then I only participate if I'm in the first
-  // group. If finding the median-of-medians (OPTION 2), we all participate.
-  if (my_j == 0 || DO_STEP2_OPTION2) {
+  // If finding a single median, then only the first set participates. If
+  // finding the median-of-medians (OPTION 2), the first K sets participate.
+  if (my_j == 0 || (DO_STEP2_OPTION2 && my_j < K)) {
     for (unsigned i = 0; i < num_medians; i++) {
       // TODO: don't send to myself
       unsigned j = i * (ss->recvd_keys_cnt / (float)num_medians);
@@ -637,19 +639,16 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
       uint64_t median = ks_ksmall(uint64_t, recvd_pivots_cnt, recvd_pivots, recvd_pivots_cnt/2);
 
 #if DO_STEP2_OPTION2
-      unsigned K = MIN(c, (unsigned)10);
-      if (my_j < K) { // If I'm one of the first K nodes in the column
-        // Send my median to the first node of my column
-        send_key(MSG_TYPE_STEP2, my_group_offset + (c*my_i), median);
+      // Send my median to the first node of my column
+      send_key(MSG_TYPE_STEP2, my_group_offset + (c*my_i), median);
 
-        if (my_j == 0) { // If I'm the first node of the column
-          recvd_pivots_cnt = 0;
-          for (unsigned j = 0; j < K; j++) { // Receive the median from the first K nodes in my column
-            recv_key(MSG_TYPE_STEP2, NULL, &recvd_pivots[recvd_pivots_cnt++], NULL, &ss->rb);
-          }
-          // Compute median of medians
-          median = ks_ksmall(uint64_t, recvd_pivots_cnt, recvd_pivots, recvd_pivots_cnt/2);
+      if (my_j == 0) { // If I'm the first node of the column
+        recvd_pivots_cnt = 0;
+        for (unsigned j = 0; j < K; j++) { // Receive the median from the first K nodes in my column
+          recv_key(MSG_TYPE_STEP2, NULL, &recvd_pivots[recvd_pivots_cnt++], NULL, &ss->rb);
         }
+        // Compute median of medians
+        median = ks_ksmall(uint64_t, recvd_pivots_cnt, recvd_pivots, recvd_pivots_cnt/2);
       }
 #endif
 
@@ -829,6 +828,7 @@ int run_node(int cid, uint64_t context_id, int nid) {
   destroy_core_state(ss);
 
   ss->finished = true;
+  myassert(recv_buf_empty(&ss->rb));
 
   if (cid == 0) {
     for (unsigned i = 0; i < NCORES; i++) while (!g_ss[i].finished) { }
