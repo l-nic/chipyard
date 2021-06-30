@@ -396,10 +396,10 @@ struct sorter_state {
   khash_t(m64) *idx_for_final_key;
   khash_t(m64vec) *req_keys_from_node;
   uint64_t original_keys[GLOBAL_N];
-  uint64_t original_values[GLOBAL_N * VALUE_SIZE_WORDS];
+  uint64_t original_values[GLOBAL_N][VALUE_SIZE_WORDS];
   uint64_t recvd_keys[MAX_KEYS_PER_NODE];
   unsigned recvd_keys_cnt;
-  uint64_t final_values[MAX_KEYS_PER_NODE];
+  uint64_t final_values[MAX_KEYS_PER_NODE][VALUE_SIZE_WORDS];
   struct recv_buffer rb;
   volatile bool finished;
 #define VEC_POOL_SIZE (2 * MAX_KEYS_PER_NODE)
@@ -522,7 +522,7 @@ void finalShuffle(struct sorter_state *ss) {
     for (unsigned key_idx = 0; key_idx < key_cnt; key_idx++) {
       kk = kh_get(m64, ss->idx_for_orig_key, keys[key_idx]);
       myassert(kk != kh_end(ss->idx_for_orig_key) && "I don't own the requested key");
-      send_item(src_node_addr, keys[key_idx], &ss->original_values[VALUE_SIZE_WORDS * kh_value(ss->idx_for_orig_key, kk)]);
+      send_item(src_node_addr, keys[key_idx], ss->original_values[kh_value(ss->idx_for_orig_key, kk)]);
     }
     recvd_item_reqs += key_cnt;
   }
@@ -546,7 +546,7 @@ void finalShuffle(struct sorter_state *ss) {
         uint64_t key = lnic_read();
         kk = kh_get(m64, ss->idx_for_orig_key, key);
         myassert(kk != kh_end(ss->idx_for_orig_key) && "I don't own the requested key");
-        send_item(src_node_addr, key, &ss->original_values[VALUE_SIZE_WORDS * kh_value(ss->idx_for_orig_key, kk)]);
+        send_item(src_node_addr, key, ss->original_values[kh_value(ss->idx_for_orig_key, kk)]);
       }
       myassert(recvd_item_reqs < GLOBAL_N);
       recvd_item_reqs += key_cnt;
@@ -559,23 +559,24 @@ void finalShuffle(struct sorter_state *ss) {
       //printf("[%d] (recvd_item_reqs=%d, recvd_items=%d) Got ITEM: key=%ld msg_len=%d\n", ss->nid, recvd_item_reqs, recvd_items, key, msg_len);
       kk = kh_get(m64, ss->idx_for_final_key, key);
       myassert(kk != kh_end(ss->idx_for_final_key));
-      unsigned val_ofst = VALUE_SIZE_WORDS * kh_value(ss->idx_for_final_key, kk);
+      unsigned val_idx = kh_value(ss->idx_for_final_key, kk);
+      myassert(val_idx < ss->recvd_keys_cnt);
 
 #if VALUE_SIZE_WORDS != 12
 #error "This unrolled loop does not match VALUE_SIZE_WORDS"
 #endif
-      ss->final_values[val_ofst + 0] = lnic_read();
-      ss->final_values[val_ofst + 1] = lnic_read();
-      ss->final_values[val_ofst + 2] = lnic_read();
-      ss->final_values[val_ofst + 3] = lnic_read();
-      ss->final_values[val_ofst + 4] = lnic_read();
-      ss->final_values[val_ofst + 5] = lnic_read();
-      ss->final_values[val_ofst + 6] = lnic_read();
-      ss->final_values[val_ofst + 7] = lnic_read();
-      ss->final_values[val_ofst + 8] = lnic_read();
-      ss->final_values[val_ofst + 9] = lnic_read();
-      ss->final_values[val_ofst + 10] = lnic_read();
-      ss->final_values[val_ofst + 11] = lnic_read();
+      ss->final_values[val_idx][0] = lnic_read();
+      ss->final_values[val_idx][1] = lnic_read();
+      ss->final_values[val_idx][2] = lnic_read();
+      ss->final_values[val_idx][3] = lnic_read();
+      ss->final_values[val_idx][4] = lnic_read();
+      ss->final_values[val_idx][5] = lnic_read();
+      ss->final_values[val_idx][6] = lnic_read();
+      ss->final_values[val_idx][7] = lnic_read();
+      ss->final_values[val_idx][8] = lnic_read();
+      ss->final_values[val_idx][9] = lnic_read();
+      ss->final_values[val_idx][10] = lnic_read();
+      ss->final_values[val_idx][11] = lnic_read();
     }
     else
       printf("Error: unexpected msg_type: %ld (msg_len=%d)\n", msg_type, msg_len);
@@ -795,7 +796,6 @@ int run_node(int cid, uint64_t context_id, int nid) {
 
   for (unsigned key_idx = 0; key_idx < GLOBAL_N; key_idx++) {
     uint64_t dst_node = g_shuffled_dst_node_ids[(ss->nid + key_idx) % GLOBAL_M];
-    myassert(dst_node < GLOBAL_M);
     send_key_and_src(MSG_TYPE_STEP0, dst_node, ss->original_keys[key_idx], ss->nid);
   }
 
