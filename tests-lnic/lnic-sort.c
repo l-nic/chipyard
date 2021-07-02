@@ -6,11 +6,53 @@
 #include <stdbool.h>
 #include "lnic.h"
 
+#define NCORES 4
+#define NNODES 8
+
+#define GLOBAL_M                (NCORES * NNODES)
+#define GLOBAL_N                8
+#define KEYS_PER_NODE           16
+#define MAX_KEYS_PER_NODE       128
+#define MAX_KEYS_PER_PKT        40
+#define VALUE_SIZE_WORDS        12
+
+#define MSG_TYPE_STEP0      1
+#define MSG_TYPE_STEP1_KTH  2
+#define MSG_TYPE_STEP2      3 // Only used for OPTION 2 (median of medians)
+#define MSG_TYPE_STEP3      4
+#define MSG_TYPE_STEP4      5
+#define MSG_TYPE_SHUFL_REQ  6
+#define MSG_TYPE_SHUFL_RES  7
+
+#define MAX_MSG_TYPES 7
+
+#define KEY_MSG_SIZE_WORDS (2 + 1 + 1) // {msg_type, key}
+#define KEYSRC_MSG_SIZE_WORDS (2 + 1 + 1 + 1) // {msg_type, key, orig_node}
+#define ITEM_MSG_SIZE_WORDS (2 + 1 + 1 + VALUE_SIZE_WORDS) // {msg_type, key, value}
+
+#define FLAG_NULL           (1 << 0)
+
+#define BASE_NODE_IP 0x0a000002
+#define SWITCH_IP 0x0a000001
+
+
 #ifdef __riscv
 #define myassert(x) if (!(x)) printf("ASSERTION FAILED: %s:%d %s()\n", __FILE__, __LINE__,  __func__)
 #else
 #include <assert.h>
 #define myassert assert
+#endif
+
+#ifndef __riscv
+#include <vector>
+const std::vector<uint32_t> g_node_ips = {
+  BASE_NODE_IP+0, BASE_NODE_IP+1, BASE_NODE_IP+2, BASE_NODE_IP+3,
+};
+const int g_nc = NCORES;
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 static unsigned g_seed = 0;
@@ -32,13 +74,17 @@ inline int mypow(int a, int b) { // a**b
 volatile bool g_did_init = false;
 
 #define USE_MYHEAP 1
-#define MYHEAP_SIZE (32 * 1024)
+#ifdef __riscv
+#define MYHEAP_SIZE (64 * 1024)
+#else
+#define MYHEAP_SIZE (34 * 1024 * 1024 * NNODES)
+#endif
 #if USE_MYHEAP
 char g_myheap[MYHEAP_SIZE];
-int g_myheap_head = 0;
+static int g_myheap_head = 0;
 #endif
 
-unsigned g_total_alloc = 0;
+static unsigned g_total_alloc = 0;
 void *mymalloc(size_t s) {
   g_total_alloc += s;
 #if USE_MYHEAP
@@ -52,18 +98,16 @@ void *mymalloc(size_t s) {
   if (g_did_init) printf("malloc(%ld): %p\n", s, p);
   return p;
 }
-#define kmalloc mymalloc
 void *mycalloc(size_t a, size_t b) {
-  g_total_alloc += a*b;
 #if USE_MYHEAP
   void *p = mymalloc(a*b);
 #else
+  g_total_alloc += a*b;
   void *p = calloc(a, b);
 #endif
   if (g_did_init) printf("calloc(%ld): %p\n", a*b, p);
   return p;
 }
-#define kcalloc mycalloc
 void myfree(void *p) {
   //if (g_did_init) printf("free(%p)\n", p);
 #if USE_MYHEAP
@@ -71,28 +115,39 @@ void myfree(void *p) {
   return free(p);
 #endif
 }
-#define kfree myfree
 void *myrealloc(void *p, size_t sz) {
-  g_total_alloc += sz;
 #if USE_MYHEAP
   if (sz == 0) { myfree(p); return NULL; }
   char *p2 = (char *)mymalloc(sz);
   if (p != NULL) memcpy(p2, p, sz);
 #else
+  g_total_alloc += sz;
   void *p2 = realloc(p, sz);
 #endif
   if (g_did_init) printf("realloc(%p, %ld): %p\n", p, sz, p2);
   return p2;
 }
+
+#define kmalloc mymalloc
+#define kcalloc mycalloc
+#define kfree myfree
 #define krealloc myrealloc
 
 #ifndef drand48
 #define drand48() ((rand() % 999999)/(float)999999)
 #endif
 
+struct myvec {
+  uint16_t size;
+  union {
+    uint64_t singleton;
+    uint64_t *v;
+  } v;
+};
+
 #include "khash.h"
 KHASH_MAP_INIT_INT64(m64, unsigned)
-KHASH_MAP_INIT_INT64(m64vec, struct simple_vector *)
+KHASH_MAP_INIT_INT64(m64vec, struct myvec)
 #include "ksort.h"
 KSORT_INIT_GENERIC(uint64_t)
 KSORT_INIT_GENERIC(int)
@@ -105,46 +160,11 @@ void isort(uint64_t A[], size_t n) {
   QSORT(n, LESS, SWAP);
 }
 
-void fsort(float A[], size_t n) {
-  float tmp;
-#define LESS(i, j) A[i] < A[j]
-#define SWAP(i, j) tmp = A[i], A[i] = A[j], A[j] = tmp
-  QSORT(n, LESS, SWAP);
-}
-
 #define MAX(a,b) __extension__({ __typeof__ (a) _a = (a);  __typeof__ (b) _b = (b); _a > _b ? _a : _b; })
 #define MIN(a,b) __extension__({ __typeof__ (a) _a = (a);  __typeof__ (b) _b = (b); _a < _b ? _a : _b; })
 
-
-#define NCORES 4
-#define NNODES 8
-
-#define GLOBAL_M                (NCORES * NNODES)
-#define GLOBAL_N                8
-#define MAX_KEYS_PER_NODE       (GLOBAL_N*8)
-#define MAX_KEYS_PER_PKT        32
-#define VALUE_SIZE_WORDS        12
-
-#define MSG_TYPE_STEP0      1
-#define MSG_TYPE_STEP1_KTH  2
-#define MSG_TYPE_STEP2      3 // Only used for OPTION 2 (median of medians)
-#define MSG_TYPE_STEP3      4
-#define MSG_TYPE_STEP4      5
-#define MSG_TYPE_SHUFL_REQ  6
-#define MSG_TYPE_SHUFL_RES  7
-
-#define MAX_MSG_TYPES 7
-
-#define KEY_MSG_SIZE_WORDS (2 + 1 + 1) // {msg_type, key}
-#define KEYSRC_MSG_SIZE_WORDS (2 + 1 + 1 + 1) // {msg_type, key, orig_node}
-#define ITEM_MSG_SIZE_WORDS (2 + 1 + 1 + VALUE_SIZE_WORDS) // {msg_type, key, value}
-
-#define FLAG_NULL           (1 << 0)
-
-#define BASE_NODE_IP 0x0a000002
-
-int g_shuffled_dst_node_ids[GLOBAL_M];
-uint64_t g_dst_node_addrs[GLOBAL_M];
+int g_shuffled_node_ids[GLOBAL_M];
+uint64_t g_node_addrs[GLOBAL_M];
 
 void printArr(uint64_t *a, int n) {
   for (int i = 0; i < n; i++) { printf(" %ld", a[i]); } printf("\n");
@@ -162,12 +182,7 @@ uint64_t minArr(uint64_t *a, int n) {
   return m;
 }
 
-struct simple_vector {
-  unsigned size;
-  uint64_t v[MAX_KEYS_PER_NODE];
-};
-
-
+#ifdef __riscv
 typedef struct {
   volatile unsigned int lock;
 } arch_spinlock_t;
@@ -205,8 +220,10 @@ static inline void arch_spin_lock(arch_spinlock_t* lock) {
 }
 
 arch_spinlock_t up_lock;
-
-#define SWITCH_IP 0x0a000001
+#else
+#include <pthread.h>
+pthread_mutex_t g_lock;
+#endif // __riscv
 
 void send_ready_msg(int cid, uint64_t context_id) {
   uint64_t app_hdr = (uint64_t)SWITCH_IP << 32 | (0 << 16) | (2*8);
@@ -228,7 +245,7 @@ void recv_start_msg() {
 void send_key_and_src(uint8_t msg_type, unsigned dst_node_id, uint64_t key, uint64_t orig_node) {
   uint16_t msg_len = KEYSRC_MSG_SIZE_WORDS * 8;
   myassert(dst_node_id < GLOBAL_M);
-  uint64_t app_hdr = g_dst_node_addrs[dst_node_id] | msg_len;
+  uint64_t app_hdr = g_node_addrs[dst_node_id] | msg_len;
   lnic_write_r(app_hdr);
   lnic_write_i(0); // service_time
   lnic_write_i(0); // sent_time
@@ -240,7 +257,7 @@ void send_key_and_src(uint8_t msg_type, unsigned dst_node_id, uint64_t key, uint
 void send_key(uint8_t msg_type, unsigned dst_node_id, uint64_t key) {
   uint16_t msg_len = KEY_MSG_SIZE_WORDS * 8;
   myassert(dst_node_id < GLOBAL_M);
-  uint64_t app_hdr = g_dst_node_addrs[dst_node_id] | msg_len;
+  uint64_t app_hdr = g_node_addrs[dst_node_id] | msg_len;
   lnic_write_r(app_hdr);
   lnic_write_i(0); // service_time
   lnic_write_i(0); // sent_time
@@ -251,7 +268,7 @@ void send_key(uint8_t msg_type, unsigned dst_node_id, uint64_t key) {
 void send_key_null(uint8_t msg_type, unsigned dst_node_id) {
   uint16_t msg_len = KEY_MSG_SIZE_WORDS * 8;
   myassert(dst_node_id < GLOBAL_M);
-  uint64_t app_hdr = g_dst_node_addrs[dst_node_id] | msg_len;
+  uint64_t app_hdr = g_node_addrs[dst_node_id] | msg_len;
   lnic_write_r(app_hdr);
   lnic_write_i(0); // service_time
   lnic_write_i(0); // sent_time
@@ -270,10 +287,13 @@ struct recv_buffer {
 };
 
 bool recv_buf_empty(struct recv_buffer *rb) {
+  bool is_empty = true;
   for (unsigned msg_type = 1; msg_type < MAX_MSG_TYPES+1; msg_type++)
-    if (rb->head_for_type[msg_type] != rb->tail_for_type[msg_type])
-      return false;
-  return true;
+    if (rb->head_for_type[msg_type] != rb->tail_for_type[msg_type]) {
+      printf("msg_type=%d count=%d\n", msg_type, rb->head_for_type[msg_type] - rb->tail_for_type[msg_type]);
+      is_empty = false;
+    }
+  return is_empty;
 }
 
 // Returns true iff a packet was found
@@ -326,7 +346,7 @@ uint8_t recv_key(int exp_msg_type, unsigned *key_cnt, uint64_t *keys, uint64_t *
         recv_key_cnt = (msg_len/8) - (2 + 1);
 
       if (msg_type == MSG_TYPE_SHUFL_RES) printf("Error: I can't handdle MSG_TYPE_SHUFL_RES\n");
-      if (recv_key_cnt > MAX_KEYS_PER_PKT) printf("Error: packet too big (recv_key_cnt=%d MAX_KEYS_PER_PKT=%d)\n", recv_key_cnt, MAX_KEYS_PER_PKT);
+      if (recv_key_cnt > MAX_KEYS_PER_PKT) printf("Error: packet too big (msg_type=%d recv_key_cnt=%d MAX_KEYS_PER_PKT=%d)\n", msg_type, recv_key_cnt, MAX_KEYS_PER_PKT);
       myassert(recv_key_cnt <= MAX_KEYS_PER_PKT && "received more keys than I can handle");
 
       if (msg_type == exp_msg_type) {
@@ -395,37 +415,60 @@ struct sorter_state {
   khash_t(m64) *idx_for_orig_key;
   khash_t(m64) *idx_for_final_key;
   khash_t(m64vec) *req_keys_from_node;
-  uint64_t original_keys[GLOBAL_N];
-  uint64_t original_values[GLOBAL_N][VALUE_SIZE_WORDS];
+  uint64_t original_keys[KEYS_PER_NODE];
+  uint64_t original_values[KEYS_PER_NODE][VALUE_SIZE_WORDS];
   uint64_t recvd_keys[MAX_KEYS_PER_NODE];
   unsigned recvd_keys_cnt;
   uint64_t final_values[MAX_KEYS_PER_NODE][VALUE_SIZE_WORDS];
   struct recv_buffer rb;
   volatile bool finished;
-#define VEC_POOL_SIZE (2 * MAX_KEYS_PER_NODE)
-  struct simple_vector vec_pool[VEC_POOL_SIZE];
-  struct simple_vector *vec_pool_head;
+#define MYVEC_POOL_SIZE MAX_KEYS_PER_NODE
+#define MYVEC_MAX_SIZE MAX_KEYS_PER_NODE
+  uint64_t myvec_pool[MYVEC_POOL_SIZE][MYVEC_MAX_SIZE];
+  uint64_t *myvec_pool_head;
 };
+#ifdef __riscv
 struct sorter_state g_ss[NCORES];
+#else
+struct sorter_state g_ss[NCORES * NNODES];
+#endif
 
-struct simple_vector *get_vec(struct sorter_state *ss) {
-  myassert(ss->vec_pool_head != NULL && "vector pool is empty");
-  struct simple_vector *v = ss->vec_pool_head;
-  v->size = 0;
-  ss->vec_pool_head = (struct simple_vector *)v->v[0];
-  return v;
+void myvec_append(struct sorter_state *ss, struct myvec *v, uint64_t val) {
+  if (v->size == 0) // empty, so store the first value in the struct
+    v->v.singleton = val;
+  else { // not empty, need to use the pointer to an array
+    if (v->size == 1) { // allocate a new array from the pool
+      myassert(ss->myvec_pool_head != NULL && "vector pool is empty");
+      uint64_t *v2 = ss->myvec_pool_head;
+      ss->myvec_pool_head = (uint64_t *)v2[0];
+      uint64_t singleton = v->v.singleton;
+      v->v.v = v2;
+      v->v.v[0] = singleton;
+    }
+    myassert(v->size+1 <= MYVEC_MAX_SIZE);
+    v->v.v[v->size] = val;
+  }
+  v->size++;
 }
 
-void free_vec(struct sorter_state *ss, struct simple_vector *v) {
-  v->v[0] = (uint64_t)ss->vec_pool_head;
-  ss->vec_pool_head = v;
+void myvec_free(struct sorter_state *ss, struct myvec *v) {
+  if (v->size < 2) return; // empty or singleton has no array to release
+  uint64_t *old_head = ss->myvec_pool_head;
+  v->v.v[0] = (uint64_t)old_head;
+  ss->myvec_pool_head = v->v.v;
+}
+
+uint64_t myvec_get(struct myvec *v, unsigned idx) {
+  myassert(idx < v->size && "vector index out of bounds");
+  if (v->size == 1) return v->v.singleton;
+  else              return v->v.v[idx];
 }
 
 void clear_nested_map(struct sorter_state *ss, khash_t(m64vec) *h) {
   khint_t kk;
   for (kk = kh_begin(h); kk != kh_end(h); ++kk) // traverse
     if (kh_exist(h, kk)) { // test if a bucket contains data
-      free_vec(ss, kh_value(h, kk));
+      myvec_free(ss, &kh_value(h, kk));
     }
   kh_clear(m64vec, h);
 }
@@ -447,7 +490,7 @@ void init_core_state(struct sorter_state *ss, int nid) {
   ss->finished = false;
 
   ss->idx_for_orig_key = kh_init(m64);
-  kret = kh_resize(m64, ss->idx_for_orig_key, GLOBAL_N*2);
+  kret = kh_resize(m64, ss->idx_for_orig_key, KEYS_PER_NODE+1);
   myassert(kret == 0);
   ss->orig_nodes_for_key = kh_init(m64vec);
   kret = kh_resize(m64vec, ss->orig_nodes_for_key, MAX_KEYS_PER_NODE);
@@ -459,14 +502,14 @@ void init_core_state(struct sorter_state *ss, int nid) {
   kret = kh_resize(m64vec, ss->req_keys_from_node, MAX_KEYS_PER_NODE);
   myassert(kret == 0);
 
-  ss->vec_pool_head = &ss->vec_pool[0];
-  for (int i = 0; i < VEC_POOL_SIZE-1; i++)
-    ss->vec_pool[i].v[0] = (uint64_t)&ss->vec_pool[i+1];
-  ss->vec_pool[VEC_POOL_SIZE-1].v[0] = (uint64_t)NULL;
+  ss->myvec_pool_head = &ss->myvec_pool[0][0];
+  for (int i = 0; i < MYVEC_POOL_SIZE-1; i++)
+    ss->myvec_pool[i][0] = (uint64_t)&ss->myvec_pool[i+1][0];
+  ss->myvec_pool[MYVEC_POOL_SIZE-1][0] = (uint64_t)NULL;
 }
 
 void finalShuffle(struct sorter_state *ss) {
-  unsigned recvd_item_reqs = 0, recvd_items = 0;
+  unsigned reqd_items = 0, recvd_items = 0;
   //printf("[%d] recvd_keys_cnt=%d: ", ss->nid, ss->recvd_keys_cnt); printArr(ss->recvd_keys, ss->recvd_keys_cnt);
 
   int kret;
@@ -482,35 +525,46 @@ void finalShuffle(struct sorter_state *ss) {
     const uint64_t key = ss->recvd_keys[key_idx];
     kk = kh_get(m64vec, ss->orig_nodes_for_key, key);
     myassert(kk != kh_end(ss->orig_nodes_for_key) && "I don't know who owns the key");
-    struct simple_vector *v = kh_value(ss->orig_nodes_for_key, kk);
-    const uint64_t orig_node_id = v->v[key_idx % v->size];
+    struct myvec *v = &kh_value(ss->orig_nodes_for_key, kk);
+    const uint64_t orig_node_id = myvec_get(v, key_idx % v->size);
+
+    if (orig_node_id == ss->nid) {
+      kk = kh_get(m64, ss->idx_for_orig_key, key);
+      myassert(kk != kh_end(ss->idx_for_orig_key) && "I should know where my original keys are");
+      memcpy(&ss->final_values[key_idx][0], &ss->original_values[kh_value(ss->idx_for_orig_key, kk)][0], VALUE_SIZE_WORDS*sizeof(uint64_t));
+      recvd_items++;
+      reqd_items++;
+      continue;
+    }
 
     kk = kh_get(m64vec, ss->req_keys_from_node, orig_node_id);
     if (kk == kh_end(ss->req_keys_from_node)) {
       kk = kh_put(m64vec, ss->req_keys_from_node, orig_node_id, &kret);
       myassert(kret > 0);
-      kh_value(ss->req_keys_from_node, kk) = get_vec(ss);
+      kh_value(ss->req_keys_from_node, kk).size = 0;
     }
-    v = kh_value(ss->req_keys_from_node, kk);
-    myassert(v->size+1 < MAX_KEYS_PER_NODE);
-    v->v[v->size++] = key;
+    v = &kh_value(ss->req_keys_from_node, kk);
+    myvec_append(ss, v, key);
   }
+
+  //if (recvd_items > 0) printf("[%d] req %d keys from %d\n", ss->nid, recvd_items, ss->nid);
 
   // Send item requests
   uint64_t orig_node_id;
-  struct simple_vector *v;
+  struct myvec v;
   kh_foreach(ss->req_keys_from_node, orig_node_id, v, {
-    uint64_t orig_node_addr = g_dst_node_addrs[orig_node_id];
-    unsigned key_cnt = v->size;
+    uint64_t orig_node_addr = g_node_addrs[orig_node_id];
+    unsigned key_cnt = v.size;
     myassert(key_cnt <= MAX_KEYS_PER_PKT);
     uint16_t msg_len = (2 + 1 + key_cnt)*8;
     uint64_t app_hdr = orig_node_addr | msg_len;
     lnic_write_r(app_hdr);
     lnic_write_i(0); // service_time
     lnic_write_i(0); // sent_time
-    lnic_write_r(MSG_TYPE_SHUFL_REQ);
-    for (unsigned i = 0; i < v->size; i++)
-      lnic_write_m(v->v[i]);
+    lnic_write_i(MSG_TYPE_SHUFL_REQ);
+    for (unsigned i = 0; i < v.size; i++)
+      lnic_write_r(myvec_get(&v, i));
+    //printf("[%d] req %d keys from %ld\n", ss->nid, key_cnt, orig_node_id);
   });
 
   // Check for any item reqs received during the previous step
@@ -524,13 +578,13 @@ void finalShuffle(struct sorter_state *ss) {
       myassert(kk != kh_end(ss->idx_for_orig_key) && "I don't own the requested key");
       send_item(src_node_addr, keys[key_idx], ss->original_values[kh_value(ss->idx_for_orig_key, kk)]);
     }
-    recvd_item_reqs += key_cnt;
+    reqd_items += key_cnt;
   }
 
   // In the same loop:
   //  a) receive and reply to item requests; and
   //  b) receive final items.
-  while (recvd_item_reqs != GLOBAL_N || recvd_items != ss->recvd_keys_cnt) {
+  while (reqd_items != KEYS_PER_NODE || recvd_items != ss->recvd_keys_cnt) {
     lnic_wait();
     uint64_t app_hdr = lnic_read();
     uint16_t msg_len = (uint16_t)app_hdr;
@@ -541,24 +595,25 @@ void finalShuffle(struct sorter_state *ss) {
       uint64_t src_node_addr = app_hdr & (IP_MASK | CONTEXT_MASK);
       uint16_t key_cnt = ((msg_len/8) - (2 + 1));
       myassert(key_cnt <= MAX_KEYS_PER_PKT);
-      //printf("[%d] (recvd_item_reqs=%d, recvd_items=%d) Got REQ: key_cnt=%d src_node_addr=0x%lx\n", ss->nid, recvd_item_reqs, recvd_items, key_cnt, src_node_addr);
+      //printf("[%d] (reqd_items=%d, recvd_items=%d) Got REQ: key_cnt=%d src_node_addr=0x%lx\n", ss->nid, reqd_items, recvd_items, key_cnt, src_node_addr);
       for (unsigned key_idx = 0; key_idx < key_cnt; key_idx++) {
         uint64_t key = lnic_read();
         kk = kh_get(m64, ss->idx_for_orig_key, key);
         myassert(kk != kh_end(ss->idx_for_orig_key) && "I don't own the requested key");
+        myassert(kh_value(ss->idx_for_orig_key, kk) < KEYS_PER_NODE);
         send_item(src_node_addr, key, ss->original_values[kh_value(ss->idx_for_orig_key, kk)]);
       }
-      myassert(recvd_item_reqs < GLOBAL_N);
-      recvd_item_reqs += key_cnt;
+      reqd_items += key_cnt;
+      myassert(reqd_items <= KEYS_PER_NODE);
     }
     else if (msg_type == MSG_TYPE_SHUFL_RES) { // item response
       myassert(recvd_items < ss->recvd_keys_cnt);
       if (msg_len != ITEM_MSG_SIZE_WORDS * 8) printf("[%d] (recv item) Error: expected msg_len to be %d but got %d\n", ss->nid, ITEM_MSG_SIZE_WORDS * 8, msg_len);
       recvd_items++;
       uint64_t key = lnic_read();
-      //printf("[%d] (recvd_item_reqs=%d, recvd_items=%d) Got ITEM: key=%ld msg_len=%d\n", ss->nid, recvd_item_reqs, recvd_items, key, msg_len);
+      //printf("[%d] (reqd_items=%d, recvd_items=%d) Got ITEM: key=%ld msg_len=%d\n", ss->nid, reqd_items, recvd_items, key, msg_len);
       kk = kh_get(m64, ss->idx_for_final_key, key);
-      myassert(kk != kh_end(ss->idx_for_final_key));
+      myassert(kk != kh_end(ss->idx_for_final_key) && "I received an item that I didn't request");
       unsigned val_idx = kh_value(ss->idx_for_final_key, kk);
       myassert(val_idx < ss->recvd_keys_cnt);
 
@@ -611,16 +666,18 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
   unsigned K = MIN(c, (unsigned)10);
 #endif
 
+  //if ((ss->nid%4) == 0 && (rand()%2) == 0) for (int i = 0; i < 10000; i++) asm volatile("nop");
+
   // Step 1a: send kth smallest key
   // If finding a single median, then only the first set participates. If
   // finding the median-of-medians (OPTION 2), the first K sets participate.
   if (my_j == 0 || (DO_STEP2_OPTION2 && my_j < K)) {
     for (unsigned i = 0; i < num_medians; i++) {
       // TODO: don't send to myself
-      unsigned j = i * (ss->recvd_keys_cnt / (float)num_medians);
+      unsigned kth = i * (ss->recvd_keys_cnt / (float)num_medians);
       unsigned dst_node = my_group_offset + (c*i) + my_j;
       if (!(dst_node < GLOBAL_M)) printf("[%d] M=%d N=%d c=%d i=%d my_group_id=%d my_i=%d my_j=%d dst_node=%d\n", ss->nid, M, N, c, i, my_group_id, my_i, my_j, dst_node);
-      if (ss->recvd_keys_cnt > 0) send_key(MSG_TYPE_STEP1_KTH, dst_node, ss->recvd_keys[j]);
+      if (ss->recvd_keys_cnt > 0) send_key(MSG_TYPE_STEP1_KTH, dst_node, ss->recvd_keys[kth]);
       else                   send_key_null(MSG_TYPE_STEP1_KTH, dst_node);
     }
 
@@ -654,7 +711,6 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
         }
       }
 #endif
-
       // Step 3: mcast medians
       if (my_j == 0) { // If I'm the first node of the column
         for (unsigned i = 0; i < M; i++) { // TODO: how to mcast here?
@@ -664,6 +720,8 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
       }
     }
   }
+
+  //if ((ss->nid%4) == 0 && (rand()%2) == 0) for (int i = 0; i < 10000; i++) asm volatile("nop");
 
   // Receive medians
   for (unsigned recv_cnt = 0; recv_cnt < num_medians; recv_cnt++) {
@@ -679,7 +737,7 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
 
   // Step 4a: send key x to bucket i s.t. m_{i-1} < x < m_i
 
-  struct simple_vector keys_for_col[GLOBAL_N];
+  struct myvec keys_for_col[GLOBAL_N];
   for (unsigned i = 0; i < columns; i++) keys_for_col[i].size = 0;
   for (unsigned key_idx = 0; key_idx < ss->recvd_keys_cnt; key_idx++) {
     uint64_t key = ss->recvd_keys[key_idx];
@@ -690,40 +748,44 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
       if (num_medians < columns) chosen_spl_idx++;
     }
     //printf("[%d] key=%ld chosen_spl_idx=%d\n", ss->nid, key, chosen_spl_idx);
-    myassert(keys_for_col[chosen_spl_idx].size+1 < MAX_KEYS_PER_NODE);
-    keys_for_col[chosen_spl_idx].v[keys_for_col[chosen_spl_idx].size++] = key;
+    myvec_append(ss, &keys_for_col[chosen_spl_idx], key);
   }
   //printf("[%d] recvd_splitters_cnt=%d\n", ss->nid, recvd_splitters_cnt);
   //printf("[%d] buckets dst_nodes: ", ss->nid); for (unsigned i = 0; i < recvd_splitters_cnt; i++) printf(" %d", node_for_splitter[recvd_splitters[i]]); printf("\n");
 
   // Send keys to each column
   for (unsigned i = 0; i < columns; i++) {
-    unsigned dst_node = my_group_offset + (i*c) + my_j;
-    myassert((dst_node % c) == my_j);
+    unsigned j2 = my_j;
+    //unsigned j2 = rand() % c; // send to a random set in the column
+    unsigned dst_node = my_group_offset + (i*c) + j2;
     myassert(dst_node < GLOBAL_M);
-    //if (!((dst_node / c ) == i)) printf("[%d] M=%d N=%d c=%d i=%d dst_node=%d my_i=%d my_j=%d\n", ss->nid, M, N, c, i, dst_node, my_i, my_j);
 
     unsigned key_cnt = keys_for_col[i].size;
+    myassert(key_cnt <= MAX_KEYS_PER_PKT);
     // XXX key_cnt could be 0, in which case we send a "null message".
     uint16_t msg_len = (2 + 1 + 2*key_cnt) * 8;
-    uint64_t app_hdr = g_dst_node_addrs[dst_node] | msg_len;
+    uint64_t app_hdr = g_node_addrs[dst_node] | msg_len;
     lnic_write_r(app_hdr);
     lnic_write_i(0); // service_time
     lnic_write_i(0); // sent_time
     lnic_write_r(MSG_TYPE_STEP4);
     for (unsigned key_idx = 0; key_idx < key_cnt; key_idx++) {
-      const uint64_t key = keys_for_col[i].v[key_idx];
+      const uint64_t key = myvec_get(&keys_for_col[i], key_idx);
       lnic_write_r(key);
       // XXX in case of duplicate keys, send a different origin node for each dup key:
       kk = kh_get(m64vec, ss->orig_nodes_for_key, key);
       myassert(kk != kh_end(ss->orig_nodes_for_key) && "I don't know who owns the key");
-      struct simple_vector *v = kh_value(ss->orig_nodes_for_key, kk);
-      const uint64_t orig_node_id = v->v[key_idx % v->size];
+      struct myvec *v = &kh_value(ss->orig_nodes_for_key, kk);
+      const uint64_t orig_node_id = myvec_get(v, key_idx % v->size);
       lnic_write_r(orig_node_id);
     }
   }
   // I "lost" all these keys; no need to track their origin anymore:
   clear_nested_map(ss, ss->orig_nodes_for_key);
+  for (unsigned i = 0; i < columns; i++) myvec_free(ss, &keys_for_col[i]);
+
+  //if ((ss->nid%4) == 0 && (rand()%2) == 0) for (int i = 0; i < 10000; i++) asm volatile("nop");
+  //printf("[%d] sent my keys\n", ss->nid);
 
   // Receive my keys
   ss->recvd_keys_cnt = 0;
@@ -737,11 +799,10 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
       if (kk == kh_end(ss->orig_nodes_for_key)) {
         kk = kh_put(m64vec, ss->orig_nodes_for_key, key, &kret);
         myassert(kret > 0);
-        kh_value(ss->orig_nodes_for_key, kk) = get_vec(ss);
+        kh_value(ss->orig_nodes_for_key, kk).size = 0;
       }
-      struct simple_vector *v = kh_value(ss->orig_nodes_for_key, kk);
-      myassert(v->size+1 < MAX_KEYS_PER_NODE);
-      v->v[v->size++] = src_nodes[i];
+      struct myvec *v = &kh_value(ss->orig_nodes_for_key, kk);
+      myvec_append(ss, v, src_nodes[i]);
     }
     myassert(ss->recvd_keys_cnt + key_cnt <= MAX_KEYS_PER_NODE);
     ss->recvd_keys_cnt += key_cnt;
@@ -758,12 +819,24 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
 }
 
 int run_node(int cid, uint64_t context_id, int nid) {
+#ifdef __riscv
   struct sorter_state *ss = &g_ss[cid];
+#else
+  struct sorter_state *ss = &g_ss[nid];
+#endif
   //printf("[%d] Node started on context %lu.\n", nid, context_id);
+#ifdef __riscv
   arch_spin_lock(&up_lock);
-  if (cid < NCORES)
+#else
+  pthread_mutex_lock(&g_lock);
+#endif
+  if (cid < NCORES && nid < GLOBAL_M)
     init_core_state(ss, nid);
+#ifdef __riscv
   arch_spin_unlock(&up_lock);
+#else
+  pthread_mutex_unlock(&g_lock);
+#endif
 
   send_ready_msg(cid, context_id);
   recv_start_msg();
@@ -773,16 +846,16 @@ int run_node(int cid, uint64_t context_id, int nid) {
   //if (cid == 0) printf("[%d] Starting sort... g_total_alloc=%u\n", ss->nid, g_total_alloc);
 
   // Generate the keys for this node
-  for (unsigned i = 0; i < GLOBAL_N; i++)
+  for (unsigned i = 0; i < KEYS_PER_NODE; i++)
 #if 0
-    ss->original_keys[i] = nid*GLOBAL_N + i+1;
+    ss->original_keys[i] = nid*KEYS_PER_NODE + i+1;
 #else
     ss->original_keys[i] = rand();
 #endif
 
   int kret;
   khint_t kk;
-  for (unsigned i = 0; i < GLOBAL_N; i++) {
+  for (unsigned i = 0; i < KEYS_PER_NODE; i++) {
     kk = kh_put(m64, ss->idx_for_orig_key, ss->original_keys[i], &kret);
     if (!(kret > 0)) printf("[%d] got ret=%d key=%ld\n", ss->nid, kret, ss->original_keys[i]);
     myassert(kret > 0);
@@ -790,41 +863,37 @@ int run_node(int cid, uint64_t context_id, int nid) {
   }
 
   // Step 0: shuffle keys
-  ks_shuffle(uint64_t, GLOBAL_N, ss->original_keys);
-  //printf("[%d] original keys:", nid); printArr(ss->original_keys, GLOBAL_N);
+  ks_shuffle(uint64_t, KEYS_PER_NODE, ss->original_keys);
+  //printf("[%d] original keys:", nid); printArr(ss->original_keys, KEYS_PER_NODE);
 
   uint64_t sort_start = rdcycle();
 
-  for (unsigned key_idx = 0; key_idx < GLOBAL_N; key_idx++) {
-    uint64_t dst_node = g_shuffled_dst_node_ids[(ss->nid + key_idx) % GLOBAL_M];
+  // Send and receive exactly N keys
+  for (unsigned key_idx = 0; key_idx < KEYS_PER_NODE; key_idx++) {
+    uint64_t dst_node = g_shuffled_node_ids[(ss->nid + key_idx) % GLOBAL_M];
     send_key_and_src(MSG_TYPE_STEP0, dst_node, ss->original_keys[key_idx], ss->nid);
-  }
 
-  // Receive exactly N keys
-  for (unsigned recv_cnt = 0; recv_cnt < GLOBAL_N; recv_cnt++) {
     uint64_t orig_node;
-    //orig_node = ss->nid; ss->recvd_keys[recv_cnt] = ss->original_keys[recv_cnt];
-    recv_key(MSG_TYPE_STEP0, NULL, &ss->recvd_keys[recv_cnt], &orig_node, &ss->rb);
-    const uint64_t *key = &ss->recvd_keys[recv_cnt];
+    recv_key(MSG_TYPE_STEP0, NULL, &ss->recvd_keys[key_idx], &orig_node, &ss->rb);
+    const uint64_t *key = &ss->recvd_keys[key_idx];
     kk = kh_get(m64vec, ss->orig_nodes_for_key, *key);
     if (kk == kh_end(ss->orig_nodes_for_key)) {
       kk = kh_put(m64vec, ss->orig_nodes_for_key, *key, &kret);
       if (!(kret > 0)) printf("[%d] got ret=%d key=%ld orig_node=%ld\n", ss->nid, kret, *key, orig_node);
       myassert(kret > 0);
-      kh_value(ss->orig_nodes_for_key, kk) = get_vec(ss);
+      kh_value(ss->orig_nodes_for_key, kk).size = 0;
     }
-    struct simple_vector *v = kh_value(ss->orig_nodes_for_key, kk);
-    myassert(v->size+1 < MAX_KEYS_PER_NODE);
-    v->v[v->size++] = orig_node;
+    struct myvec *v = &kh_value(ss->orig_nodes_for_key, kk);
+    myvec_append(ss, v, orig_node);
   }
-  ss->recvd_keys_cnt = GLOBAL_N;
+  ss->recvd_keys_cnt = KEYS_PER_NODE;
   isort(ss->recvd_keys, ss->recvd_keys_cnt);
   //printf("[%d] randomized keys:", ss->nid); printArr(ss->recvd_keys, ss->recvd_keys_cnt);
 
   recSort(ss, 0);
 
   uint64_t elapsed_sort = rdcycle() - sort_start;
-  printf("[%d] keys=%d Elapsed: %ld\n", ss->nid, ss->recvd_keys_cnt, elapsed_sort);
+  printf("CSV: %d,%ld,%ld,%ld,%d\n", ss->nid, elapsed_sort, ss->recvd_keys[0], ss->recvd_keys[ss->recvd_keys_cnt ? ss->recvd_keys_cnt-1 : 0], ss->recvd_keys_cnt);
 
   destroy_core_state(ss);
 
@@ -841,7 +910,7 @@ int run_node(int cid, uint64_t context_id, int nid) {
       myassert(prev_max <= this_min);
       prev_max = this_max;
     }
-    for (int i = 0; i < 40000; i++) asm volatile("nop"); // wait for other nodes to finish
+    for (int i = 0; i < 400000; i++) asm volatile("nop"); // wait for other nodes to finish
   }
 
   return EXIT_SUCCESS;
@@ -882,13 +951,17 @@ int core_main(int argc, char** argv, int cid, int nc) {
   int sorter_node_id = (nanopu_node_id * nc) + cid;
   if (cid == 0) {
     for (unsigned i = 0; i < GLOBAL_M; i++) {
-      g_shuffled_dst_node_ids[i] = i;
-      g_dst_node_addrs[i] = (uint64_t)(BASE_NODE_IP + (i/4) ) << 32 | (i%4) << 16;
+      g_shuffled_node_ids[i] = i;
+      g_node_addrs[i] = (uint64_t)(BASE_NODE_IP + (i/4) ) << 32 | (i%4) << 16;
     }
-    ks_shuffle(int, GLOBAL_M, g_shuffled_dst_node_ids);
+    ks_shuffle(int, GLOBAL_M, g_shuffled_node_ids);
     g_seed = nanopu_node_id;
-    //for (unsigned i = 0; i < GLOBAL_M; i++) { printf(" %d=>0x%lx", g_shuffled_dst_node_ids[i], g_dst_node_addrs[g_shuffled_dst_node_ids[i]]); } printf("\n");
+    //for (unsigned i = 0; i < GLOBAL_M; i++) { printf(" %d=>0x%lx", g_shuffled_node_ids[i], g_node_addrs[g_shuffled_node_ids[i]]); } printf("\n");
   }
 
   return run_node(cid, context_id, sorter_node_id);
 }
+
+#ifdef __cplusplus
+}
+#endif
