@@ -134,6 +134,15 @@ def latency_test(proto, prn, fname):
     df = pd.DataFrame({'msg_len':length, 'latency':latency})
     write_csv('latency', fname, df)
 
+def latency_test_basic(proto, prn):
+    wait_boot_pkt(proto, prn)
+    msg_len = 16
+    print 'Testing msg_len = {} bytes'.format(msg_len)
+    rx_pkts = do_latency_test(proto, msg_len, prn)    
+    p = rx_pkts[0]
+    lat = struct.unpack('!L', str(p)[-4:])[0]
+    print 'Latency = {} cycles = {} ns'.format(lat, lat/3.2)
+
 def do_throughput_test(proto, msg_len, prn):
     inputs = []
     inputs.append(config_msg(proto, LOOPBACK_TEST_NUM_MSGS))
@@ -216,6 +225,10 @@ class NdpTest(unittest.TestCase):
         receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         latency_test(proto=NDP, prn=receiver.process_pkt, fname='ndp_msg_len_latency.csv')
 
+    def test_latency_basic(self):
+        receiver = NDPReceiver(TEST_IFACE)
+        latency_test_basic(proto=NDP, prn=receiver.process_pkt)
+
     def test_throughput(self):
         receiver = NDPReceiver(TEST_IFACE) # Need to send NDP control packets
         throughput_test(proto=NDP, prn=receiver.process_pkt, fname='ndp_msg_len_throughput.csv')
@@ -229,6 +242,10 @@ class HomaTest(unittest.TestCase):
     def test_latency(self):
         receiver = HomaReceiver(TEST_IFACE) # Need to send Homa control packets
         latency_test(proto=Homa, prn=receiver.process_pkt, fname='homa_msg_len_latency.csv')
+
+    def test_latency_basic(self):
+        receiver = HomaReceiver(TEST_IFACE)
+        latency_test_basic(proto=Homa, prn=receiver.process_pkt)
 
     def test_throughput(self):
         receiver = HomaReceiver(TEST_IFACE) # Need to send Homa control packets
