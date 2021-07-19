@@ -7,11 +7,11 @@
 #include "lnic.h"
 
 #define NCORES 4
-#define NNODES 8
+#define NNODES 16
 
 #define GLOBAL_M                (NCORES * NNODES)
 #define GLOBAL_N                8
-#define KEYS_PER_NODE           16
+#define KEYS_PER_NODE           32
 #define MAX_KEYS_PER_NODE       128
 #define MAX_KEYS_PER_PKT        40
 #define VALUE_SIZE_WORDS        12
@@ -408,6 +408,24 @@ void send_item(uint64_t dst_node_addr, uint64_t key, uint64_t *value) {
   lnic_write_m(*(value + 11));
 }
 
+#define MAX_REC_LEVELS 8
+struct timing {
+  unsigned short rec_levels;
+  unsigned elapsed;
+  unsigned step0_shuf;
+  unsigned step0_sort;
+  unsigned step1a[MAX_REC_LEVELS];
+  unsigned step2a[MAX_REC_LEVELS];
+  unsigned step3_mcast[MAX_REC_LEVELS];
+  unsigned step3_recv[MAX_REC_LEVELS];
+  unsigned step3_sort[MAX_REC_LEVELS];
+  unsigned step4a_shuf[MAX_REC_LEVELS];
+  unsigned step4a_sort[MAX_REC_LEVELS];
+  short step4a_keys[MAX_REC_LEVELS];
+  unsigned final_shuf_send;
+  unsigned final_shuf_recv;
+};
+
 struct sorter_state {
   int cid;
   int nid;
@@ -426,6 +444,7 @@ struct sorter_state {
 #define MYVEC_MAX_SIZE MAX_KEYS_PER_NODE
   uint64_t myvec_pool[MYVEC_POOL_SIZE][MYVEC_MAX_SIZE];
   uint64_t *myvec_pool_head;
+  struct timing times;
 };
 #ifdef __riscv
 struct sorter_state g_ss[NCORES];
@@ -486,6 +505,7 @@ void init_core_state(struct sorter_state *ss, int nid) {
   int kret;
   memset(&ss->rb.head_for_type, 0, sizeof(ss->rb.head_for_type));
   memset(&ss->rb.tail_for_type, 0, sizeof(ss->rb.tail_for_type));
+  memset(&ss->times, 0, sizeof(ss->times));
   ss->nid = nid;
   ss->finished = false;
 
@@ -511,6 +531,8 @@ void init_core_state(struct sorter_state *ss, int nid) {
 void finalShuffle(struct sorter_state *ss) {
   unsigned reqd_items = 0, recvd_items = 0;
   //printf("[%d] recvd_keys_cnt=%d: ", ss->nid, ss->recvd_keys_cnt); printArr(ss->recvd_keys, ss->recvd_keys_cnt);
+
+  uint64_t time_a = rdcycle(), time_b;
 
   int kret;
   khint_t kk;
@@ -566,6 +588,9 @@ void finalShuffle(struct sorter_state *ss) {
       lnic_write_r(myvec_get(&v, i));
     //printf("[%d] req %d keys from %ld\n", ss->nid, key_cnt, orig_node_id);
   });
+
+  time_b = rdcycle();
+  ss->times.final_shuf_send = time_b - time_a;
 
   // Check for any item reqs received during the previous step
   while (true) {
@@ -637,6 +662,8 @@ void finalShuffle(struct sorter_state *ss) {
       printf("Error: unexpected msg_type: %ld (msg_len=%d)\n", msg_type, msg_len);
     lnic_msg_done();
   }
+  time_a = rdcycle();
+  ss->times.final_shuf_recv = time_a - time_b;
 }
 
 void recSort(struct sorter_state *ss, unsigned rec_level) {
@@ -667,6 +694,7 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
 #endif
 
   //if ((ss->nid%4) == 0 && (rand()%2) == 0) for (int i = 0; i < 10000; i++) asm volatile("nop");
+  uint64_t time_a = rdcycle(), time_b;
 
   // Step 1a: send kth smallest key
   // If finding a single median, then only the first set participates. If
@@ -693,6 +721,7 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
       }
       //printf("[%d] recvd_pivots=%d: ", ss->nid, recvd_pivots_cnt); printArr(recvd_pivots, recvd_pivots_cnt);
 
+      ss->times.step1a[rec_level] = (time_b = rdcycle()) - time_a;
       // Step 2a: Compute my median
       uint64_t median = ks_ksmall(uint64_t, recvd_pivots_cnt, recvd_pivots, recvd_pivots_cnt/2);
 
@@ -711,15 +740,20 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
         }
       }
 #endif
+      ss->times.step2a[rec_level] = (time_a = rdcycle()) - time_b;
+
       // Step 3: mcast medians
       if (my_j == 0) { // If I'm the first node of the column
         for (unsigned i = 0; i < M; i++) { // TODO: how to mcast here?
           unsigned dst_node = my_group_offset + i;
           send_key_and_src(MSG_TYPE_STEP3, dst_node, median, ss->nid);
         }
+        ss->times.step3_mcast[rec_level] = rdcycle() - time_a;
       }
     }
   }
+
+  time_b = rdcycle();
 
   //if ((ss->nid%4) == 0 && (rand()%2) == 0) for (int i = 0; i < 10000; i++) asm volatile("nop");
 
@@ -729,9 +763,11 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
     recv_key(MSG_TYPE_STEP3, NULL, &med, &src_node, &ss->rb);
     recvd_splitters[recvd_splitters_cnt++] = med;
   }
+  ss->times.step3_recv[rec_level] = (time_a = rdcycle()) - time_b;
 
   // Sort the medians
   isort(recvd_splitters, recvd_splitters_cnt);
+  ss->times.step3_sort[rec_level] = (time_b = rdcycle()) - time_a;
 
   //if (ss->nid == 0) { printf("[%d] rec=%d M=%d N=%d c=%d cols=%d splitters (%d):", ss->nid, rec_level, M, N, c, columns, recvd_splitters_cnt); printArr(recvd_splitters, recvd_splitters_cnt); }
 
@@ -808,9 +844,13 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
     ss->recvd_keys_cnt += key_cnt;
     //if (rec_level > 0) printf("[%d] recv_cnt=%u recvd_keys_cnt=%d\n", ss->nid, recv_cnt, ss->recvd_keys_cnt);
   }
+  ss->times.step4a_shuf[rec_level] = (time_a = rdcycle()) - time_b;
 
   // Sort my keys
   isort(ss->recvd_keys, ss->recvd_keys_cnt);
+  ss->times.step4a_sort[rec_level] = rdcycle() - time_a;
+  ss->times.step4a_keys[rec_level] = ss->recvd_keys_cnt;
+  ss->times.rec_levels = rec_level+1;
 
   if (M > N)
     recSort(ss, rec_level+1);
@@ -819,30 +859,23 @@ void recSort(struct sorter_state *ss, unsigned rec_level) {
 }
 
 int run_node(int cid, uint64_t context_id, int nid) {
-#ifdef __riscv
-  struct sorter_state *ss = &g_ss[cid];
-#else
-  struct sorter_state *ss = &g_ss[nid];
-#endif
+  if (nid >= NNODES*NCORES) {
+    send_ready_msg(cid, context_id);
+    recv_start_msg();
+    return EXIT_SUCCESS;
+  }
   //printf("[%d] Node started on context %lu.\n", nid, context_id);
 #ifdef __riscv
+  struct sorter_state *ss = &g_ss[cid];
   arch_spin_lock(&up_lock);
-#else
-  pthread_mutex_lock(&g_lock);
-#endif
-  if (cid < NCORES && nid < GLOBAL_M)
-    init_core_state(ss, nid);
-#ifdef __riscv
+  init_core_state(ss, nid);
   arch_spin_unlock(&up_lock);
 #else
+  struct sorter_state *ss = &g_ss[nid];
+  pthread_mutex_lock(&g_lock);
+  init_core_state(ss, nid);
   pthread_mutex_unlock(&g_lock);
 #endif
-
-  send_ready_msg(cid, context_id);
-  recv_start_msg();
-  g_did_init = true;
-  if (nid >= NNODES*NCORES) return EXIT_SUCCESS;
-
   //if (cid == 0) printf("[%d] Starting sort... g_total_alloc=%u\n", ss->nid, g_total_alloc);
 
   // Generate the keys for this node
@@ -862,11 +895,15 @@ int run_node(int cid, uint64_t context_id, int nid) {
     kh_value(ss->idx_for_orig_key, kk) = i;
   }
 
+  send_ready_msg(cid, context_id);
+  recv_start_msg();
+  g_did_init = true;
+  uint64_t sort_start = rdcycle();
+  uint64_t time_b;
+
   // Step 0: shuffle keys
   ks_shuffle(uint64_t, KEYS_PER_NODE, ss->original_keys);
   //printf("[%d] original keys:", nid); printArr(ss->original_keys, KEYS_PER_NODE);
-
-  uint64_t sort_start = rdcycle();
 
   // Send and receive exactly N keys
   for (unsigned key_idx = 0; key_idx < KEYS_PER_NODE; key_idx++) {
@@ -887,13 +924,15 @@ int run_node(int cid, uint64_t context_id, int nid) {
     myvec_append(ss, v, orig_node);
   }
   ss->recvd_keys_cnt = KEYS_PER_NODE;
+  ss->times.step0_shuf = (time_b = rdcycle()) - sort_start;
   isort(ss->recvd_keys, ss->recvd_keys_cnt);
   //printf("[%d] randomized keys:", ss->nid); printArr(ss->recvd_keys, ss->recvd_keys_cnt);
+  ss->times.step0_sort = rdcycle() - time_b;
 
   recSort(ss, 0);
 
-  uint64_t elapsed_sort = rdcycle() - sort_start;
-  printf("CSV: %d,%ld,%ld,%ld,%d\n", ss->nid, elapsed_sort, ss->recvd_keys[0], ss->recvd_keys[ss->recvd_keys_cnt ? ss->recvd_keys_cnt-1 : 0], ss->recvd_keys_cnt);
+  ss->times.elapsed = rdcycle() - sort_start;
+  printf("CSV: %d,%d,%ld,%ld,%d\n", ss->nid, ss->times.elapsed, ss->recvd_keys[0], ss->recvd_keys[ss->recvd_keys_cnt ? ss->recvd_keys_cnt-1 : 0], ss->recvd_keys_cnt);
 
   destroy_core_state(ss);
 
@@ -910,7 +949,15 @@ int run_node(int cid, uint64_t context_id, int nid) {
       myassert(prev_max <= this_min);
       prev_max = this_max;
     }
-    for (int i = 0; i < 400000; i++) asm volatile("nop"); // wait for other nodes to finish
+    for (unsigned i = 0; i < NCORES; i++) {
+      uint64_t *min_key = &g_ss[i].recvd_keys[0], *max_key = &g_ss[i].recvd_keys[g_ss[i].recvd_keys_cnt ? g_ss[i].recvd_keys_cnt-1 : 0];
+      struct timing *t = &g_ss[i].times;
+      printf("TimingCSV: %d,%d,%d,%d,%ld,%ld,%d,%d,%d,%d", g_ss[i].nid, t->rec_levels, t->elapsed, g_ss[i].recvd_keys_cnt, *min_key, *max_key, t->step0_shuf, t->step0_sort, t->final_shuf_send, t->final_shuf_recv);
+      for (unsigned l = 0; l < t->rec_levels; l++) printf(",%d,%d,%d,%d,%d,%d,%d,%d", t->step1a[l], t->step2a[l], t->step3_mcast[l], t->step3_recv[l], t->step3_sort[l], t->step4a_shuf[l], t->step4a_sort[l], t->step4a_keys[l]);
+      //for (unsigned l = 0; l < t->rec_levels; l++) printf(",%d,%d,%d,%d,%d,%d,%d,1", t->step1a[l], t->step2a[l], t->step3_mcast[l], t->step3_recv[l], t->step3_sort[l], t->step4a_shuf[l], t->step4a_sort[l]);
+      printf("\n");
+    }
+    for (int i = 0; i < 100000; i++) asm volatile("nop"); // wait for other nodes to finish
   }
 
   return EXIT_SUCCESS;
