@@ -38,6 +38,7 @@ PROGRAMS += lnic-incast-single-core
 PROGRAMS += lnic-multi-core-chain-rep
 PROGRAMS += lnic-multi-core-mica
 PROGRAMS += lnic-sort
+PROGRAMS += lnic-millisort
 PROGRAMS += lnic-postcard-agg-sw
 PROGRAMS += lnic-postcard-agg-opt
 PROGRAMS += lnic-cache-test
