@@ -10,11 +10,11 @@
 #include "lnic.h"
 
 #define NCORES 4
-#define NNODES 4
+#define NNODES 8
 
 #define GLOBAL_M                (NCORES * NNODES)
-#define KEYS_PER_NODE           32
-#define NODES_PER_PIVOT_SORTER  4
+#define KEYS_PER_NODE           64
+#define NODES_PER_PIVOT_SORTER  8
 #define NUM_PIVOT_SORTERS       (GLOBAL_M / NODES_PER_PIVOT_SORTER)
 #define MAX_KEYS_PER_NODE       (KEYS_PER_NODE * 3)
 #define MAX_VALS_PER_PKT        100
@@ -25,6 +25,8 @@
 #define NUM_L2_SPLITTERS            NUM_PIVOT_SORTERS
 #define NUM_L1_SPLITTERS            GLOBAL_M
 #define MAX_L1_SPLITTERS_PER_NODE   ((NUM_L1_SPLITTERS / NUM_PIVOT_SORTERS) * 3)
+#define NUM_L1_PIVOTS_PER_NODE      (NODES_PER_PIVOT_SORTER * NUM_L1_PIVOTS)
+#define MAX_L1_PIVOTS_PER_NODE      (NUM_L1_PIVOTS_PER_NODE * 3)
 
 
 #define MSG_TYPE_L1_PIVOTS    1
@@ -43,10 +45,10 @@
 
 #define FLAG_NULL           (1 << 8)
 #define FLAG_LAST           (1 << 9)
-#define GET_RANK(md)        ((md >> 16) & 0xffff)
-#define SET_RANK(r)         ((r & 0xffff) << 16)
+#define GET_PASSED(md)        ((uint16_t)(md >> 16) & 0xffff)
+#define SET_PASSED(p)         (((uint64_t)p & 0xffff) << 16)
 
-#define PIV_SORTER_IDX(nid) (nid / NUM_PIVOT_SORTERS)
+#define PIV_SORTER_IDX(nid) (nid / NODES_PER_PIVOT_SORTER)
 
 #define BASE_NODE_IP 0x0a000002
 #define SWITCH_IP 0x0a000001
@@ -301,7 +303,7 @@ struct recv_buffer {
   uint32_t src_for_type[MAX_MSG_TYPE+1][RECV_BUFF_SIZE];
   uint16_t cnt_for_type[MAX_MSG_TYPE+1][RECV_BUFF_SIZE];
   uint64_t vals_for_type[MAX_MSG_TYPE+1][RECV_BUFF_SIZE][MAX_VALS_PER_PKT];
-  uint16_t meta_for_type[MAX_MSG_TYPE+1][RECV_BUFF_SIZE];
+  uint64_t meta_for_type[MAX_MSG_TYPE+1][RECV_BUFF_SIZE];
 };
 
 bool recv_buf_empty(struct recv_buffer *rb) {
@@ -323,9 +325,9 @@ bool recv_already_enqueued(int exp_msg_type, uint32_t *src_nid, uint64_t *metada
       vals[i] = rb->vals_for_type[exp_msg_type][rb->head_for_type[exp_msg_type]][i];
     }
     if (metadata != NULL) *metadata = rb->meta_for_type[exp_msg_type][rb->head_for_type[exp_msg_type]];
-    rb->head_for_type[exp_msg_type] = (rb->head_for_type[exp_msg_type] + 1) % RECV_BUFF_SIZE;
     if (cnt != NULL) *cnt = recv_cnt;
     if (src_nid != NULL) *src_nid = rb->src_for_type[exp_msg_type][rb->head_for_type[exp_msg_type]];
+    rb->head_for_type[exp_msg_type] = (rb->head_for_type[exp_msg_type] + 1) % RECV_BUFF_SIZE;
     return true;
   }
   return false;
@@ -350,7 +352,6 @@ uint64_t recv_msg(int exp_msg_type, uint32_t *src_nid, unsigned *cnt, uint64_t *
       metadata = lnic_read();
       uint8_t msg_type = (uint8_t)metadata;
       if (msg_type > MAX_MSG_TYPE) printf("Bad msg_type=%d\n", msg_type);
-      //if (msg_type == MSG_TYPE_ITEM) printf("Error: I cannot buffer MSG_TYPE_ITEM\n");
       if (msg_type == MSG_TYPE_L1_PIVOTS && msg_len != L1_PIVOTS_MSG_SIZE_WORDS*8) printf("Error: expected msg_type=%d to have msg_len %d but got %d\n", msg_type, L1_PIVOTS_MSG_SIZE_WORDS * 8, msg_len);
       if (msg_type == MSG_TYPE_L2_PIVOTS && msg_len != L2_PIVOTS_MSG_SIZE_WORDS*8) printf("Error: expected msg_type=%d to have msg_len %d but got %d\n", msg_type, L2_PIVOTS_MSG_SIZE_WORDS * 8, msg_len);
       if (msg_type == MSG_TYPE_L2_SPLITTERS && msg_len != L2_SPLITTERS_MSG_SIZE_WORDS*8) printf("Error: expected msg_type=%d to have msg_len %d but got %d\n", msg_type, L2_SPLITTERS_MSG_SIZE_WORDS * 8, msg_len);
@@ -463,7 +464,7 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
 
   // Generate the keys for this node
   for (unsigned i = 0; i < KEYS_PER_NODE; i++)
-#if 1
+#if 0
     ss->original_keys[i] = nid*KEYS_PER_NODE + i+1;
 #else
     ss->original_keys[i] = rand();
@@ -481,9 +482,6 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
   int kret;
   khint_t kk;
 
-#define NUM_L1_PIVOTS_PER_SORTER (NODES_PER_PIVOT_SORTER * NUM_L1_PIVOTS)
-#define MAX_L1_PIVOTS_PER_SORTER (NUM_L1_PIVOTS_PER_SORTER * 3)
-
   for (unsigned idx = 0; idx < KEYS_PER_NODE; idx++) {
     kk = kh_put(m64, ss->idx_for_orig_key, ss->original_keys[idx], &kret);
     myassert(kret > 0);
@@ -498,7 +496,7 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
   ss->times.sort_original = (time_b = rdcycle()) - time_a;
   uint64_t partition_start = time_b;
 
-  uint64_t l1_pivots[NUM_L1_PIVOTS_PER_SORTER];
+  uint64_t l1_pivots[NUM_L1_PIVOTS_PER_NODE];
   partition(ss->original_keys, KEYS_PER_NODE, l1_pivots, NUM_L1_PIVOTS); // Pick level 1 pivots
 
   //pthread_mutex_lock(&g_lock);
@@ -517,12 +515,13 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
       if (md & FLAG_LAST) recv_cnt++;
       recvd_l1_pivots += key_cnt;
     }
+    myassert(recvd_l1_pivots == NUM_L1_PIVOTS_PER_NODE);
 
     ss->times.recv_l1pivots = (time_a = rdcycle()) - time_b;
 
     uint64_t l2_pivots[NUM_PIVOT_SORTERS * NUM_L2_PIVOTS];
-    isort(l1_pivots, NUM_L1_PIVOTS_PER_SORTER);
-    partition(l1_pivots, NUM_L1_PIVOTS_PER_SORTER, l2_pivots, NUM_L2_PIVOTS);
+    isort(l1_pivots, NUM_L1_PIVOTS_PER_NODE);
+    partition(l1_pivots, NUM_L1_PIVOTS_PER_NODE, l2_pivots, NUM_L2_PIVOTS);
 
     ss->times.select_l2pivots = (time_b = rdcycle()) - time_a;
 
@@ -535,6 +534,7 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
         if (md & FLAG_LAST) recv_cnt++;
         recvd_l2_pivots += key_cnt;
       }
+      myassert(recvd_l2_pivots == NUM_PIVOT_SORTERS * NUM_L2_PIVOTS);
 
       ss->times.recv_l2pivots = (time_a = rdcycle()) - time_b;
 
@@ -559,53 +559,51 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
         recv_msg(MSG_TYPE_L2_SPLITTERS, NULL, &key_cnt, l2_splitters, &ss->rb);
         recvd_l2_splitters += key_cnt;
       }
+      myassert(recvd_l2_splitters == NUM_L2_SPLITTERS);
       ss->times.recv_l2splitters = (time_a = rdcycle()) - time_b;
     }
 
     // Shuffle l1 pivots with l2 splitters
-    unsigned recvd_pivot_cnt = 0;
-    uint64_t l1_pivots2[MAX_L1_PIVOTS_PER_SORTER];
-    unsigned my_rank = 0;
-    unsigned prev_piv_idx = 0;
+    unsigned gathered_l1_pivots_cnt = 0;
+    uint64_t gathered_l1_pivots[MAX_L1_PIVOTS_PER_NODE];
+    uint16_t passed_pivots = 0;
 
     // Split my l1 pivots and send them to other pivot sorters
-    for (unsigned spl_idx = 0; spl_idx < NUM_L2_SPLITTERS; spl_idx++) {
-      unsigned piv_cnt;
-      for (piv_cnt = 0; prev_piv_idx+piv_cnt < NUM_L1_PIVOTS_PER_SORTER; piv_cnt++) {
-        if (l1_pivots[prev_piv_idx + piv_cnt] > l2_splitters[spl_idx]) break;
-      }
-      if (prev_piv_idx + piv_cnt == NUM_L1_PIVOTS_PER_SORTER) piv_cnt = NUM_L1_PIVOTS_PER_SORTER - prev_piv_idx;
-
-      unsigned dstPivotSorterId = spl_idx * NODES_PER_PIVOT_SORTER;
-      //printf("NUM_L2_SPLITTERS=%u spl_idx=%d dstPivotSorterId=%u\n", NUM_L2_SPLITTERS, spl_idx, dstPivotSorterId);
-      //printf("[%d] dstPivotSorterId=%u piv_cnt=%u prev_piv_idx=%u\n", nid, dstPivotSorterId, piv_cnt, prev_piv_idx);
+    uint32_t numSmallerPivots = 0;
+    for (int rank = 0; rank < NUM_L2_SPLITTERS; rank++) {
+      // Collect local pivots that should be sent to bucket `rank`.
+      uint64_t boundary = l2_splitters[rank];
+      uint32_t k = numSmallerPivots;
+      while (k < NUM_L1_PIVOTS_PER_NODE && l1_pivots[k] <= boundary) k++;
+      unsigned dstPivotSorterId = rank * NODES_PER_PIVOT_SORTER;
       if (dstPivotSorterId == nid) { // if it's me, just copy to myself
-        memcpy(l1_pivots2, &l1_pivots[prev_piv_idx], piv_cnt*sizeof(uint64_t));
-        recvd_pivot_cnt += piv_cnt;
-        my_rank += prev_piv_idx;
+        memcpy(gathered_l1_pivots, &l1_pivots[numSmallerPivots], (k - numSmallerPivots)*sizeof(uint64_t));
+        gathered_l1_pivots_cnt += k - numSmallerPivots;
+        passed_pivots += numSmallerPivots;
       }
       else  {
-        uint64_t md = SET_RANK(prev_piv_idx);
-        send_keys(md | MSG_TYPE_SHUF_PIVOTS, dstPivotSorterId, &l1_pivots[prev_piv_idx], piv_cnt);
+        uint64_t md = SET_PASSED(numSmallerPivots);
+        send_keys(md | MSG_TYPE_SHUF_PIVOTS, dstPivotSorterId, &l1_pivots[numSmallerPivots], k - numSmallerPivots);
       }
-
-      prev_piv_idx += piv_cnt;
+      numSmallerPivots = k;
     }
+    myassert(numSmallerPivots == NUM_L1_PIVOTS_PER_NODE);
+    myassert(gathered_l1_pivots_cnt <= NUM_L1_PIVOTS_PER_NODE);
 
     // Receive l1 pivots from other pivot sorters
     for (unsigned recv_cnt = 1; recv_cnt < NUM_PIVOT_SORTERS;) {
-      uint64_t md = recv_msg(MSG_TYPE_SHUF_PIVOTS, NULL, &key_cnt, &l1_pivots2[recvd_pivot_cnt], &ss->rb);
-      recvd_pivot_cnt += key_cnt;
-      myassert(recvd_pivot_cnt <= MAX_L1_PIVOTS_PER_SORTER);
+      uint32_t src_nid;
+      uint64_t md = recv_msg(MSG_TYPE_SHUF_PIVOTS, &src_nid, &key_cnt, &gathered_l1_pivots[gathered_l1_pivots_cnt], &ss->rb);
+      gathered_l1_pivots_cnt += key_cnt;
+      myassert(gathered_l1_pivots_cnt <= MAX_L1_PIVOTS_PER_NODE);
       if (md & FLAG_LAST) {
-        my_rank += GET_RANK(md);
+        passed_pivots += GET_PASSED(md);
         recv_cnt++;
       }
     }
     ss->times.shuffle_l1pivots = (time_b = rdcycle()) - time_a;
-    isort(l1_pivots2, recvd_pivot_cnt);
+    isort(gathered_l1_pivots, gathered_l1_pivots_cnt);
     ss->times.sort_l1pivots = (time_a = rdcycle()) - time_b;
-
 
     // Select l1 splitters
     unsigned my_l1_splitters_cnt = 0;
@@ -616,22 +614,23 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
     for (int i = 0; i < GLOBAL_M; i++) {
       if (i < k) globalIdx += s;
       else       globalIdx += s + 1;
-      int localIdx = globalIdx - my_rank;
-      if ((0 <= localIdx) && (localIdx < (int) recvd_pivot_cnt))
-        l1_splitters_from_sorter[myPivotSorterIdx][my_l1_splitters_cnt++] = l1_pivots2[localIdx];
+      int localIdx = globalIdx - passed_pivots;
+      if ((0 <= localIdx) && (localIdx < (int) gathered_l1_pivots_cnt))
+        l1_splitters_from_sorter[myPivotSorterIdx][my_l1_splitters_cnt++] = gathered_l1_pivots[localIdx];
     }
-    //printf("[%d] my_rank=%u recvd_pivot_cnt=%u my_l1_splitters_cnt=%u\n", nid, my_rank, recvd_pivot_cnt, my_l1_splitters_cnt);
+    myassert(my_l1_splitters_cnt <= MAX_L1_SPLITTERS_PER_NODE);
+    //printf("[%d] passed_pivots=%u gathered_l1_pivots_cnt=%u my_l1_splitters_cnt=%u\n", nid, passed_pivots, gathered_l1_pivots_cnt, my_l1_splitters_cnt);
     l1_splitters_from_sorter_cnt[myPivotSorterIdx] = my_l1_splitters_cnt;
 
     //if (nid <= 0) {
-    //  printf("[%d] l1_pivots2:", nid); printArr(l1_pivots2, recvd_pivot_cnt);
+    //  printf("[%d] gathered_l1_pivots:", nid); printArr(gathered_l1_pivots, gathered_l1_pivots_cnt);
     //  printf("[%d] my_l1_splitters:", nid); printArr(my_l1_splitters, my_l1_splitters_cnt);
     //}
 
     // Multicast my l1 splitters
     for (unsigned dst_node = 0; dst_node < GLOBAL_M; dst_node++) {
       if (dst_node == nid) continue; // don't send to myself
-      send_keys(MSG_TYPE_L1_SPLITTERS, dst_node, l1_splitters_from_sorter[myPivotSorterIdx], my_l1_splitters_cnt);
+      send_keys(MSG_TYPE_L1_SPLITTERS, dst_node, l1_splitters_from_sorter[myPivotSorterIdx], l1_splitters_from_sorter_cnt[myPivotSorterIdx]);
     }
     ss->times.send_l1splitters = (time_b = rdcycle()) - time_a;
   }
@@ -640,7 +639,7 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
   }
 
   uint64_t l1_splitters[NUM_L1_SPLITTERS];
-  uint64_t tmp_l1_splitters[MAX_L1_PIVOTS_PER_SORTER];
+  uint64_t tmp_l1_splitters[MAX_L1_PIVOTS_PER_NODE];
   // Receive l1 splitters from each pivot sorter (except myself if I'm a pivot sorter)
   for (unsigned recv_cnt = isPivotSorter ? 1 : 0; recv_cnt < NUM_PIVOT_SORTERS;) {
     uint32_t src_nid;
@@ -649,13 +648,12 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
     l1_splitters_from_sorter_cnt[PIV_SORTER_IDX(src_nid)] = key_cnt;
     if (md & FLAG_LAST) recv_cnt++;
   }
-  unsigned recvd_l1_splitters_cnt = 0;
 
   unsigned spl_idx = 0;
   for (unsigned i = 0; i < NUM_PIVOT_SORTERS; i++) {
     memcpy(&l1_splitters[spl_idx], l1_splitters_from_sorter[i], l1_splitters_from_sorter_cnt[i]*sizeof(uint64_t));
     spl_idx += l1_splitters_from_sorter_cnt[i];
-    myassert(recvd_l1_splitters_cnt <= NUM_L1_SPLITTERS);
+    myassert(spl_idx <= NUM_L1_SPLITTERS);
   }
   myassert(spl_idx == NUM_L1_SPLITTERS);
   ss->times.partition = (time_a = rdcycle()) - partition_start;
@@ -664,13 +662,17 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
   //if (nid == 0) { printf("[%d] l1_splitters:", nid); printArr(l1_splitters, NUM_L1_SPLITTERS); }
   //pthread_mutex_unlock(&g_lock);
 
-  unsigned key_idx = 0;
-  for (unsigned dst_node = 0; dst_node < GLOBAL_M; dst_node++) { // Send keys to final nodes
+  // XXX we read the entire message into here, so leave some extra space for the key:
+  uint64_t tmp_values[MAX_KEYS_PER_NODE][1 + VALUE_SIZE_WORDS];
+  ss->recvd_keys_cnt = 0;
+  unsigned send_key_idx = 0;
+
+  for (unsigned dst_node = 0; dst_node < GLOBAL_M; dst_node++) { // Send and receive final values in the same loop
     unsigned send_cnt = 0;
-    while (key_idx + send_cnt < KEYS_PER_NODE && ss->original_keys[key_idx + send_cnt] <= l1_splitters[dst_node]) send_cnt++;
+    while (send_key_idx + send_cnt < KEYS_PER_NODE && ss->original_keys[send_key_idx + send_cnt] <= l1_splitters[dst_node]) send_cnt++;
     for (unsigned i = 0; i < send_cnt; i++) {
       uint64_t md = i+1 == send_cnt ? FLAG_LAST : 0;
-      uint64_t *key = &ss->original_keys[key_idx + i];
+      uint64_t *key = &ss->original_keys[send_key_idx + i];
       kk = kh_get(m64, ss->idx_for_orig_key, *key);
       myassert(kk != kh_end(ss->idx_for_orig_key) && "I should know where my original keys are");
       unsigned val_idx = kh_value(ss->idx_for_orig_key, kk);
@@ -678,28 +680,24 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
     }
     if (send_cnt == 0)
       send_item(FLAG_LAST | FLAG_NULL, dst_node, 0, NULL);
-    key_idx += send_cnt;
-  }
+    send_key_idx += send_cnt;
 
-  // we read the entire message into here, so leave some extra space for the key:
-  uint64_t tmp_values[MAX_KEYS_PER_NODE][1 + VALUE_SIZE_WORDS];
-
-  ss->recvd_keys_cnt = 0;
-  for (unsigned recv_cnt = 0; recv_cnt < GLOBAL_M;) { // Receive final keys
-    unsigned cnt;
-    uint64_t md = recv_msg(MSG_TYPE_ITEM, NULL, &cnt, tmp_values[ss->recvd_keys_cnt], &ss->rb);
-    myassert(ss->recvd_keys_cnt + cnt <= MAX_KEYS_PER_NODE);
-    if (md & FLAG_NULL) {
-      myassert(cnt == 0);
-    } else {
-      myassert(cnt == 1 + VALUE_SIZE_WORDS);
-      uint64_t *key = &tmp_values[ss->recvd_keys_cnt][0];
-      ss->recvd_keys[ss->recvd_keys_cnt] = *key;
-      kk = kh_put(m64, ss->idx_for_final_key, *key, &kret);
-      myassert(kret > -1);
-      kh_value(ss->idx_for_final_key, kk) = ss->recvd_keys_cnt++;
-    }
-    if (md & FLAG_LAST) recv_cnt++;
+    uint64_t md;
+    do { // receive items until a FLAG_LAST
+      unsigned cnt;
+      md = recv_msg(MSG_TYPE_ITEM, NULL, &cnt, tmp_values[ss->recvd_keys_cnt], &ss->rb);
+      myassert(ss->recvd_keys_cnt + cnt <= MAX_KEYS_PER_NODE);
+      if (md & FLAG_NULL) {
+        myassert(cnt == 0);
+      } else {
+        myassert(cnt == 1 + VALUE_SIZE_WORDS);
+        uint64_t *key = &tmp_values[ss->recvd_keys_cnt][0];
+        ss->recvd_keys[ss->recvd_keys_cnt] = *key;
+        kk = kh_put(m64, ss->idx_for_final_key, *key, &kret);
+        myassert(kret > -1);
+        kh_value(ss->idx_for_final_key, kk) = ss->recvd_keys_cnt++;
+      }
+    } while (!(md & FLAG_LAST));
   }
 
   ss->times.final_shuffle = (time_b = rdcycle()) - time_a;
@@ -718,6 +716,7 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
 
   ss->times.elapsed = time_b - sort_start;
 
+  myassert(recv_buf_empty(&ss->rb));
   destroy_core_state(ss);
 
   ss->finished = true;
@@ -743,12 +742,14 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
 
     for (unsigned i = 0; i < NCORES_IN_COMP_UNIT; i++) {
       struct timing *t = &g_ss[i].times;
-      printf("TimingCSV: %u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n", i, g_ss[i].recvd_keys_cnt,
+      printf("TimingCSV: %u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n", g_ss[i].nid, g_ss[i].recvd_keys_cnt,
           t->sort_original, t->recv_l1pivots, t->select_l2pivots, t->recv_l2pivots,
           t->send_l2pivots, t->recv_l2splitters, t->shuffle_l1pivots, t->sort_l1pivots,
           t->send_l1splitters, t->partition, t->final_shuffle, t->final_sort, t->rearrange, t->elapsed);
     }
-#ifndef __riscv
+#ifdef __riscv
+    for (int i = 0; i < 1000000; i++) asm volatile("nop"); // wait for other nodes to finish
+#else
     unsigned total_keys = 0;
     for (unsigned i = 0; i < NCORES_IN_COMP_UNIT; i++) total_keys += g_ss[i].recvd_keys_cnt;
     myassert(total_keys == KEYS_PER_NODE*GLOBAL_M);
@@ -758,7 +759,6 @@ int run_node(unsigned cid, uint64_t context_id, unsigned nid) {
     std::sort(std::begin(skews), std::end(skews));
     for (unsigned i = 0; i < NCORES_IN_COMP_UNIT; i++) { printf(" %.2f", skews[i]); } printf("\n");
 #endif
-    for (int i = 0; i < 100000; i++) asm volatile("nop"); // wait for other nodes to finish
   }
 
   return EXIT_SUCCESS;
